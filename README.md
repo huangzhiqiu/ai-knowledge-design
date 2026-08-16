@@ -12,6 +12,7 @@
 | [03-Design-Guidelines](./03-Design-Guidelines/) | Design guidelines & restrictions (HSBC standards) | To be filled |
 | [04-Coding-Guidelines](./04-Coding-Guidelines/) | Coding guidelines & restrictions (Sonar rules) | To be filled |
 | [05-References](./05-References/) | External references & resources | To be filled |
+| [06-Skills](./06-Skills/) | Automation skills for knowledge collection & generation | Pre-filled |
 
 ## Knowledge Domains
 
@@ -53,6 +54,13 @@
 
 ### 4. Coding Guidelines & Restrictions
 - Sonar quality rules & standards
+
+### 5. Skills (Automation)
+> Reusable skills for collecting, organizing, and generating knowledge.
+- **CBOL Knowledge Collector**: Extract domain knowledge from existing codebase
+- **Chat Pattern Collector**: Collect patterns from open-source IM projects
+- **Code Analyzer**: Analyze code structure, dependencies, quality
+- **Doc Generator**: Generate API docs, UML diagrams, reports
 
 ## How to Use for Code Generation
 
