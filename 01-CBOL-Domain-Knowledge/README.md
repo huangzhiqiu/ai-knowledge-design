@@ -18,6 +18,7 @@ This directory is for **CBOL-specific** knowledge extracted from the existing co
 | [configuration/](./configuration/) | application.yml, environment configs | Template ready |
 | [deployment-architecture/](./deployment-architecture/) | Deployment topology, capacity, CI/CD | Template ready |
 | [related-systems/](./related-systems/) | Upstream/downstream systems, integrations | Template ready |
+| [state-machine/](./state-machine/) | Self-developed lightweight state machine (design + API + integration) | Documented |
 
 ## Documents
 
