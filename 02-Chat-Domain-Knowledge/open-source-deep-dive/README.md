@@ -10,7 +10,7 @@
 | **Mattermost** | [mattermost-deep-analysis.md](./mattermost-deep-analysis.md) | Go + React | ⭐⭐⭐⭐ 分层架构、插件系统(RPC独立进程)、WebSocket事件作用域、企业级安全 |
 | **Rocket.Chat** | [rocketchat-deep-analysis.md](./rocketchat-deep-analysis.md) | TypeScript + MongoDB | ⭐⭐⭐⭐ DDP协议、MongoDB OpLog实时、NATS微服务、Apps Engine沙箱、Omnichannel |
 | **Matrix/Synapse** | [matrix-synapse-deep-analysis.md](./matrix-synapse-deep-analysis.md) | Python + PostgreSQL | ⭐⭐⭐ 联邦去中心化、Event DAG、PDU/EDU/Query、状态解析v2、Olm/Megolm加密、Worker+Replication |
-| Tiledesk/Chat21 | (待分析) | Node.js | MQTT 路由、客服流程 |
+| **Tiledesk/Chat21** | [tiledesk-chat21-deep-analysis.md](./tiledesk-chat21-deep-analysis.md) | Node.js + RabbitMQ/MQTT | ⭐⭐ Inbox模式(类SMTP/POP3)、RabbitMQ Observer、MQTT路径路由、JWT细粒度安全、全渠道客服、AI集成 |
 | OpenChat | (待分析) | Rust | 去中心化架构 |
 
 ## 分析维度
