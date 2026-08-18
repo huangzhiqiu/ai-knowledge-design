@@ -18,6 +18,7 @@ A skill is a reusable automation module that performs specific knowledge managem
 | Chat Pattern Collector | [chat-pattern-collector/](./chat-pattern-collector/) | Collect design patterns and code templates from open-source IM projects |
 | Code Analyzer | [code-analyzer/](./code-analyzer/) | Analyze code structure, dependencies, and quality |
 | Doc Generator | [doc-generator/](./doc-generator/) | Generate API docs, UML diagrams, and reports |
+| **Java Maven Project Analyzer** | [java-maven-project-analyzer/](./java-maven-project-analyzer/) | **OpenCode skill: analyze Java Maven multi-module projects, generate PROJECT_ARCHITECTURE.md (APIs, data models, business logic, system boundaries, dependencies)** |
 
 ## Skill Structure
 
