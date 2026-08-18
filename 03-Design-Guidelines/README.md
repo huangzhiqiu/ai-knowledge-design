@@ -9,7 +9,7 @@
 | [design-principles.md](./design-principles.md) | SOLID, DRY, KISS, YAGNI, and core design principles |
 | [api-design-guidelines.md](./api-design-guidelines.md) | RESTful API design best practices |
 | [architecture-principles.md](./architecture-principles.md) | Distributed systems, microservices, resilience, 12-Factor |
-| [hsbc-standards.md](./hsbc-standards.md) | HSBC internal coding requirements (to be filled) |
+| [self-development-standards.md](./self-development-standards.md) | Self-Development internal coding requirements (to be filled) |
 
 ## Design Principles Summary
 

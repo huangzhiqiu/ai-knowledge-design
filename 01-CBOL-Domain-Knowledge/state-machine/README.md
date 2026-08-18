@@ -1,10 +1,10 @@
 # Self-Developed Lightweight State Machine
 
-> Proprietary, lightweight, stateless state machine engine for AI Messaging Hub (HSBC).
+> Proprietary, lightweight, stateless state machine engine for AI Messaging Hub (Self-Development).
 
 ## Why Self-Developed?
 
-Mature open-source libraries exist (Spring StateMachine, COLA StateMachine), but HSBC's strict open-source compliance and security policies require a self-developed solution:
+Mature open-source libraries exist (Spring StateMachine, COLA StateMachine), but Self-Development's strict open-source compliance and security policies require a self-developed solution:
 - Zero external dependencies → 100% compliance with Snyk, Black Duck, SonarQube
 - No third-party CVE risk
 - Full control over security and performance
@@ -71,14 +71,14 @@ Mature open-source libraries exist (Spring StateMachine, COLA StateMachine), but
 - **Network Isolation**: No external network calls from engine
 - **No Reflection**: Eliminates dynamic class loading risks
 - **Code Review Friendly**: Core code < 200 lines, highly readable
-- **Scanning Compliance**: Fully compatible with HSBC's Snyk, Black Duck, SonarQube (zero CVE risk)
+- **Scanning Compliance**: Fully compatible with Self-Development's Snyk, Black Duck, SonarQube (zero CVE risk)
 
 ## Maven Dependency
 
 ```xml
 <!-- Internal only, no external state machine library -->
 <dependency>
-    <groupId>com.hsbc.ai.messaging</groupId>
+    <groupId>com.selfdevelopment.ai.messaging</groupId>
     <artifactId>hub-statemachine-core</artifactId>
     <version>1.0.0</version>
 </dependency>

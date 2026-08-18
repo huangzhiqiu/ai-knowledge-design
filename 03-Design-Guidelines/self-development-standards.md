@@ -1,4 +1,4 @@
-﻿# HSBC Internal Standards
+# Self-Development Internal Standards
 
 ## Overview
 

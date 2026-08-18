@@ -1,6 +1,6 @@
 # CBOL Refactor — Project Knowledge Base
 
-> 面向 AI Messaging Hub（HSBC）的即时通讯项目知识库，覆盖领域模型、架构设计、Java 实现参考、设计规范与编码标准，支持基于知识库生成 Java 代码。
+> 面向 AI Messaging Hub（Self-Development）的即时通讯项目知识库，覆盖领域模型、架构设计、Java 实现参考、设计规范与编码标准，支持基于知识库生成 Java 代码。
 
 ---
 
@@ -94,7 +94,7 @@ ai-knowledge-design/
 │   ├── design-principles.md                     # SOLID/DRY/KISS/YAGNI 等设计原则
 │   ├── api-design-guidelines.md                 # RESTful API 设计规范
 │   ├── architecture-principles.md               # 分布式/微服务/12-Factor 架构原则
-│   └── hsbc-standards.md                        # HSBC 内部编码要求
+│   └── self-development-standards.md            # Self-Development 内部编码要求
 │
 ├── 04-Coding-Guidelines/                        # 💻 编码规范
 │   ├── README.md
@@ -221,7 +221,7 @@ ai-knowledge-design/
 ## ⚠️ 注意事项
 
 - **敏感信息**：不要在文档中提交密码、Token、内部 IP 等敏感信息
-- **HSBC 合规**：涉及内部标准的内容需确认合规性后再提交
+- **Self-Development 合规**：涉及内部标准的内容需确认合规性后再提交
 - **代码引用**：引用开源项目代码时需遵守对应许可证
 - **Token 安全**：Git 远程 URL 中的 Token 仅用于推送，公开仓库前请移除
 
