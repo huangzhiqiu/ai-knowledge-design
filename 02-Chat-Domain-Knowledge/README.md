@@ -44,6 +44,11 @@
 | [data-structures/](./data-structures/) | Java POJOs, enums, Redis keys, DDL |
 | [code-templates/](./code-templates/) | Reusable code templates & boilerplate |
 
+### Open Source Deep Dive
+| Directory | Description |
+|-----------|-------------|
+| [open-source-deep-dive/](./open-source-deep-dive/) | 深度架构分析：Turms（Java/Netty/读扩散/无锁并发），更多项目待分析 |
+
 ## Domain Model Index
 
 | Entity | Document |
