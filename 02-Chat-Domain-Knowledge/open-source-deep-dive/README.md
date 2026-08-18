@@ -9,7 +9,7 @@
 | **Turms** | [turms-deep-analysis.md](./turms-deep-analysis.md) | Java | ⭐⭐⭐⭐⭐ 全异步 Netty、读扩散、极简架构、无锁并发、MongoDB 分片 |
 | **Mattermost** | [mattermost-deep-analysis.md](./mattermost-deep-analysis.md) | Go + React | ⭐⭐⭐⭐ 分层架构、插件系统(RPC独立进程)、WebSocket事件作用域、企业级安全 |
 | **Rocket.Chat** | [rocketchat-deep-analysis.md](./rocketchat-deep-analysis.md) | TypeScript + MongoDB | ⭐⭐⭐⭐ DDP协议、MongoDB OpLog实时、NATS微服务、Apps Engine沙箱、Omnichannel |
-| Matrix/Synapse | (待分析) | Python | 联邦架构、事件 DAG |
+| **Matrix/Synapse** | [matrix-synapse-deep-analysis.md](./matrix-synapse-deep-analysis.md) | Python + PostgreSQL | ⭐⭐⭐ 联邦去中心化、Event DAG、PDU/EDU/Query、状态解析v2、Olm/Megolm加密、Worker+Replication |
 | Tiledesk/Chat21 | (待分析) | Node.js | MQTT 路由、客服流程 |
 | OpenChat | (待分析) | Rust | 去中心化架构 |
 
