@@ -4,14 +4,18 @@
 
 ## Reference Projects
 
-| Project | Language | Architecture | Key Patterns |
-|---------|----------|-------------|--------------|
-| Mattermost | Go + React | Modular monolith -> microservices | Layered architecture, plugin system |
-| Rocket.Chat | Node.js + MongoDB | Monolith + microservices (NATS) | Oplog tailing, DDP protocol |
-| Matrix/Synapse | Python | Federated homeservers | Event DAG, state resolution |
-| Turms | Java | Modern microservices | Fanout read, push-pull models |
-| Tiledesk/Chat21 | Node.js | MQTT + RabbitMQ | Broker-based routing |
-| OpenChat | Go | WebSocket + Redis pub/sub | Horizontal connection scaling |
+| Project | GitHub | ⭐ Stars | Language | License | Architecture | Key Patterns |
+|---------|--------|---------|----------|---------|-------------|--------------|
+| **Mattermost** | [mattermost/mattermost](https://github.com/mattermost/mattermost) | ~28k | Go + React | MIT/AGPL | Modular monolith -> microservices | Layered architecture, plugin system |
+| **Rocket.Chat** | [RocketChat/Rocket.Chat](https://github.com/RocketChat/Rocket.Chat) | ~45.9k | TypeScript (Node.js) + MongoDB | MIT | Monolith + microservices (NATS) | Oplog tailing, DDP protocol |
+| **Matrix/Synapse** | [matrix-org/synapse](https://github.com/matrix-org/synapse) → [element-hq/synapse](https://github.com/element-hq/synapse) | ~12k | Python | Apache-2.0 | Federated homeservers | Event DAG, state resolution |
+| **Turms** | [turms-im/turms](https://github.com/turms-im/turms) | ~1.9k | Java | Apache-2.0 | Modern microservices | Fanout read, push-pull models, 100K~10M concurrent |
+| **Tiledesk/Chat21** | [chat21](https://github.com/chat21) / [Tiledesk](https://github.com/Tiledesk) | ~0.5k (multi-repo) | Node.js + Firebase/MQTT | MIT | MQTT + RabbitMQ | Broker-based routing |
+| **OpenChat** | [open-chat-labs/open-chat](https://github.com/open-chat-labs/open-chat) | ~0.2k | Rust + TypeScript | AGPL-3.0 | Internet Computer (blockchain) | Decentralized, canister-based |
+
+> Star counts approximate as of 2026-08. Click project name for GitHub source.
+>
+> 📖 **详细参考**（源码目录结构、架构特点、参考优先级）见 [../05-References/open-source-projects.md](../05-References/open-source-projects.md)
 
 ## Sub-directories
 
