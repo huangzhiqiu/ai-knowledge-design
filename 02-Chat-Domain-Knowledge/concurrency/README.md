@@ -176,73 +176,73 @@ Netty uses EventLoopGroup: one boss group accepts, one worker group handles IO. 
 
 ## Open Source Project: Turms Lock-Free Concurrency
 
-Turms 的并发模型是 IM 领域的极致优化案例，其核心设计哲学是**"几乎无锁，只有 CAS"**。
+Turms' concurrency model is an extreme optimization case study in the IM domain, with a core design philosophy of **"almost no locks, only CAS"**.
 
-### 核心原则：线程数恒定 = CPU 核心数
+### Core Principle: Constant Thread Count = CPU Cores
 
 ```
-传统思路：线程池大小 = CPU * 2 或更多，用队列缓冲
-Turms 思路：线程数 = CPU 核心数，不额外创建业务线程
+Traditional approach: thread pool size = CPU * 2 or more, with queue buffering
+Turms approach: thread count = CPU cores, no extra business threads
 ```
 
-**为什么线程数恒定？**
-- 线程切换有开销，过多线程导致上下文切换浪费 CPU
-- IM 业务是 IO 密集型（网络+数据库），全异步模式下不需要阻塞等待
-- 恒定线程数避免了线程池的动态调整开销
+**Why constant thread count?**
+- Thread switching has overhead, too many threads waste CPU on context switching
+- IM business is IO-intensive (network + database), no blocking wait needed in fully async mode
+- Constant thread count avoids dynamic adjustment overhead of thread pools
 
-### 全异步 Reactive 模型
+### Fully Async Reactive Model
 
-Turms 基于 **Project Reactor** 实现全异步：
-- 所有 IO 操作（网络、数据库、Redis）都返回 `Mono`/`Flux`
-- 业务逻辑在 Netty EventLoop 线程上链式调用，不阻塞
-- 数据库调用也异步（R2DBC / 异步 MongoDB 驱动）
-- 没有 `threadPool.submit()` 这种模式，不需要业务线程池
+Turms implements full asynchrony based on **Project Reactor**:
+- All IO operations (network, database, Redis) return `Mono`/`Flux`
+- Business logic chains on Netty EventLoop threads, no blocking
+- Database calls are also async (R2DBC / async MongoDB driver)
+- No `threadPool.submit()` pattern, no business thread pool needed
 
 ```java
-// Turms 风格：全异步，不阻塞 EventLoop
+// Turms style: fully async, no blocking EventLoop
 public Mono<Message> sendMessage(Message msg) {
-    return messageRepository.save(msg)           // 异步写 DB
-        .flatMap(saved -> pushService.push(saved)) // 异步推送
-        .subscribeOn(Schedulers.immediate());     // 在当前线程执行，不切换
+    return messageRepository.save(msg)           // async DB write
+        .flatMap(saved -> pushService.push(saved)) // async push
+        .subscribeOn(Schedulers.immediate());     // execute on current thread, no switch
 }
 ```
 
-### 无锁设计：CAS 替代 synchronized
+### Lock-Free Design: CAS Replaces synchronized
 
-| 场景 | 传统方案 | Turms 方案 |
-|------|---------|-----------|
-| Session 注册 | `synchronized` 或 `ReentrantLock` | `ConcurrentHashMap.computeIfAbsent` (CAS) |
-| 计数器 | `AtomicLong.incrementAndGet()` | `LongAdder` (高并发下更优) |
-| 状态变更 | `synchronized` 块 | `AtomicReference.compareAndSet()` |
-| 缓存更新 | `putIfAbsent` + 锁 | `ConcurrentHashMap.compute` (CAS) |
-| 连接计数 | `AtomicInteger` | `LongAdder` |
+| Scenario | Traditional Approach | Turms Approach |
+|----------|---------------------|---------------|
+| Session registration | `synchronized` or `ReentrantLock` | `ConcurrentHashMap.computeIfAbsent` (CAS) |
+| Counter | `AtomicLong.incrementAndGet()` | `LongAdder` (better under high concurrency) |
+| State change | `synchronized` block | `AtomicReference.compareAndSet()` |
+| Cache update | `putIfAbsent` + lock | `ConcurrentHashMap.compute` (CAS) |
+| Connection count | `AtomicInteger` | `LongAdder` |
 
-**关键洞察**：在全异步模型中，同一个 Channel 的所有操作都在同一个 EventLoop 线程上执行，天然线程安全，不需要锁。跨 Channel 的共享状态用 `ConcurrentHashMap` 和 CAS 原子操作。
+**Key insight**: In the fully async model, all operations for the same Channel execute on the same EventLoop thread, naturally thread-safe, no locks needed. Shared state across Channels uses `ConcurrentHashMap` and CAS atomic operations.
 
-### 内存优化
+### Memory Optimization
 
-Turms 在内存层面做了深度优化：
-1. **智能堆内/堆外分配**：根据数据生命周期选择堆内（短生命周期）或堆外（长生命周期、IO buffer）
-2. **重构 MongoDB/Redis 客户端**：消除客户端内部的冗余对象分配
-3. **对象池**：高频创建的对象（如消息包装器）使用对象池复用
-4. **零拷贝**：网络传输使用 `CompositeByteBuf` 避免内存拷贝
+Turms does deep optimization at the memory level:
+1. **Smart on-heap/off-heap allocation**: Choose on-heap (short lifecycle) or off-heap (long lifecycle, IO buffer) based on data lifecycle
+2. **Refactor MongoDB/Redis clients**: Eliminate redundant object allocation inside clients
+3. **Object pooling**: Reuse frequently created objects (e.g., message wrappers) via object pool
+4. **Zero-copy**: Use `CompositeByteBuf` for network transfer to avoid memory copy
 
-### 与传统线程池模型的对比
+### Comparison with Traditional Thread Pool Model
 
-| 维度 | 传统线程池模型 | Turms 无锁模型 |
-|------|--------------|---------------|
-| 线程数 | CPU*2 + 业务线程池 | = CPU 核心数 |
-| 锁 | 大量 synchronized/lock | 几乎无锁，只有 CAS |
-| 阻塞 | 线程池等待 IO | 全异步，无阻塞 |
-| 上下文切换 | 频繁（线程多） | 极少（线程恒定） |
-| 实现复杂度 | 低 | 高（Reactive 编程门槛） |
-| 适用场景 | 通用业务 | 高并发 IM/网关 |
+| Dimension | Traditional Thread Pool Model | Turms Lock-Free Model |
+|-----------|------------------------------|----------------------|
+| Thread count | CPU*2 + business thread pool | = CPU cores |
+| Locks | Lots of synchronized/lock | Almost no locks, only CAS |
+| Blocking | Thread pool waits for IO | Fully async, no blocking |
+| Context switching | Frequent (many threads) | Very rare (constant threads) |
+| Implementation complexity | Low | High (Reactive programming barrier) |
+| Use case | General business | High-concurrency IM/gateway |
 
-### 实践建议
+### Practical Recommendations
 
-对于 CBOL 项目：
-- **Gateway 层**：参考 Turms，Netty EventLoop 上不阻塞，全异步处理
-- **业务层**：如果业务逻辑复杂（如 AI 接回话、状态机），可以保留业务线程池，但确保 Gateway→Business 的边界清晰
-- **共享状态**：优先用 `ConcurrentHashMap` + CAS，避免显式锁
-- **数据库**：评估是否使用 R2DBC 异步驱动，避免阻塞 Netty 线程
-- **不要盲目模仿**：Turms 的无锁模型适合纯 IM 网关，CBOL 有 AI 处理、回话转发等复杂业务，全 Reactive 可能增加开发成本
+For the CBOL project:
+- **Gateway layer**: Reference Turms, no blocking on Netty EventLoop, fully async processing
+- **Business layer**: If business logic is complex (e.g., AI conversation handoff, state machine), can keep business thread pool, but ensure clear Gateway->Business boundary
+- **Shared state**: Prefer `ConcurrentHashMap` + CAS, avoid explicit locks
+- **Database**: Evaluate whether to use R2DBC async driver to avoid blocking Netty threads
+- **Don't blindly imitate**: Turms' lock-free model suits pure IM gateways; CBOL has complex business like AI processing and conversation forwarding, full Reactive may increase development cost

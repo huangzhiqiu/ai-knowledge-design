@@ -1,59 +1,59 @@
-# Rocket.Chat 深度架构分析
+# Rocket.Chat Deep Architecture Analysis
 
-> 来源：[RocketChat/Rocket.Chat](https://github.com/RocketChat/Rocket.Chat) ⭐ ~45.9k | MIT | TypeScript (Node.js/Meteor) + MongoDB
-> 官方文档：https://developer.rocket.chat
-> 定位：Secure CommsOS™，面向关键任务运营的安全通信平台
+> Source: [RocketChat/Rocket.Chat](https://github.com/RocketChat/Rocket.Chat) ⭐ ~45.9k | MIT | TypeScript (Node.js/Meteor) + MongoDB
+> Official docs: https://developer.rocket.chat
+> Positioning: Secure CommsOS™, secure communication platform for mission-critical operations
 
 ---
 
-## 1. 项目概览
+## 1. Project Overview
 
-Rocket.Chat 是一个开源核心的企业级实时通信平台，从 Meteor 单体应用演进而来，正在向微服务架构转型。其特点是**安全优先、Omnichannel 全渠道、Matrix 联邦、可扩展 Apps Engine**。
+Rocket.Chat is an open-core enterprise real-time communication platform, evolved from a Meteor monolith, currently transitioning to a microservices architecture. Its characteristics are **security-first, Omnichannel, Matrix federation, and extensible Apps Engine**.
 
-### Monorepo 结构
+### Monorepo Structure
 
 ```
 Rocket.Chat/
 ├── apps/
-│   └── meteor/              # 核心服务端（Meteor 应用，97个功能模块）
-│       ├── app/             # 按功能划分的模块（每个含 client/ + server/ + lib/）
-│       ├── server/          # 通用服务端逻辑
-│       └── client/          # 通用客户端逻辑
-├── packages/                # 55个共享包
-│   ├── apps-engine/         # Apps Engine（应用扩展框架）
-│   ├── model-typings/       # 模型类型定义
-│   ├── rest-typings/        # REST API 类型
+│   └── meteor/              # Core server (Meteor app, 97 feature modules)
+│       ├── app/             # Feature-based modules (each with client/ + server/ + lib/)
+│       ├── server/          # General server logic
+│       └── client/          # General client logic
+├── packages/                # 55 shared packages
+│   ├── apps-engine/         # Apps Engine (application extension framework)
+│   ├── model-typings/       # Model type definitions
+│   ├── rest-typings/        # REST API types
 │   └── ...
-├── ee/                      # 企业版功能
-└── e2e-tests/               # 端到端测试
+├── ee/                      # Enterprise features
+└── e2e-tests/               # End-to-end tests
 ```
 
-### 技术栈
+### Tech Stack
 
-| 层级 | 技术 |
-|------|------|
-| 后端 | Node.js + Meteor (TypeScript) |
-| 前端 | React |
-| 数据库 | MongoDB（生产需副本集，8.x 目标 MongoDB 8.0） |
-| 实时通信 | DDP over WebSocket + MongoDB OpLog |
-| 微服务总线 | NATS |
-| 文件存储 | 本地 / S3 / WebDAV |
-| 部署 | Docker / Kubernetes / Podman |
-| 联邦 | Matrix 协议 |
+| Layer | Technology |
+|-------|-----------|
+| Backend | Node.js + Meteor (TypeScript) |
+| Frontend | React |
+| Database | MongoDB (production requires replica set, 8.x targets MongoDB 8.0) |
+| Real-time communication | DDP over WebSocket + MongoDB OpLog |
+| Microservice bus | NATS |
+| File storage | Local / S3 / WebDAV |
+| Deployment | Docker / Kubernetes / Podman |
+| Federation | Matrix protocol |
 
-### 部署模式
+### Deployment Modes
 
-| 模式 | 适用场景 | 特点 |
-|------|---------|------|
-| **单体** | 小团队 | 单进程，所有功能集成 |
-| **多节点单体** | 中等规模 | 多个单体节点协同 |
-| **微服务**（企业版） | 大规模/高可用 | 服务独立部署，NATS 通信 |
+| Mode | Use Case | Characteristics |
+|------|----------|----------------|
+| **Monolith** | Small teams | Single process, all features integrated |
+| **Multi-node monolith** | Medium scale | Multiple monolith nodes collaborating |
+| **Microservices** (Enterprise) | Large scale/high availability | Services independently deployed, NATS communication |
 
 ---
 
-## 2. 架构设计
+## 2. Architecture Design
 
-### 2.1 整体架构
+### 2.1 Overall Architecture
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -62,336 +62,336 @@ Rocket.Chat/
 └──────────────────────────────┬───────────────────────────────┘
                                │
                     ┌──────────▼──────────┐
-                    │   Reverse Proxy      │  (NGINX/HAProxy, 负载均衡, TLS)
+                    │   Reverse Proxy      │  (NGINX/HAProxy, load balancing, TLS)
                     └──────────┬──────────┘
                                │
           ┌────────────────────┼────────────────────┐
           │                    │                    │
    ┌──────▼──────┐      ┌──────▼──────┐      ┌──────▼──────┐
    │  DDPStreamer │      │  DDPStreamer │      │  DDPStreamer │
-   │  (可水平扩展) │      │  (可水平扩展) │      │  (可水平扩展) │
+   │  (horizontally scalable) │  (horizontally scalable) │  (horizontally scalable) │
    └──────┬──────┘      └──────┬──────┘      └──────┬──────┘
           │                    │                    │
           └────────────────────┼────────────────────┘
-                               │ NATS (消息总线)
+                               │ NATS (message bus)
           ┌────────────────────┼────────────────────┐
           │          │         │         │          │
    ┌──────▼──┐ ┌────▼───┐ ┌───▼────┐ ┌──▼─────┐ ┌──▼───────┐
    │Account  │ │Auth    │ │Presence│ │StreamHub│ │AppsEngine│
-   │(无状态)  │ │(无状态) │ │(无状态)│ │(单实例) │ │(开发中)   │
+   │(stateless)│ │(stateless)│ │(stateless)│ │(single instance)│ │(in development)│
    └──────┬──┘ └────┬───┘ └───┬────┘ └──┬─────┘ └──┬───────┘
           │         │         │         │          │
           └─────────┴─────────┼─────────┴──────────┘
                               │
                      ┌────────▼────────┐
-                     │   MongoDB        │  (副本集, OpLog 尾部跟踪)
-                     │   (核心数据)      │
+                     │   MongoDB        │  (replica set, OpLog tailing)
+                     │   (core data)    │
                      └─────────────────┘
 ```
 
-### 2.2 从单体到微服务的演进
+### 2.2 Evolution from Monolith to Microservices
 
-Rocket.Chat 正在从 Meteor 单体向微服务架构转型：
+Rocket.Chat is transitioning from Meteor monolith to microservices architecture:
 
-| 阶段 | 架构 | 特点 |
-|------|------|------|
-| **传统** | Meteor 单体 | 所有功能在一个进程，DDP + OpLog 实时更新 |
-| **过渡** | 单体 + 外部服务 | 核心仍在 Meteor，部分服务拆出（Presence、Authorization 等） |
-| **目标** | 全微服务 | 所有服务独立部署，NATS 通信，StreamHub 统一实时数据分发 |
+| Phase | Architecture | Characteristics |
+|-------|-------------|----------------|
+| **Traditional** | Meteor monolith | All features in one process, DDP + OpLog real-time updates |
+| **Transition** | Monolith + external services | Core still in Meteor, some services split out (Presence, Authorization, etc.) |
+| **Target** | Full microservices | All services independently deployed, NATS communication, StreamHub unified real-time data distribution |
 
-### 2.3 核心设计理念
+### 2.3 Core Design Philosophy
 
-- **MongoDB 中心化**：所有数据存在 MongoDB，通过 OpLog 实现响应式更新
-- **DDP 协议**：Meteor 的分布式数据协议，客户端订阅数据集合，服务端推送变更
-- **渐进式微服务**：不一次性重构，逐步将服务从 Meteor 进程拆出
-- **安全优先**：面向国防、情报、关键基础设施场景
-
----
-
-## 3. 微服务架构详解
-
-### 3.1 外部服务（独立进程，可水平扩展）
-
-| 服务 | 职责 | 状态 | 扩展性 |
-|------|------|------|--------|
-| **Authorization** | 用户授权和权限管理 | 稳定 | 无状态，可水平扩展 |
-| **Account** | 用户账户管理（创建/更新/删除/登录/登出） | 稳定 | 无状态，可水平扩展 |
-| **Presence** | 用户在线状态跟踪和更新 | 稳定 | 无状态，可水平扩展 |
-| **StreamHub** | 捕获数据库变更，广播实时数据给其他服务 | 稳定 | **单实例，不支持水平扩展** |
-| **DDPStreamer** | 管理 DDP 连接，客户端-服务端交互、订阅、数据传输 | 稳定 | 可水平扩展 |
-| **AppsEngine** | Rocket.Chat Apps 管理（安装/更新/执行/移除） | 开发中 | 设计支持水平扩展 |
-
-### 3.2 内部服务（Meteor 进程内）
-
-| 服务 | 职责 |
-|------|------|
-| Messaging | 消息管理 |
-| Room | 聊天室管理（创建/更新/删除） |
-| Team | 团队管理 |
-| OmniChannel | 全渠道客服 |
-| Omnichannel Voip | VoIP 语音通话 |
-| Push | 移动推送通知 |
-| Upload | 文件上传管理 |
-| Settings | 系统设置管理 |
-| Banner | 横幅管理 |
-| LDAP | LDAP 集成 |
-| NPS | 用户满意度调查 |
-| UiKitCoreApp | UI Kit 交互处理 |
-
-### 3.3 NATS 消息总线
-
-- 微服务间通过 **NATS** 通信
-- 服务指向 NATS 分发器而非直接指向每个组件
-- NATS 决定将请求转发到哪个服务实例
-- 支持服务发现和负载均衡
+- **MongoDB-centric**: All data stored in MongoDB, reactive updates via OpLog
+- **DDP protocol**: Meteor's distributed data protocol, client subscribes to data collections, server pushes changes
+- **Gradual microservices**: No one-time refactoring, gradually split services out of Meteor process
+- **Security-first**: For defense, intelligence, critical infrastructure scenarios
 
 ---
 
-## 4. 实时通信设计
+## 3. Microservices Architecture Details
 
-### 4.1 DDP 协议
+### 3.1 External Services (Independent Process, Horizontally Scalable)
 
-Rocket.Chat 使用 **DDP（Distributed Data Protocol）** 作为客户端-服务端实时通信协议：
+| Service | Responsibility | Status | Scalability |
+|---------|---------------|--------|-------------|
+| **Authorization** | User authorization and permission management | Stable | Stateless, horizontally scalable |
+| **Account** | User account management (create/update/delete/login/logout) | Stable | Stateless, horizontally scalable |
+| **Presence** | User presence tracking and updates | Stable | Stateless, horizontally scalable |
+| **StreamHub** | Capture database changes, broadcast real-time data to other services | Stable | **Single instance, no horizontal scaling** |
+| **DDPStreamer** | Manage DDP connections, client-server interaction, subscriptions, data transfer | Stable | Horizontally scalable |
+| **AppsEngine** | Rocket.Chat Apps management (install/update/execute/remove) | In development | Designed to support horizontal scaling |
 
-| 特性 | 说明 |
-|------|------|
-| 传输层 | WebSocket |
-| 模式 | 客户端订阅集合 → 服务端推送变更 |
-| 操作 | subscribe / unsubscribe / method call |
-| 数据同步 | 服务端维护客户端订阅的数据视图，增量推送 |
+### 3.2 Internal Services (Inside Meteor Process)
 
-**DDP 消息流**：
-```
-客户端 → 服务端: subscribe("stream-room-messages", roomId)
-服务端 → 客户端: added / changed / removed (增量数据)
-客户端 → 服务端: method("sendMessage", message)
-服务端 → 客户端: result (方法调用结果)
-```
+| Service | Responsibility |
+|---------|---------------|
+| Messaging | Message management |
+| Room | Chat room management (create/update/delete) |
+| Team | Team management |
+| OmniChannel | Omnichannel customer service |
+| Omnichannel Voip | VoIP voice calls |
+| Push | Mobile push notifications |
+| Upload | File upload management |
+| Settings | System settings management |
+| Banner | Banner management |
+| LDAP | LDAP integration |
+| NPS | User satisfaction survey |
+| UiKitCoreApp | UI Kit interaction handling |
 
-### 4.2 MongoDB OpLog 响应式层
+### 3.3 NATS Message Bus
 
-Rocket.Chat 的实时更新核心机制是 **MongoDB OpLog 尾部跟踪**：
-
-```
-数据写入 MongoDB → OpLog 记录变更 → StreamHub 捕获 → 广播给订阅者 → DDPStreamer 推送给客户端
-```
-
-- 所有服务实例监听 MongoDB OpLog
-- 数据变更自动推送到订阅的客户端
-- 无需轮询，延迟低
-
-### 4.3 StreamHub 的角色
-
-StreamHub 是实时数据分发的核心：
-- 捕获数据库变更
-- 广播给其他服务和客户端
-- **当前为单实例**，是微服务架构的瓶颈
-- 未来可能支持水平扩展
-
-### 4.4 REST API + WebSocket 双轨
-
-- **REST API**：非实时操作（创建用户、管理频道等）
-- **WebSocket/DDP**：实时消息、状态更新、打字指示器
-- 所有功能通过 REST API 和 WebSocket 暴露，便于第三方集成
+- Microservices communicate via **NATS**
+- Services point to NATS dispatcher rather than directly to each component
+- NATS decides which service instance to forward requests to
+- Supports service discovery and load balancing
 
 ---
 
-## 5. Apps Engine（应用扩展框架）
+## 4. Real-time Communication Design
 
-### 5.1 架构
+### 4.1 DDP Protocol
 
-Apps Engine 是 Rocket.Chat 的插件系统，采用**三层架构**：
+Rocket.Chat uses **DDP (Distributed Data Protocol)** as client-server real-time communication protocol:
+
+| Feature | Description |
+|---------|-------------|
+| Transport layer | WebSocket |
+| Mode | Client subscribes to collections -> Server pushes changes |
+| Operations | subscribe / unsubscribe / method call |
+| Data sync | Server maintains client's subscribed data view, incremental push |
+
+**DDP message flow**:
+```
+Client -> Server: subscribe("stream-room-messages", roomId)
+Server -> Client: added / changed / removed (incremental data)
+Client -> Server: method("sendMessage", message)
+Server -> Client: result (method call result)
+```
+
+### 4.2 MongoDB OpLog Reactive Layer
+
+Rocket.Chat's real-time update core mechanism is **MongoDB OpLog tailing**:
+
+```
+Data write to MongoDB -> OpLog records change -> StreamHub captures -> broadcast to subscribers -> DDPStreamer pushes to clients
+```
+
+- All service instances listen to MongoDB OpLog
+- Data changes automatically pushed to subscribed clients
+- No polling needed, low latency
+
+### 4.3 StreamHub's Role
+
+StreamHub is the core of real-time data distribution:
+- Captures database changes
+- Broadcasts to other services and clients
+- **Currently single instance**, is the bottleneck of microservices architecture
+- May support horizontal scaling in future
+
+### 4.4 REST API + WebSocket Dual Track
+
+- **REST API**: Non-real-time operations (create users, manage channels, etc.)
+- **WebSocket/DDP**: Real-time messages, state updates, typing indicators
+- All functionality exposed via REST API and WebSocket, easy third-party integration
+
+---
+
+## 5. Apps Engine (Application Extension Framework)
+
+### 5.1 Architecture
+
+Apps Engine is Rocket.Chat's plugin system, adopting **three-layer architecture**:
 
 ```
 ┌─────────────────────────────────────────┐
-│  App Code (沙箱中运行)                   │
+│  App Code (running in sandbox)           │
 │  ┌───────────────────────────────────┐  │
-│  │  Definition Layer (接口定义)       │  │
+│  │  Definition Layer (interface def)  │  │
 │  │  IRead / IModify / IHttp / ...    │  │
 │  └───────────────┬───────────────────┘  │
 │                  │                       │
 │  ┌───────────────▼───────────────────┐  │
-│  │  Server Layer (具体实现)           │  │
+│  │  Server Layer (concrete impl)      │  │
 │  │  Reader / Modifier / ...          │  │
 │  └───────────────┬───────────────────┘  │
 │                  │                       │
 │  ┌───────────────▼───────────────────┐  │
-│  │  Bridge Layer (连接核心)           │  │
-│  │  与 Rocket.Chat 核心交互           │  │
+│  │  Bridge Layer (connect to core)    │  │
+│  │  Interact with Rocket.Chat core    │  │
 │  └───────────────────────────────────┘  │
 └─────────────────────────────────────────┘
 ```
 
-### 5.2 沙箱环境
+### 5.2 Sandbox Environment
 
-- 基于 **Node.js VM 模块**创建隔离上下文
-- App 代码在沙箱中运行，不能直接访问核心系统
-- 通过定义好的 API 接口（IRead、IModify、IHttp 等）与核心交互
-- 安全隔离，防止恶意 App 影响系统稳定
+- Create isolated context based on **Node.js VM module**
+- App code runs in sandbox, cannot directly access core system
+- Interact with core via well-defined API interfaces (IRead, IModify, IHttp, etc.)
+- Security isolation, prevent malicious Apps from affecting system stability
 
-### 5.3 App 能力
+### 5.3 App Capabilities
 
-| 能力 | 说明 |
-|------|------|
-| 斜杠命令 | 注册自定义 /command |
-| 消息处理 | 拦截和修改消息 |
-| API 端点 | 注册自定义 HTTP 端点 |
-| 定时任务 | 注册 cron 任务 |
-| UI Kit | 构建交互式消息组件 |
-| 外部 HTTP | 调用外部 API |
-| 事件监听 | 监听消息发送、用户加入等事件 |
+| Capability | Description |
+|-----------|-------------|
+| Slash commands | Register custom /command |
+| Message processing | Intercept and modify messages |
+| API endpoints | Register custom HTTP endpoints |
+| Scheduled tasks | Register cron tasks |
+| UI Kit | Build interactive message components |
+| External HTTP | Call external APIs |
+| Event listening | Listen to message send, user join, etc. events |
 
-### 5.4 官方 App 示例
+### 5.4 Official App Examples
 
-- WhatsApp App（全渠道集成）
+- WhatsApp App (omnichannel integration)
 - Google Calendar App
-- Matrix Bridge（联邦桥接）
-- Jira / GitLab 等第三方集成
+- Matrix Bridge (federation bridge)
+- Jira / GitLab and other third-party integrations
 
 ---
 
-## 6. 数据模型与存储
+## 6. Data Model & Storage
 
-### 6.1 MongoDB 设计
+### 6.1 MongoDB Design
 
-- **生产环境必须使用 MongoDB 副本集**（OpLog 跟踪需要）
-- Rocket.Chat 8.x 目标 MongoDB 8.0
-- 数据模型以文档为中心，适合聊天场景的灵活结构
+- **Production must use MongoDB replica set** (required for OpLog tailing)
+- Rocket.Chat 8.x targets MongoDB 8.0
+- Data model is document-centric, suitable for flexible structure in chat scenarios
 
-### 6.2 核心集合
+### 6.2 Core Collections
 
-| 集合 | 说明 |
-|------|------|
-| users | 用户账户和凭证 |
-| rooms | 聊天室（频道/私聊/讨论组） |
-| messages | 消息（核心数据） |
-| subscriptions | 用户-房间订阅关系 |
-| roles | 角色和权限 |
-| settings | 系统设置 |
-| integration_history | 集成历史 |
-| apps | 已安装的 Apps |
-| omnichannel 相关 | 全渠道客服数据 |
+| Collection | Description |
+|------------|-------------|
+| users | User accounts and credentials |
+| rooms | Chat rooms (channels/DMs/discussion groups) |
+| messages | Messages (core data) |
+| subscriptions | User-room subscription relationships |
+| roles | Roles and permissions |
+| settings | System settings |
+| integration_history | Integration history |
+| apps | Installed Apps |
+| omnichannel related | Omnichannel customer service data |
 
-### 6.3 模型抽象
+### 6.3 Model Abstraction
 
-- `@rocket.chat/model-typings` 包定义 TypeScript 接口（IUsersModel、IRoomsModel 等）
-- 模型提供 CRUD 操作抽象
-- 支持不同存储后端的实现
+- `@rocket.chat/model-typings` package defines TypeScript interfaces (IUsersModel, IRoomsModel, etc.)
+- Models provide CRUD operation abstraction
+- Supports different storage backend implementations
 
-### 6.4 文件存储
+### 6.4 File Storage
 
-| 存储方式 | 说明 |
-|---------|------|
-| 本地文件系统 | 默认，简单部署 |
-| Amazon S3 | 云存储，适合大规模 |
-| WebDAV | 网络存储协议 |
+| Storage Method | Description |
+|---------------|-------------|
+| Local filesystem | Default, simple deployment |
+| Amazon S3 | Cloud storage, suitable for large scale |
+| WebDAV | Network storage protocol |
 
 ---
 
-## 7. Omnichannel 全渠道
+## 7. Omnichannel
 
-Rocket.Chat 的差异化特色是 **Omnichannel 全渠道客服**：
+Rocket.Chat's differentiating feature is **Omnichannel customer service**:
 
-| 渠道 | 说明 |
-|------|------|
-| Web Widget | 网站嵌入式聊天组件 |
-| WhatsApp | WhatsApp Business API 集成 |
-| Facebook Messenger | Facebook 消息集成 |
-| Instagram | Instagram 私信 |
+| Channel | Description |
+|---------|-------------|
+| Web Widget | Website embedded chat component |
+| WhatsApp | WhatsApp Business API integration |
+| Facebook Messenger | Facebook message integration |
+| Instagram | Instagram direct messages |
 | Telegram | Telegram Bot |
-| Email | 邮件转工单 |
-| SMS | 短信集成 |
-| VoIP | 语音通话 |
+| Email | Email to ticket |
+| SMS | SMS integration |
+| VoIP | Voice calls |
 
-- 所有渠道的消息统一到 Rocket.Chat 界面
-- 人工客服 + 聊天机器人混合
-- 会话路由、分配、统计
-
----
-
-## 8. 安全与联邦
-
-### 8.1 安全特性
-
-| 特性 | 说明 |
-|------|------|
-| E2EE | 端到端加密（部分场景） |
-| SSO | SAML、OAuth、LDAP/AD |
-| RBAC | 细粒度角色权限 |
-| 审计 | 操作审计日志 |
-| 合规 | 数据保留策略、合规导出 |
-| 气隙部署 | 支持隔离网络环境 |
-
-### 8.2 Matrix 联邦
-
-- 支持通过 **Matrix 协议**与其他平台联邦通信
-- Rocket.Chat 可作为 Matrix homeserver 或桥接
-- 跨平台消息互通
+- All channel messages unified into Rocket.Chat interface
+- Human agent + chatbot hybrid
+- Conversation routing, assignment, statistics
 
 ---
 
-## 9. 设计原则与权衡
+## 8. Security & Federation
 
-| 设计决策 | 选择 | 权衡 |
-|---------|------|------|
-| **Meteor 起步** | 全栈框架，快速开发 | 与 Meteor 耦合深，微服务拆分困难 |
-| **MongoDB OpLog 实时** | 数据库级变更跟踪 | 依赖 MongoDB 副本集，StreamHub 单实例瓶颈 |
-| **DDP 协议** | Meteor 标准实时协议 | 非通用标准，学习成本高 |
-| **渐进式微服务** | 逐步拆分，不一次性重构 | 过渡阶段架构复杂，单体+微服务混合 |
-| **Apps Engine VM 沙箱** | Node.js VM 隔离 | 性能不如原生，但安全隔离好 |
-| **MongoDB 中心化** | 所有数据存 MongoDB | 非关系型，复杂查询受限 |
+### 8.1 Security Features
 
----
+| Feature | Description |
+|---------|-------------|
+| E2EE | End-to-end encryption (some scenarios) |
+| SSO | SAML, OAuth, LDAP/AD |
+| RBAC | Fine-grained role permissions |
+| Audit | Operation audit logs |
+| Compliance | Data retention policies, compliance exports |
+| Air-gapped deployment | Supports isolated network environments |
 
-## 10. 对 CBOL 项目的参考价值
+### 8.2 Matrix Federation
 
-### 10.1 架构层面
-
-| Rocket.Chat 设计 | CBOL 可借鉴 |
-|-----------------|------------|
-| 渐进式微服务演进 | 从单体逐步拆分，不追求一步到位 |
-| NATS 微服务总线 | 服务间通信和服务发现 |
-| StreamHub 实时分发 | 统一的实时事件分发层 |
-| 无状态服务设计 | Authorization/Account/Presence 均可水平扩展 |
-
-### 10.2 实时通信层面
-
-| Rocket.Chat 设计 | CBOL 可借鉴 |
-|-----------------|------------|
-| DDP 订阅-推送模式 | 客户端订阅数据集合，服务端增量推送 |
-| MongoDB OpLog 尾部跟踪 | 数据库变更驱动实时更新（如用 MySQL binlog） |
-| REST + WebSocket 双轨 | 非实时用 REST，实时用 WebSocket |
-| 打字指示器/在线状态 | Presence 服务独立部署 |
-
-### 10.3 可扩展性层面
-
-| Rocket.Chat 设计 | CBOL 可借鉴 |
-|-----------------|------------|
-| Apps Engine 三层架构 | Definition→Server→Bridge 的插件设计模式 |
-| VM 沙箱隔离 | 第三方代码安全执行 |
-| 事件钩子机制 | 消息发送/用户加入等事件可扩展 |
-| UI Kit 交互组件 | 富交互消息格式 |
-
-### 10.4 业务层面
-
-| Rocket.Chat 设计 | CBOL 可借鉴 |
-|-----------------|------------|
-| Omnichannel 全渠道 | 接回话/回话转发场景的多渠道统一 |
-| 人工+机器人混合 | AI 处理 + 人工转接的流程设计 |
-| Matrix 联邦 | 跨系统消息互通 |
+- Supports federated communication with other platforms via **Matrix protocol**
+- Rocket.Chat can act as Matrix homeserver or bridge
+- Cross-platform message interoperability
 
 ---
 
-## 11. 参考资料
+## 9. Design Principles & Trade-offs
+
+| Design Decision | Choice | Trade-off |
+|----------------|--------|-----------|
+| **Meteor start** | Full-stack framework, rapid development | Deep coupling with Meteor, difficult microservice split |
+| **MongoDB OpLog real-time** | Database-level change tracking | Depends on MongoDB replica set, StreamHub single-instance bottleneck |
+| **DDP protocol** | Meteor standard real-time protocol | Not universal standard, high learning curve |
+| **Gradual microservices** | Split gradually, no one-time refactoring | Transition phase architecture complex, monolith+microservices hybrid |
+| **Apps Engine VM sandbox** | Node.js VM isolation | Performance not as good as native, but good security isolation |
+| **MongoDB-centric** | All data in MongoDB | Non-relational, complex queries limited |
+
+---
+
+## 10. Reference Value for CBOL Project
+
+### 10.1 Architecture Level
+
+| Rocket.Chat Design | CBOL Can Learn |
+|-------------------|---------------|
+| Gradual microservices evolution | Split from monolith gradually, don't pursue one-step completion |
+| NATS microservice bus | Inter-service communication and service discovery |
+| StreamHub real-time distribution | Unified real-time event distribution layer |
+| Stateless service design | Authorization/Account/Presence all horizontally scalable |
+
+### 10.2 Real-time Communication Level
+
+| Rocket.Chat Design | CBOL Can Learn |
+|-------------------|---------------|
+| DDP subscription-push model | Client subscribes to data collections, server incremental push |
+| MongoDB OpLog tailing | Database change-driven real-time updates (e.g., MySQL binlog) |
+| REST + WebSocket dual track | Non-real-time uses REST, real-time uses WebSocket |
+| Typing indicators/presence | Presence service independently deployed |
+
+### 10.3 Extensibility Level
+
+| Rocket.Chat Design | CBOL Can Learn |
+|-------------------|---------------|
+| Apps Engine three-layer architecture | Definition->Server->Bridge plugin design pattern |
+| VM sandbox isolation | Third-party code secure execution |
+| Event hook mechanism | Message send/user join etc. events extensible |
+| UI Kit interactive components | Rich interactive message format |
+
+### 10.4 Business Level
+
+| Rocket.Chat Design | CBOL Can Learn |
+|-------------------|---------------|
+| Omnichannel | Multi-channel unification for conversation handoff/forwarding scenarios |
+| Human + bot hybrid | AI processing + human transfer workflow design |
+| Matrix federation | Cross-system message interoperability |
+
+---
+
+## 11. References
 
 - GitHub: https://github.com/RocketChat/Rocket.Chat
-- 开发者文档: https://developer.rocket.chat
-- 架构与组件: https://developer.rocket.chat/docs/architecture-and-components
-- 服务端架构: https://developer.rocket.chat/docs/server-architecture
-- 微服务部署: https://docs.rocket.chat/deploy/scaling/microservices
+- Developer docs: https://developer.rocket.chat
+- Architecture and components: https://developer.rocket.chat/docs/architecture-and-components
+- Server architecture: https://developer.rocket.chat/docs/server-architecture
+- Microservices deployment: https://docs.rocket.chat/deploy/scaling/microservices
 - Apps Engine: https://developer.rocket.chat/apps-engine
-- DDP 协议: https://github.com/meteor/meteor/blob/devel/packages/ddp/DDP.md
+- DDP protocol: https://github.com/meteor/meteor/blob/devel/packages/ddp/DDP.md
 
 ---
 
-*分析日期：2026-08-18*
+*Analysis date: 2026-08-18*

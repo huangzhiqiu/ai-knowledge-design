@@ -86,24 +86,24 @@ Used for business data change awareness (messages, friend requests, group update
 
 ## Open Source Project Sync Mechanisms
 
-### Matrix: /sync 增量长轮询
+### Matrix: /sync Incremental Long Polling
 
-Matrix 的客户端同步机制是**基于 token 的增量长轮询**，设计精巧且兼容各种网络环境。
+Matrix's client sync mechanism is **token-based incremental long polling**, elegantly designed and compatible with all network environments.
 
-**核心流程：**
+**Core flow:**
 
 ```
-1. 首次同步：GET /_matrix/client/v3/sync (无 since 参数)
-   → 返回全量状态 + next_batch token
+1. Initial sync: GET /_matrix/client/v3/sync (no since param)
+   -> returns full state + next_batch token
 
-2. 增量同步：GET /_matrix/client/v3/sync?since={token}&timeout=30000
-   → 服务器挂起连接，直到有新事件或超时(30s)
-   → 返回增量更新 + 新的 next_batch token
+2. Incremental sync: GET /_matrix/client/v3/sync?since={token}&timeout=30000
+   -> server holds connection until new event or timeout (30s)
+   -> returns incremental update + new next_batch token
 
-3. 重复步骤 2，实现"准实时"同步
+3. Repeat step 2 for "near real-time" sync
 ```
 
-**/sync 响应结构：**
+**/sync response structure:**
 ```json
 {
   "next_batch": "s_abc_123",
@@ -120,118 +120,118 @@ Matrix 的客户端同步机制是**基于 token 的增量长轮询**，设计�
 }
 ```
 
-**关键设计点：**
-1. **Token 机制**：`since` token 标记增量起点，服务端不需要维护客户端会话状态
-2. **长轮询**：`timeout` 参数让服务器挂起连接，有新事件立即返回，无事件则超时返回空
-3. **分类返回**：timeline（消息）、state（房间状态）、ephemeral（打字/已读）分离
-4. **过滤器**：客户端可指定 filter 参数，只接收关心的房间/事件类型
-5. **无状态服务端**：服务端不需要维护 WebSocket 连接，水平扩展简单
+**Key design points:**
+1. **Token mechanism**: `since` token marks the incremental starting point, server does not need to maintain client session state
+2. **Long polling**: `timeout` param makes server hold the connection, return immediately on new event, or return empty on timeout
+3. **Categorized response**: timeline (messages), state (room state), ephemeral (typing/receipts) separated
+4. **Filter**: client can specify filter param to only receive rooms/event types of interest
+5. **Stateless server**: server does not maintain WebSocket connections, easy horizontal scaling
 
-**为什么 Matrix 不用 WebSocket？**
-- 长轮询兼容性更好（穿透所有防火墙/代理）
-- 服务端无状态，更容易水平扩展
-- 联邦架构下，跨服务器推送复杂，拉模式更简单
-- 代价是延迟略高（每次重连有 TCP/TLS 握手开销）
+**Why doesn't Matrix use WebSocket?**
+- Long polling has better compatibility (penetrates all firewalls/proxies)
+- Stateless server, easier horizontal scaling
+- In federated architecture, cross-server push is complex, pull model is simpler
+- Trade-off: slightly higher latency (TCP/TLS handshake on each reconnect)
 
-### Rocket.Chat: DDP 订阅-推送模式
+### Rocket.Chat: DDP Subscription-Push Model
 
-Rocket.Chat 使用 Meteor 的 **DDP（Distributed Data Protocol）** over WebSocket：
+Rocket.Chat uses Meteor's **DDP (Distributed Data Protocol)** over WebSocket:
 
-**DDP 核心操作：**
+**DDP core operations:**
 ```
-客户端 → 服务端: subscribe("stream-room-messages", roomId)
-服务端 → 客户端: added / changed / removed (增量数据)
-客户端 → 服务端: method("sendMessage", message)
-服务端 → 客户端: result (方法调用结果)
-```
-
-**DDP 与 REST 的区别：**
-
-| 维度 | REST + 轮询 | DDP over WebSocket |
-|------|------------|-------------------|
-| 连接 | 短连接，每次请求新建 | 持久连接 |
-| 数据获取 | 客户端主动拉 | 服务端主动推 |
-| 增量 | 全量或手动增量 | 自动增量（added/changed/removed） |
-| 延迟 | 轮询间隔 | 实时 |
-| 服务端状态 | 无状态 | 维护订阅状态 |
-
-**MongoDB OpLog 驱动的实时性：**
-```
-数据写入 MongoDB → OpLog 记录 → StreamHub 捕获 → DDPStreamer → WebSocket 推送
-```
-- DDP 的实时性底层依赖 MongoDB OpLog 尾部跟踪
-- 任何数据变更自动触发客户端更新，无需业务代码手动推送
-
-### Mattermost: WebSocket 事件 + REST 拉取
-
-Mattermost 采用 **WebSocket 推送 + REST 拉取**的混合模式：
-
-**WebSocket 事件类型：**
-- `posted` - 新消息
-- `typing` - 打字指示器
-- `user_updated` - 用户资料变更
-- `channel_updated` - 频道元数据变更
-- `status_change` - 在线状态变更
-
-**事件作用域优化（v11 永久启用）：**
-- `typing` 和 `reaction` 事件只发给**打开了对应频道/线程**的客户端
-- 不是所有频道成员都收到，减少不必要的流量
-
-**同步流程：**
-```
-1. 客户端 REST API 获取历史消息（分页拉取）
-2. WebSocket 接收实时事件
-3. 收到 posted 事件 → 增量更新本地状态
-4. 重连后 → REST 拉取断开期间的消息（按 last 时间）
+Client -> Server: subscribe("stream-room-messages", roomId)
+Server -> Client: added / changed / removed (incremental data)
+Client -> Server: method("sendMessage", message)
+Server -> Client: result (method call result)
 ```
 
-### Chat21: MQTT 主题订阅
+**DDP vs REST:**
 
-Chat21 使用 **MQTT 协议**实现实时通信：
+| Dimension | REST + Polling | DDP over WebSocket |
+|-----------|---------------|-------------------|
+| Connection | Short-lived, new per request | Persistent |
+| Data fetch | Client actively pulls | Server actively pushes |
+| Incremental | Full or manual incremental | Auto incremental (added/changed/removed) |
+| Latency | Poll interval | Real-time |
+| Server state | Stateless | Maintains subscription state |
 
-**订阅模型：**
+**MongoDB OpLog-driven real-time:**
 ```
-客户端订阅自己的 inbox 主题:
+Data write to MongoDB -> OpLog record -> StreamHub captures -> DDPStreamer -> WebSocket push
+```
+- DDP real-time is fundamentally driven by MongoDB OpLog tailing
+- Any data change automatically triggers client update, no manual push in business code
+
+### Mattermost: WebSocket Events + REST Pull
+
+Mattermost uses a hybrid **WebSocket push + REST pull** model:
+
+**WebSocket event types:**
+- `posted` - new message
+- `typing` - typing indicator
+- `user_updated` - user profile change
+- `channel_updated` - channel metadata change
+- `status_change` - presence status change
+
+**Event scoping optimization (permanently enabled since v11):**
+- `typing` and `reaction` events are only sent to clients that have the corresponding channel/thread open
+- Not all channel members receive them, reducing unnecessary traffic
+
+**Sync flow:**
+```
+1. Client fetches history via REST API (paginated pull)
+2. WebSocket receives real-time events
+3. On posted event -> incrementally update local state
+4. On reconnect -> REST pull messages during disconnect (by last timestamp)
+```
+
+### Chat21: MQTT Topic Subscription
+
+Chat21 uses the **MQTT protocol** for real-time communication:
+
+**Subscription model:**
+```
+Client subscribes to own inbox topic:
   /apps/{appId}/users/{userId}/+/messages/clientadded
 
-收到消息时，从主题路径解析发送者和消息类型
+On message receipt, parse sender and message type from topic path
 ```
 
-- MQTT 是轻量级发布/订阅协议，适合移动设备
-- QoS 1（至少一次）保证消息不丢
-- Last Will 消息处理异常断开
-- 保留消息（Retained）支持新订阅者获取最新状态
+- MQTT is a lightweight pub/sub protocol, suitable for mobile devices
+- QoS 1 (at least once) guarantees no message loss
+- Last Will message handles abnormal disconnects
+- Retained messages support new subscribers getting latest state
 
-### 同步机制对比
+### Sync Mechanism Comparison
 
-| 项目 | 机制 | 传输 | 服务端状态 | 延迟 | 扩展性 |
-|------|------|------|-----------|------|--------|
-| Turms | Push 通知 + Pull 内容 | TCP/WebSocket | 有（会话） | 极低 | 高（无状态网关） |
-| Mattermost | WebSocket 事件 + REST | WebSocket + HTTP | 有（WS连接） | 低 | 中（需粘性会话） |
-| Rocket.Chat | DDP 订阅 | WebSocket | 有（订阅状态） | 低 | 中（DDPStreamer 可扩展） |
-| Matrix | /sync 长轮询 | HTTP 长轮询 | **无** | 中 | **高**（无状态） |
-| Chat21 | MQTT 主题订阅 | MQTT | 有（订阅） | 低 | 中（RabbitMQ 为中心） |
-| OpenChat | 轮询 + 更新 | HTTP 轮询 | 无 | 高 | 高（canister 并行） |
+| Project | Mechanism | Transport | Server State | Latency | Scalability |
+|---------|-----------|-----------|-------------|---------|-------------|
+| Turms | Push notification + Pull content | TCP/WebSocket | Stateful (session) | Very Low | High (stateless gateway) |
+| Mattermost | WebSocket events + REST | WebSocket + HTTP | Stateful (WS conn) | Low | Medium (sticky session needed) |
+| Rocket.Chat | DDP subscription | WebSocket | Stateful (subscription) | Low | Medium (DDPStreamer scalable) |
+| Matrix | /sync long polling | HTTP long polling | **Stateless** | Medium | **High** (stateless) |
+| Chat21 | MQTT topic subscription | MQTT | Stateful (subscription) | Low | Medium (RabbitMQ-centric) |
+| OpenChat | Poll + update | HTTP polling | Stateless | High | High (canister parallel) |
 
-### CBOL 项目同步策略建议
+### CBOL Project Sync Strategy Recommendation
 
-基于 CBOL 的接回话/回话管理/回话转发场景：
+Based on CBOL's conversation handoff / conversation management / conversation forwarding scenarios:
 
-1. **推荐 WebSocket 推送 + REST 拉取**（Mattermost 模式）
-   - 实时消息通过 WebSocket 推送
-   - 历史消息、会话列表通过 REST 分页拉取
-   - 重连后按 last_seq 增量拉取
+1. **Recommended: WebSocket push + REST pull** (Mattermost model)
+   - Real-time messages pushed via WebSocket
+   - History messages, conversation list pulled via REST pagination
+   - On reconnect, incremental pull by last_seq
 
-2. **考虑事件作用域优化**
-   - 打字指示器只推送给查看该会话的用户
-   - 减少大群的不必要推送
+2. **Consider event scoping optimization**
+   - Typing indicators only pushed to users viewing that conversation
+   - Reduce unnecessary pushes in large groups
 
-3. **如果需要极高扩展性**
-   - 参考 Matrix 的无状态长轮询模式
-   - 服务端不维护 WebSocket 连接，水平扩展更简单
-   - 代价是延迟略高
+3. **If extreme scalability is needed**
+   - Reference Matrix's stateless long polling model
+   - Server does not maintain WebSocket connections, simpler horizontal scaling
+   - Trade-off: slightly higher latency
 
-4. **如果是移动优先**
-   - 参考 Chat21 的 MQTT 模式
-   - MQTT 更省电、更适合弱网
-   - 但需要维护 MQTT broker（如 RabbitMQ+MQTT 插件或 EMQX）
+4. **If mobile-first**
+   - Reference Chat21's MQTT model
+   - MQTT is more power-efficient and better for weak networks
+   - But requires maintaining an MQTT broker (e.g., RabbitMQ+MQTT plugin or EMQX)

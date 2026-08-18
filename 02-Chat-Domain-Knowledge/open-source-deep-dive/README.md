@@ -1,36 +1,36 @@
 # Open Source Projects Deep Dive
 
-> 对优秀开源 IM 项目的深度架构分析，覆盖业务模型、架构设计、网络通信、数据存储、并发模型、设计原则等维度。
+> Deep architecture analysis of outstanding open-source IM projects, covering business models, architecture design, network communication, data storage, concurrency models, design principles, and more.
 
-## 分析文档
+## Analysis Documents
 
-| 项目 | 文档 | 语言 | 核心参考价值 |
-|------|------|------|-------------|
-| **Turms** | [turms-deep-analysis.md](./turms-deep-analysis.md) | Java | ⭐⭐⭐⭐⭐ 全异步 Netty、读扩散、极简架构、无锁并发、MongoDB 分片 |
-| **Mattermost** | [mattermost-deep-analysis.md](./mattermost-deep-analysis.md) | Go + React | ⭐⭐⭐⭐ 分层架构、插件系统(RPC独立进程)、WebSocket事件作用域、企业级安全 |
-| **Rocket.Chat** | [rocketchat-deep-analysis.md](./rocketchat-deep-analysis.md) | TypeScript + MongoDB | ⭐⭐⭐⭐ DDP协议、MongoDB OpLog实时、NATS微服务、Apps Engine沙箱、Omnichannel |
-| **Matrix/Synapse** | [matrix-synapse-deep-analysis.md](./matrix-synapse-deep-analysis.md) | Python + PostgreSQL | ⭐⭐⭐ 联邦去中心化、Event DAG、PDU/EDU/Query、状态解析v2、Olm/Megolm加密、Worker+Replication |
-| **Tiledesk/Chat21** | [tiledesk-chat21-deep-analysis.md](./tiledesk-chat21-deep-analysis.md) | Node.js + RabbitMQ/MQTT | ⭐⭐ Inbox模式(类SMTP/POP3)、RabbitMQ Observer、MQTT路径路由、JWT细粒度安全、全渠道客服、AI集成 |
-| **OpenChat** | [openchat-deep-analysis.md](./openchat-deep-analysis.md) | Rust + Svelte (ICP区块链) | ⭐ 完全上链、每用户/群组独立canister、SNS DAO治理、可验证构建、内置加密支付、Evidence Vault |
+| Project | Document | Language | Core Reference Value |
+|---------|----------|----------|---------------------|
+| **Turms** | [turms-deep-analysis.md](./turms-deep-analysis.md) | Java | ⭐⭐⭐⭐⭐ Fully async Netty, read fanout, minimalist architecture, lock-free concurrency, MongoDB sharding |
+| **Mattermost** | [mattermost-deep-analysis.md](./mattermost-deep-analysis.md) | Go + React | ⭐⭐⭐⭐ Layered architecture, plugin system (RPC independent process), WebSocket event scoping, enterprise security |
+| **Rocket.Chat** | [rocketchat-deep-analysis.md](./rocketchat-deep-analysis.md) | TypeScript + MongoDB | ⭐⭐⭐⭐ DDP protocol, MongoDB OpLog real-time, NATS microservices, Apps Engine sandbox, Omnichannel |
+| **Matrix/Synapse** | [matrix-synapse-deep-analysis.md](./matrix-synapse-deep-analysis.md) | Python + PostgreSQL | ⭐⭐⭐ Federated decentralization, Event DAG, PDU/EDU/Query, state resolution v2, Olm/Megolm encryption, Worker+Replication |
+| **Tiledesk/Chat21** | [tiledesk-chat21-deep-analysis.md](./tiledesk-chat21-deep-analysis.md) | Node.js + RabbitMQ/MQTT | ⭐⭐ Inbox pattern (SMTP/POP3-style), RabbitMQ Observer, MQTT topic routing, JWT fine-grained security, omnichannel customer service, AI integration |
+| **OpenChat** | [openchat-deep-analysis.md](./openchat-deep-analysis.md) | Rust + Svelte (ICP blockchain) | ⭐ Fully on-chain, per-user/group independent canister, SNS DAO governance, verifiable builds, built-in crypto payments, Evidence Vault |
 
-## 分析维度
+## Analysis Dimensions
 
-每个项目的深度分析覆盖以下维度：
+Each project's deep analysis covers the following dimensions:
 
-1. **项目概览** — 子项目结构、技术栈、定位
-2. **架构设计** — 整体架构、设计哲学、无状态/多活
-3. **模块结构** — 核心模块职责、依赖关系
-4. **网络通信** — 协议栈、编码方式、心跳、Reactive 模型
-5. **会话管理** — Session 设计、多设备、登录流程
-6. **消息模型与存储** — 读/写扩散、索引设计、冷热分离
-7. **并发与性能** — 线程模型、无锁设计、内存优化
-8. **安全设计** — 限流、黑名单、防 DDoS
-9. **可观测性** — 日志、监控、数据分析
-10. **对 CBOL 项目的参考价值** — 可借鉴的设计点
+1. **Project Overview** — sub-project structure, tech stack, positioning
+2. **Architecture Design** — overall architecture, design philosophy, stateless/multi-active
+3. **Module Structure** — core module responsibilities, dependency relationships
+4. **Network Communication** — protocol stack, encoding, heartbeat, Reactive model
+5. **Session Management** — Session design, multi-device, login flow
+6. **Message Model & Storage** — read/write fanout, index design, hot/cold separation
+7. **Concurrency & Performance** — thread model, lock-free design, memory optimization
+8. **Security Design** — rate limiting, blacklist, DDoS prevention
+9. **Observability** — logging, monitoring, data analytics
+10. **Reference Value for CBOL Project** — actionable design points
 
-## 分析方法
+## Analysis Methodology
 
-参考 `architecture-analyzer-skill` 和 `codebase-architecture-analyst` 的分析流程：
-- Detect：识别技术栈和项目结构
-- Explore：系统扫描源码、配置、文档
-- Synthesize：整理为结构化分析文档
+Reference the analysis flow of `architecture-analyzer-skill` and `codebase-architecture-analyst`:
+- Detect: identify tech stack and project structure
+- Explore: systematically scan source code, configuration, documentation
+- Synthesize: organize into structured analysis documents

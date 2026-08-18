@@ -15,7 +15,7 @@
 
 > Star counts approximate as of 2026-08. Click project name for GitHub source.
 >
-> 📖 **详细参考**（源码目录结构、架构特点、参考优先级）见 [../05-References/open-source-projects.md](../05-References/open-source-projects.md)
+> 📖 **Detailed reference** (source directory structure, architecture characteristics, reference priority) see [../05-References/open-source-projects.md](../05-References/open-source-projects.md)
 
 ## Sub-directories
 
@@ -47,7 +47,7 @@
 ### Open Source Deep Dive
 | Directory | Description |
 |-----------|-------------|
-| [open-source-deep-dive/](./open-source-deep-dive/) | 深度架构分析：Turms（Java/Netty/读扩散/无锁并发），更多项目待分析 |
+| [open-source-deep-dive/](./open-source-deep-dive/) | Deep architecture analysis: Turms, Mattermost, Rocket.Chat, Matrix/Synapse, Tiledesk/Chat21, OpenChat |
 
 ## Domain Model Index
 

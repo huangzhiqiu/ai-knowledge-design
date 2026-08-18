@@ -172,41 +172,41 @@ The WebSocket Protocol standard. Key sections: handshake (Section 4), framing (S
 
 ## Open Source Project Protocol Designs
 
-### Turms: TCP + WebSocket 双协议 + 自定义二进制编码
+### Turms: TCP + WebSocket Dual Protocol + Custom Binary Encoding
 
-Turms 同时支持 TCP 和 WebSocket，客户端通信使用 **Protobuf**，服务间使用**自定义二进制 RPC**。
+Turms supports both TCP and WebSocket, with **Protobuf** for client communication and **custom binary RPC** for inter-service communication.
 
-**TCP 协议帧格式：**
+**TCP protocol frame format:**
 ```
 ┌──────────────┬──────────────────────┐
 │  Length      │  Protobuf Payload     │
-│  (ZigZag)    │  (序列化后的消息)      │
+│  (ZigZag)    │  (serialized message) │
 └──────────────┴──────────────────────┘
 ```
-- Length 使用 **ZigZag 变长编码**，小消息只占 1-2 字节
-- Payload 是 Protobuf 序列化的业务消息
-- 比 WebSocket 帧头更紧凑（WebSocket 帧头 2-14 字节）
+- Length uses **ZigZag variable-length encoding**, small messages take only 1-2 bytes
+- Payload is Protobuf-serialized business message
+- More compact than WebSocket frame header (WebSocket frame header is 2-14 bytes)
 
-**WebSocket 协议：**
-- 使用 WebSocket **二进制帧**（opcode 0x2）
-- Payload 同样是 Protobuf
-- 浏览器客户端使用 WebSocket，原生客户端使用 TCP
+**WebSocket protocol:**
+- Uses WebSocket **binary frames** (opcode 0x2)
+- Payload is also Protobuf
+- Browser clients use WebSocket, native clients use TCP
 
-**心跳机制：**
-- TCP：发送单字节 `[0]` 作为心跳（极致轻量）
-- WebSocket：使用标准 Ping/Pong 帧
-- 心跳超时后断开连接
+**Heartbeat mechanism:**
+- TCP: send single byte `[0]` as heartbeat (extremely lightweight)
+- WebSocket: use standard Ping/Pong frames
+- Disconnect on heartbeat timeout
 
-**服务间 RPC：**
-- Gateway ↔ Service 使用自定义二进制协议（非 Protobuf）
-- 极致优化，零冗余字段
-- 基于 Netty 的 Reactive 异步调用
+**Inter-service RPC:**
+- Gateway ↔ Service uses custom binary protocol (not Protobuf)
+- Extremely optimized, zero redundant fields
+- Reactive async calls based on Netty
 
-### Mattermost: JSON over WebSocket + 事件作用域
+### Mattermost: JSON over WebSocket + Event Scoping
 
-Mattermost 使用 **JSON 文本帧** over WebSocket：
+Mattermost uses **JSON text frames** over WebSocket:
 
-**事件格式：**
+**Event format:**
 ```json
 {
   "event": "posted",
@@ -215,103 +215,103 @@ Mattermost 使用 **JSON 文本帧** over WebSocket：
 }
 ```
 
-**事件类型：** `posted`, `typing`, `user_updated`, `channel_updated`, `status_change`
+**Event types:** `posted`, `typing`, `user_updated`, `channel_updated`, `status_change`
 
-**关键优化：事件作用域（v11 永久启用）**
-- `typing` 和 `reaction` 事件只广播给**打开了对应频道/线程**的客户端
-- 通过 `broadcast` 字段控制事件分发范围
-- 减少大群的不必要流量
+**Key optimization: Event scoping (permanently enabled since v11)**
+- `typing` and `reaction` events are only broadcast to clients that have the corresponding channel/thread open
+- Control event distribution scope via `broadcast` field
+- Reduce unnecessary traffic in large groups
 
-**重连机制：**
-- 客户端自动重连，指数退避
-- Redux middleware 处理 WebSocket 事件，自动更新 store
-- 重连后通过 REST API 拉取断开期间的消息
+**Reconnection mechanism:**
+- Client auto-reconnects with exponential backoff
+- Redux middleware handles WebSocket events, auto-updates store
+- After reconnect, pull messages during disconnect via REST API
 
 ### Rocket.Chat: DDP over WebSocket
 
-Rocket.Chat 使用 Meteor 的 **DDP（Distributed Data Protocol）** over WebSocket：
+Rocket.Chat uses Meteor's **DDP (Distributed Data Protocol)** over WebSocket:
 
-**DDP 消息类型：**
+**DDP message types:**
 ```
-客户端 → 服务端:
-  connect     - 建立 DDP 会话
-  subscribe   - 订阅数据集合 (如 stream-room-messages)
-  method      - 调用服务端方法 (如 sendMessage)
+Client -> Server:
+  connect     - establish DDP session
+  subscribe   - subscribe to data collection (e.g., stream-room-messages)
+  method      - call server method (e.g., sendMessage)
 
-服务端 → 客户端:
-  connected   - 会话建立确认
-  added       - 新增数据
-  changed     - 数据变更
-  removed     - 数据删除
-  result      - method 调用结果
-  ready       - 订阅数据就绪
+Server -> Client:
+  connected   - session established confirmation
+  added       - new data
+  changed     - data changed
+  removed     - data deleted
+  result      - method call result
+  ready       - subscription data ready
 ```
 
-**DDP 的优势：**
-- 自动增量同步：服务端维护客户端订阅的数据视图，变更时自动推送 added/changed/removed
-- 客户端不需要手动管理增量逻辑
-- 与 MongoDB OpLog 天然配合：数据库变更自动触发 DDP 推送
+**DDP advantages:**
+- Auto incremental sync: server maintains client's subscribed data view, auto-pushes added/changed/removed on changes
+- Client doesn't need to manually manage incremental logic
+- Naturally integrates with MongoDB OpLog: database changes auto-trigger DDP pushes
 
-**DDP 的劣势：**
-- 协议非通用标准，学习成本高
-- 服务端需维护订阅状态，水平扩展复杂
-- DDPStreamer 服务负责管理所有 DDP 连接
+**DDP disadvantages:**
+- Protocol is not a universal standard, high learning curve
+- Server needs to maintain subscription state, complex horizontal scaling
+- DDPStreamer service manages all DDP connections
 
-### Matrix: 不用 WebSocket，用 HTTP 长轮询
+### Matrix: No WebSocket, Uses HTTP Long Polling
 
-Matrix 明确**不使用 WebSocket**，而是用 `/sync` HTTP 长轮询：
+Matrix explicitly **does not use WebSocket**, instead uses `/sync` HTTP long polling:
 
 ```
 GET /_matrix/client/v3/sync?since={token}&timeout=30000
 ```
 
-**选择长轮询的原因：**
-1. 联邦架构下，跨服务器推送复杂，拉模式更简单
-2. 服务端无状态，水平扩展容易
-3. 兼容性好，穿透所有防火墙/代理
-4. 不需要维护持久连接，适合大规模部署
+**Reasons for choosing long polling:**
+1. In federated architecture, cross-server push is complex, pull model is simpler
+2. Stateless server, easy horizontal scaling
+3. Better compatibility, penetrates all firewalls/proxies
+4. No need to maintain persistent connections, suitable for large-scale deployment
 
-**代价：**
-- 每次轮询有 TCP/TLS 握手开销（HTTP/2 可缓解）
-- 延迟比 WebSocket 略高
+**Trade-off:**
+- Each poll has TCP/TLS handshake overhead (HTTP/2 can mitigate)
+- Slightly higher latency than WebSocket
 
 ### Chat21: MQTT over WebSocket/TCP
 
-Chat21 使用 **MQTT 协议**而非原生 WebSocket：
+Chat21 uses the **MQTT protocol** rather than native WebSocket:
 
-- 客户端通过 MQTT over WebSocket（浏览器）或 MQTT over TCP（原生）连接 RabbitMQ
-- 消息通过 MQTT 主题路由，而非自定义协议
-- 利用 RabbitMQ 的 JWT 插件实现主题级权限控制
-- MQTT QoS 1 保证消息至少送达一次
+- Clients connect to RabbitMQ via MQTT over WebSocket (browser) or MQTT over TCP (native)
+- Messages routed via MQTT topics, not custom protocol
+- Uses RabbitMQ JWT plugin for topic-level permission control
+- MQTT QoS 1 guarantees at-least-once delivery
 
-### 协议选择对比
+### Protocol Selection Comparison
 
-| 项目 | 传输协议 | 序列化 | 心跳 | 实时机制 |
-|------|---------|--------|------|---------|
-| Turms | TCP + WebSocket | Protobuf | TCP: 单字节[0], WS: Ping/Pong | 全异步推送 |
-| Mattermost | WebSocket | JSON | 应用级 ping/pong | WebSocket 事件推送 |
-| Rocket.Chat | WebSocket (DDP) | JSON/ EJSON | DDP 内置 | DDP 订阅 + OpLog |
-| Matrix | HTTP 长轮询 | JSON | 无（timeout 机制） | /sync 增量返回 |
-| Chat21 | MQTT (WS/TCP) | JSON | MQTT PINGREQ | MQTT 主题推送 |
-| OpenChat | HTTP 轮询 | Candid/JSON | 无 | 客户端轮询 canister |
+| Project | Transport Protocol | Serialization | Heartbeat | Real-time Mechanism |
+|---------|-------------------|--------------|-----------|-------------------|
+| Turms | TCP + WebSocket | Protobuf | TCP: single byte[0], WS: Ping/Pong | Fully async push |
+| Mattermost | WebSocket | JSON | App-level ping/pong | WebSocket event push |
+| Rocket.Chat | WebSocket (DDP) | JSON/EJSON | DDP built-in | DDP subscription + OpLog |
+| Matrix | HTTP long polling | JSON | None (timeout mechanism) | /sync incremental return |
+| Chat21 | MQTT (WS/TCP) | JSON | MQTT PINGREQ | MQTT topic push |
+| OpenChat | HTTP polling | Candid/JSON | None | Client polls canister |
 
-### CBOL 项目协议建议
+### CBOL Project Protocol Recommendation
 
-基于 CBOL 的 Java 技术栈和接回话场景：
+Based on CBOL's Java tech stack and conversation handoff scenarios:
 
-1. **推荐 WebSocket + Protobuf 二进制帧**
-   - 参考 Turms：浏览器用 WebSocket 二进制帧，原生客户端可用 TCP
-   - Protobuf 比 JSON 小 30-50%，序列化更快
-   - Java 有成熟的 Netty + Protobuf 生态
+1. **Recommended: WebSocket + Protobuf binary frames**
+   - Reference Turms: browser uses WebSocket binary frames, native clients can use TCP
+   - Protobuf is 30-50% smaller than JSON, faster serialization
+   - Java has mature Netty + Protobuf ecosystem
 
-2. **心跳**
-   - WebSocket 标准 Ping/Pong 即可，不需要应用级心跳
-   - 超时 90s（3 次 missed ping）断开
+2. **Heartbeat**
+   - WebSocket standard Ping/Pong is sufficient, no need for app-level heartbeat
+   - Timeout 90s (3 missed pings) to disconnect
 
-3. **如果需要极高扩展性**
-   - 考虑 Matrix 风格的无状态长轮询
-   - 但 CBOL 是中心化部署，WebSocket 更合适
+3. **If extreme scalability is needed**
+   - Consider Matrix-style stateless long polling
+   - But CBOL is centralized deployment, WebSocket is more appropriate
 
-4. **避免 DDP**
-   - DDP 与 Meteor 强绑定，Java 生态无成熟实现
-   - 自定义 JSON/Protobuf 协议更可控
+4. **Avoid DDP**
+   - DDP is tightly coupled with Meteor, no mature implementation in Java ecosystem
+   - Custom JSON/Protobuf protocol is more controllable

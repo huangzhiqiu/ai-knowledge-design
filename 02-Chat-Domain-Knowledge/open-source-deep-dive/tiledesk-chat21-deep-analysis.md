@@ -1,62 +1,62 @@
-# Tiledesk/Chat21 深度架构分析
+# Tiledesk/Chat21 Deep Architecture Analysis
 
-> 来源：[Tiledesk](https://github.com/Tiledesk) / [Chat21](https://github.com/chat21) ⭐ ~0.5k (多仓库) | MIT | Node.js + Angular
-> 官方文档：https://developer.tiledesk.com
-> 定位：全栈开源实时聊天 + AI 客服平台，内置聊天机器人
+> Source: [Tiledesk](https://github.com/Tiledesk) / [Chat21](https://github.com/chat21) ⭐ ~0.5k (multi-repo) | MIT | Node.js + Angular
+> Official docs: https://developer.tiledesk.com
+> Positioning: Full-stack open-source real-time chat + AI customer service platform, with built-in chatbot
 
 ---
 
-## 1. 项目概览
+## 1. Project Overview
 
-Tiledesk 是一个开源的全渠道实时聊天平台，内置 AI 聊天机器人，定位为 Intercom/Zendesk/Tawk 的开源替代。其消息引擎核心是 **Chat21**——一个从 Firebase 演进到 RabbitMQ+MQTT 的轻量级实时消息系统。
+Tiledesk is an open-source omnichannel real-time chat platform with built-in AI chatbot, positioned as an open-source alternative to Intercom/Zendesk/Tawk. Its messaging engine core is **Chat21** — a lightweight real-time messaging system evolved from Firebase to RabbitMQ+MQTT.
 
-### 多仓库架构
+### Multi-Repo Architecture
 
 ```
-Tiledesk 生态
-├── Tiledesk Server          # 核心服务端 (Node.js + Express)
-├── Tiledesk Dashboard       # 管理后台 (Angular)
+Tiledesk ecosystem
+├── Tiledesk Server          # Core server (Node.js + Express)
+├── Tiledesk Dashboard       # Admin backend (Angular)
 ├── Tiledesk Deployment      # Helm + K8s / Docker Compose
-├── Tiledesk Android/iOS     # 移动 App
-└── Chat21 (消息引擎)
-    ├── chat21-server        # RabbitMQ observer (消息中转)
+├── Tiledesk Android/iOS     # Mobile apps
+└── Chat21 (messaging engine)
+    ├── chat21-server        # RabbitMQ observer (message relay)
     ├── chat21-http-server   # RabbitMQ REST API
-    ├── chat21-cloud-functions # Firebase 云函数 (旧引擎)
-    ├── chat21-web-widget    # 网站聊天组件 (Angular)
-    ├── chat21-ionic         # 客服端 (Ionic + Angular)
+    ├── chat21-cloud-functions # Firebase cloud functions (legacy engine)
+    ├── chat21-web-widget    # Website chat widget (Angular)
+    ├── chat21-ionic         # Agent console (Ionic + Angular)
     └── SDKs (Node/Android/iOS)
 ```
 
-### 技术栈
+### Tech Stack
 
-| 层级 | 技术 |
-|------|------|
-| 后端 | Node.js + Express |
-| 前端 | Angular (Dashboard + Widget) |
-| 数据库 | MongoDB |
-| 实时消息 | RabbitMQ + MQTT（新引擎）/ Firebase（旧引擎） |
-| 缓存/同步 | Redis |
-| 向量存储 | Qdrant（AI 知识库） |
-| LLM | vLLM / Ollama（开源大模型） |
-| 部署 | Docker Compose / Kubernetes (Helm) |
+| Layer | Technology |
+|-------|-----------|
+| Backend | Node.js + Express |
+| Frontend | Angular (Dashboard + Widget) |
+| Database | MongoDB |
+| Real-time messaging | RabbitMQ + MQTT (new engine) / Firebase (legacy) |
+| Cache/sync | Redis |
+| Vector storage | Qdrant (AI knowledge base) |
+| LLM | vLLM / Ollama (open-source models self-hosted) |
+| Deployment | Docker Compose / Kubernetes (Helm) |
 
-### 双引擎支持
+### Dual Engine Support
 
-| 引擎 | 传输 | 特点 |
-|------|------|------|
-| **RabbitMQ + MQTT**（推荐） | MQTT over WebSocket/TCP | 自托管、inbox 模式、细粒度 JWT 安全 |
-| **Firebase**（旧） | Firebase Realtime DB + WebSocket | 托管、云函数、依赖 Google 云 |
+| Engine | Transport | Characteristics |
+|--------|-----------|----------------|
+| **RabbitMQ + MQTT** (recommended) | MQTT over WebSocket/TCP | Self-hosted, inbox pattern, fine-grained JWT security |
+| **Firebase** (legacy) | Firebase Realtime DB + WebSocket | Managed, cloud functions, depends on Google Cloud |
 
 ---
 
-## 2. Chat21 消息引擎核心设计
+## 2. Chat21 Messaging Engine Core Design
 
-### 2.1 Inbox 模式（核心创新）
+### 2.1 Inbox Pattern (Core Innovation)
 
-Chat21 的核心设计是 **Inbox 模式**，类似电子邮件的 SMTP/POP3：
+Chat21's core design is the **Inbox pattern**, similar to email's SMTP/POP3:
 
 ```
-发件人客户端                    Chat21 Server                  收件人客户端
+Sender client                    Chat21 Server                  Recipient client
     │                              (Observer)                      │
     │  MQTT publish                 │                              │
     │  to /outgoing path            │                              │
@@ -68,68 +68,69 @@ Chat21 的核心设计是 **Inbox 模式**，类似电子邮件的 SMTP/POP3：
     │                              │                              │  to own inbox
 ```
 
-**关键路径设计**：
+**Key path design**:
 
-| 方向 | MQTT Topic 路径 |
-|------|----------------|
-| 发件人写出 | `/apps/{appId}/users/{senderId}/{recipientId}/messages/outgoing` |
-| 收件人接收 | `/apps/{appId}/users/{recipientId}/{senderId}/messages/clientadded` |
+| Direction | MQTT Topic Path |
+|-----------|----------------|
+| Sender writes | `/apps/{appId}/users/{senderId}/{recipientId}/messages/outgoing` |
+| Recipient receives | `/apps/{appId}/users/{recipientId}/{senderId}/messages/clientadded` |
 
-### 2.2 为什么用 Inbox 模式？
+### 2.2 Why Inbox Pattern?
 
-| 优势 | 说明 |
-|------|------|
-| **隐私/安全** | 消息通过 observer 中转，可实施策略（拉黑、过滤、审计） |
-| **持久化** | observer 可在转发前持久化消息 |
-| **细粒度权限** | RabbitMQ JWT Token 限制用户只能读写自己的路径 |
-| **解耦** | 发件人不需要知道收件人的连接状态 |
-| **离线消息** | 消息写入收件人 inbox，上线后自动接收 |
+| Advantage | Description |
+|-----------|-------------|
+| **Privacy/security** | Messages relayed through observer, can enforce policies (blocking, filtering, auditing) |
+| **Persistence** | Observer can persist messages before forwarding |
+| **Fine-grained permissions** | RabbitMQ JWT Token restricts users to read/write only their own paths |
+| **Decoupling** | Sender doesn't need to know recipient's connection status |
+| **Offline messages** | Messages written to recipient inbox, auto-delivered when online |
 
-> **类比**：就像电子邮件——你把邮件发到自己的 SMTP 服务器（outgoing），服务器转发到收件人的邮件服务器（inbox），收件人通过 POP3 收取。
+> **Analogy**: Just like email — you send mail to your own SMTP server (outgoing), server forwards to recipient's mail server (inbox), recipient retrieves via POP3.
 
-### 2.3 Chat21 Server（RabbitMQ Observer）
+### 2.3 Chat21 Server (RabbitMQ Observer)
 
-- 一个简单的 **RabbitMQ 消息观察者**
-- 订阅所有用户的 `/outgoing` 路径
-- 收到消息后，通过 AMQP publish 转发到对应收件人的 `/clientadded` 路径
-- 同时触发 webhook 通知 Tiledesk Server
-- 轻量级，无状态，可水平扩展
+- A simple **RabbitMQ message observer**
+- Subscribes to all users' `/outgoing` paths
+- On receiving message, forwards via AMQP publish to corresponding recipient's `/clientadded` path
+- Simultaneously triggers webhook to notify Tiledesk Server
+- Lightweight, stateless, horizontally scalable
 
-### 2.4 安全机制（RabbitMQ JWT Token）
+### 2.4 Security Mechanism (RabbitMQ JWT Token)
 
-- 每个用户获得 JWT Token
-- Token 限定用户只能在**自己的路径**上读写
-- 用户无法直接读写其他用户的 inbox
-- observer 是唯一能跨路径转发的组件
+- Each user gets a JWT Token
+- Token restricts user to read/write only on **own paths**
+- Users cannot directly read/write other users' inboxes
+- Observer is the only component that can cross-path forward
 
 ```
-用户 A 的 Token 权限：
-  ✓ 读: /apps/tilechat/users/A/# (自己的所有路径)
-  ✓ 写: /apps/tilechat/users/A/# (自己的所有路径)
-  ✗ 读: /apps/tilechat/users/B/# (他人路径)
-  ✗ 写: /apps/tilechat/users/B/# (他人路径)
+User A's Token permissions:
+  ✓ Read: /apps/tilechat/users/A/# (all own paths)
+  ✓ Write: /apps/tilechat/users/A/# (all own paths)
+  ✗ Read: /apps/tilechat/users/B/# (other's paths)
+  ✗ Write: /apps/tilechat/users/B/# (other's paths)
 ```
 
 ---
 
-## 3. 整体架构
+## 3. Overall Architecture
 
-### 3.1 组件交互
+### 3.1 Component Interaction
 
 ```
 ┌──────────────┐     Webhook (HTTP POST)      ┌──────────────────┐
 │              │◄─────────────────────────────│                  │
 │ Tiledesk     │                              │ Chat21 Server    │
 │ Server       │                              │ (RabbitMQ        │
-│ (业务逻辑)    │─────────────────────────────►│ Observer)        │
-│              │     REST API (chat21-http)    │                  │
+│ (business    │─────────────────────────────►│ Observer)        │
+│  logic)      │     REST API (chat21-http)    │                  │
 └──────┬───────┘                              └────────┬─────────┘
        │                                               │
        │ MongoDB                                       │ AMQP
        ▼                                               ▼
 ┌──────────────┐                              ┌──────────────────┐
 │  MongoDB     │                              │  RabbitMQ        │
-│  (业务数据)   │                              │  (消息队列+MQTT)  │
+│  (business   │                              │  (message queue  │
+│   data)      │                              │   + MQTT)        │
 └──────────────┘                              └────────┬─────────┘
                                                        │ MQTT
                                           ┌────────────┼────────────┐
@@ -140,194 +141,194 @@ Chat21 的核心设计是 **Inbox 模式**，类似电子邮件的 SMTP/POP3：
                                     └─────────┘  └─────────┘  └─────────┘
 ```
 
-### 3.2 Chat21 与 Tiledesk 的通信
+### 3.2 Chat21 & Tiledesk Communication
 
-- **Chat21 → Tiledesk**：通过 webhook，Chat21 事件（新消息、新成员加入群组等）通过 HTTP POST 发送到 Tiledesk 的 webhook endpoint
-- **Tiledesk → Chat21**：通过 Chat21 HTTP Server 的 REST API 发送消息、创建群组等
+- **Chat21 → Tiledesk**: via webhook, Chat21 events (new message, new member joins group, etc.) sent via HTTP POST to Tiledesk's webhook endpoint
+- **Tiledesk → Chat21**: via Chat21 HTTP Server's REST API to send messages, create groups, etc.
 
-### 3.3 Tiledesk Server 职责
+### 3.3 Tiledesk Server Responsibilities
 
-| 模块 | 职责 |
-|------|------|
-| 项目管理 | 多租户/项目隔离 |
-| 用户管理 | 访客、客服、管理员 |
-| 部门/路由 | 会话分配、路由规则 |
-| 聊天机器人 | 内置 AI bot（Rasa/原生/外部 LLM） |
-| 全渠道 | Web Widget、WhatsApp、Facebook、Telegram、Email |
-| 分析统计 | 会话统计、满意度、响应时间 |
-| CRM | 联系人管理、标签 |
-| Webhook/API | 第三方集成 |
+| Module | Responsibility |
+|--------|---------------|
+| Project management | Multi-tenant/project isolation |
+| User management | Visitors, agents, admins |
+| Department/routing | Conversation assignment, routing rules |
+| Chatbot | Built-in AI bot (Rasa/native/external LLM) |
+| Omnichannel | Web Widget, WhatsApp, Facebook, Telegram, Email |
+| Analytics | Conversation stats, satisfaction, response time |
+| CRM | Contact management, tags |
+| Webhook/API | Third-party integration |
 
 ---
 
-## 4. 消息流程详解
+## 4. Message Flow Details
 
-### 4.1 发送消息（直连）
+### 4.1 Send Message (Direct)
 
 ```
-1. 客户端 A 通过 MQTT 连接 RabbitMQ
-2. A 发布消息到 /apps/tilechat/users/A/B/messages/outgoing
+1. Client A connects to RabbitMQ via MQTT
+2. A publishes message to /apps/tilechat/users/A/B/messages/outgoing
    Payload: { text: "hello", sender: "A", recipient: "B", ... }
-3. Chat21 Server (observer) 收到 outgoing 消息
-4. Observer 持久化消息（可选）
-5. Observer 通过 AMQP publish 到 /apps/tilechat/users/B/A/messages/clientadded
-6. Observer 触发 webhook → Tiledesk Server（记录业务数据、触发 bot 等）
-7. 客户端 B 订阅了自己的 inbox 路径，收到 MQTT 推送
-8. B 解码消息（路径末尾 clientadded 表示新消息到达）
+3. Chat21 Server (observer) receives outgoing message
+4. Observer persists message (optional)
+5. Observer publishes via AMQP to /apps/tilechat/users/B/A/messages/clientadded
+6. Observer triggers webhook -> Tiledesk Server (record business data, trigger bot, etc.)
+7. Client B subscribed to own inbox path, receives MQTT push
+8. B decodes message (path suffix clientadded indicates new message arrived)
 ```
 
-### 4.2 群组消息
+### 4.2 Group Messages
 
-- 群组消息类似，但 observer 需要转发给群内所有成员
-- 每个成员有自己的群组 inbox 路径
-- 支持群创建、成员加入/离开的 info message 通知
+- Group messages similar, but observer needs to forward to all group members
+- Each member has own group inbox path
+- Supports info message notifications for group creation, member join/leave
 
-### 4.3 离线消息
+### 4.3 Offline Messages
 
-- 消息写入 RabbitMQ 队列（持久化）
-- 收件人上线后通过 MQTT 订阅接收历史消息
-- 也可通过 Chat21 HTTP Server 的 REST API 拉取历史
+- Messages written to RabbitMQ queue (persistent)
+- Recipient receives history via MQTT subscription after coming online
+- Can also pull history via Chat21 HTTP Server's REST API
 
 ---
 
-## 5. Firebase 旧引擎（对比参考）
+## 5. Firebase Legacy Engine (Comparison Reference)
 
-### 5.1 架构
+### 5.1 Architecture
 
 ```
-客户端 ←WebSocket→ Firebase Realtime DB ←触发→ Firebase Cloud Functions
+Client ←WebSocket→ Firebase Realtime DB ←trigger→ Firebase Cloud Functions
 ```
 
-- 客户端直接连接 Firebase Realtime DB
-- Cloud Functions 处理业务逻辑（发送消息、创建会话、推送通知）
-- 依赖 Google 云平台
+- Client directly connects to Firebase Realtime DB
+- Cloud Functions handle business logic (send message, create conversation, push notifications)
+- Depends on Google Cloud Platform
 
-### 5.2 为什么迁移到 RabbitMQ+MQTT？
+### 5.2 Why Migrate to RabbitMQ+MQTT?
 
-| 维度 | Firebase | RabbitMQ+MQTT |
-|------|----------|---------------|
-| 托管 | 依赖 Google 云 | 完全自托管 |
-| 成本 | 按读写量计费 | 自建服务器成本可控 |
-| 隐私 | 数据在 Google 云 | 数据完全自控 |
-| 灵活性 | 受限于 Firebase 功能 | 可自定义 observer 逻辑 |
-| 性能 | 托管扩展 | 可针对场景优化 |
+| Dimension | Firebase | RabbitMQ+MQTT |
+|-----------|----------|---------------|
+| Hosting | Depends on Google Cloud | Fully self-hosted |
+| Cost | Billed by read/write volume | Self-built server cost controllable |
+| Privacy | Data on Google Cloud | Data fully self-controlled |
+| Flexibility | Limited by Firebase features | Customizable observer logic |
+| Performance | Managed scaling | Can optimize for scenario |
 
 ---
 
-## 6. 全渠道（Omnichannel）
+## 6. Omnichannel
 
-Tiledesk 的核心特色是多渠道统一：
+Tiledesk's core feature is multi-channel unification:
 
-| 渠道 | 集成方式 |
-|------|---------|
-| Web Widget | 原生 Chat21 |
+| Channel | Integration Method |
+|---------|-------------------|
+| Web Widget | Native Chat21 |
 | WhatsApp | WhatsApp Business API |
 | Facebook Messenger | Facebook Graph API |
 | Telegram | Telegram Bot API |
 | Email | IMAP/SMTP |
-| 自定义 | Webhook + REST API |
+| Custom | Webhook + REST API |
 
-- 所有渠道的消息统一到 Tiledesk 界面
-- 客服可以在一个界面回复所有渠道
-- 聊天机器人可在所有渠道自动回复
+- All channel messages unified into Tiledesk interface
+- Agents can reply to all channels in one interface
+- Chatbot can auto-reply across all channels
 
 ---
 
-## 7. AI 集成
+## 7. AI Integration
 
-### 7.1 内置 AI 能力
+### 7.1 Built-in AI Capabilities
 
-| 能力 | 技术 |
-|------|------|
-| 聊天机器人 | 原生 bot / Rasa / 外部 LLM |
-| 知识库问答 | Qdrant 向量存储 + RAG |
-| LLM 推理 | vLLM / Ollama（开源模型自托管） |
-| 意图识别 | 内置 NLU |
+| Capability | Technology |
+|-----------|-----------|
+| Chatbot | Native bot / Rasa / external LLM |
+| Knowledge base Q&A | Qdrant vector storage + RAG |
+| LLM inference | vLLM / Ollama (open-source models self-hosted) |
+| Intent recognition | Built-in NLU |
 
-### 7.2 AI 架构
+### 7.2 AI Architecture
 
 ```
-用户消息 → Tiledesk Server → Bot 引擎
-                              ├── 规则匹配 (关键字/正则)
-                              ├── Rasa NLU (意图识别)
+User message -> Tiledesk Server -> Bot engine
+                              ├── Rule matching (keyword/regex)
+                              ├── Rasa NLU (intent recognition)
                               ├── LLM (vLLM/Ollama)
-                              └── 知识库 RAG (Qdrant 向量检索)
+                              └── Knowledge base RAG (Qdrant vector search)
 ```
 
 ---
 
-## 8. 性能基准
+## 8. Performance Benchmark
 
-Chat21 Server 官方基准测试：
+Chat21 Server official benchmark:
 
-| 指标 | 直连消息 | 群组消息 |
-|------|---------|---------|
-| 平均延迟 | **13.85ms** | **45.61ms** |
-| 目标延迟 | < 160ms | < 160ms |
-| 吞吐量 | 60 msg/s | 60 msg/s |
-| 并发用户 | 1 VU | 1 VU |
-| 测试时长 | 10s | 10s |
+| Metric | Direct Message | Group Message |
+|--------|---------------|---------------|
+| Average latency | **13.85ms** | **45.61ms** |
+| Target latency | < 160ms | < 160ms |
+| Throughput | 60 msg/s | 60 msg/s |
+| Concurrent users | 1 VU | 1 VU |
+| Test duration | 10s | 10s |
 
-> 基准测试配置较低（单并发），实际生产可通过水平扩展 observer 提升吞吐量。
-
----
-
-## 9. 设计原则与权衡
-
-| 设计决策 | 选择 | 权衡 |
-|---------|------|------|
-| **Inbox 模式** | observer 中转而非 P2P | 增加一跳延迟，但获得安全/策略/持久化能力 |
-| **MQTT 协议** | 轻量级物联网协议 | 带宽小、适合移动，但不如 WebSocket 通用 |
-| **RabbitMQ 为中心** | 消息队列即消息总线 | 可靠持久化，但 RabbitMQ 成为关键依赖 |
-| **多仓库** | 每个组件独立仓库 | 灵活解耦，但部署和版本管理复杂 |
-| **双引擎** | 同时支持 Firebase 和 RabbitMQ | 迁移平滑，但维护两套代码 |
-| **Node.js** | 非阻塞 I/O | 适合 I/O 密集的聊天场景，但 CPU 密集任务受限 |
+> Benchmark config is low (single concurrency), actual production can improve throughput by horizontally scaling observers.
 
 ---
 
-## 10. 对 CBOL 项目的参考价值
+## 9. Design Principles & Trade-offs
 
-### 10.1 消息架构层面
-
-| Chat21 设计 | CBOL 可借鉴 |
-|------------|------------|
-| **Inbox 模式** | 消息中转层可实施策略（接回话/回话转发/过滤/审计） |
-| **MQTT 路径设计** | 基于 topic 的消息路由，天然支持发布/订阅 |
-| **RabbitMQ JWT 细粒度安全** | 用户级别的路径权限控制 |
-| **Observer 无状态扩展** | 消息中转层可水平扩展 |
-
-### 10.2 业务层面
-
-| Tiledesk 设计 | CBOL 可借鉴 |
-|--------------|------------|
-| 全渠道统一 | 接回话场景的多渠道接入（Web/App/第三方） |
-| 会话路由/分配 | 回话转发、人工转接的路由规则 |
-| 部门管理 | 客服团队组织架构 |
-| Webhook 事件通知 | 消息事件驱动外部系统 |
-
-### 10.3 技术选型层面
-
-| Tiledesk 设计 | CBOL 可借鉴 |
-|--------------|------------|
-| RabbitMQ + MQTT 组合 | 轻量级实时消息方案（替代重的 Netty 自研） |
-| Redis 缓存同步 | 会话状态、在线状态的快速访问 |
-| MongoDB 灵活存储 | 聊天消息的文档型存储 |
-| Docker Compose 一键部署 | 开发/测试环境快速搭建 |
-
-> **注意**：Chat21 的 MQTT+RabbitMQ 方案适合中小规模和快速原型。如果 CBOL 项目目标是高并发（10万+连接），Turms 的 Netty 自研方案更合适。可考虑在不同场景选择不同技术栈。
+| Design Decision | Choice | Trade-off |
+|----------------|--------|-----------|
+| **Inbox pattern** | Observer relay rather than P2P | Adds one hop latency, but gains security/policy/persistence capabilities |
+| **MQTT protocol** | Lightweight IoT protocol | Small bandwidth, suitable for mobile, but not as universal as WebSocket |
+| **RabbitMQ-centric** | Message queue as message bus | Reliable persistence, but RabbitMQ becomes critical dependency |
+| **Multi-repo** | Each component independent repo | Flexible decoupling, but complex deployment and version management |
+| **Dual engine** | Support both Firebase and RabbitMQ | Smooth migration, but maintain two codebases |
+| **Node.js** | Non-blocking I/O | Suitable for I/O-intensive chat scenarios, but CPU-intensive tasks limited |
 
 ---
 
-## 11. 参考资料
+## 10. Reference Value for CBOL Project
+
+### 10.1 Messaging Architecture Level
+
+| Chat21 Design | CBOL Can Learn |
+|--------------|---------------|
+| **Inbox pattern** | Message relay layer can enforce policies (conversation handoff/forwarding/filtering/auditing) |
+| **MQTT path design** | Topic-based message routing, naturally supports pub/sub |
+| **RabbitMQ JWT fine-grained security** | User-level path permission control |
+| **Observer stateless scaling** | Message relay layer horizontally scalable |
+
+### 10.2 Business Level
+
+| Tiledesk Design | CBOL Can Learn |
+|----------------|---------------|
+| Omnichannel unification | Multi-channel access for conversation handoff scenarios (Web/App/third-party) |
+| Conversation routing/assignment | Routing rules for conversation forwarding, human transfer |
+| Department management | Customer service team organizational structure |
+| Webhook event notification | Message event-driven external systems |
+
+### 10.3 Technology Selection Level
+
+| Tiledesk Design | CBOL Can Learn |
+|----------------|---------------|
+| RabbitMQ + MQTT combination | Lightweight real-time messaging solution (alternative to heavy Netty self-development) |
+| Redis cache sync | Fast access to session state, presence |
+| MongoDB flexible storage | Document-based storage for chat messages |
+| Docker Compose one-click deployment | Quick setup for dev/test environments |
+
+> **Note**: Chat21's MQTT+RabbitMQ solution suits small-to-medium scale and rapid prototyping. If CBOL project targets high concurrency (100K+ connections), Turms' Netty self-developed solution is more appropriate. Consider choosing different tech stacks for different scenarios.
+
+---
+
+## 11. References
 
 - Tiledesk GitHub: https://github.com/Tiledesk
 - Chat21 GitHub: https://github.com/chat21
-- 架构组件: https://developer.tiledesk.com/architecture/components
+- Architecture components: https://developer.tiledesk.com/architecture/components
 - Chat21 Server (npm): https://www.npmjs.com/package/@chat21/chat21-server
-- 从 Firebase 迁移到 MQTT/RabbitMQ: https://tiledesk.com/2021/02/12/tiledesk-new-messaging-engine-moving-from-firebase-to-mqtt-rabbitmq
+- Migration from Firebase to MQTT/RabbitMQ: https://tiledesk.com/2021/02/12/tiledesk-new-messaging-engine-moving-from-firebase-to-mqtt-rabbitmq
 - Chat21 Cloud Functions: https://github.com/chat21/chat21-cloud-functions
 - Tiledesk REST API: https://developer.tiledesk.com/apis/rest-api
 
 ---
 
-*分析日期：2026-08-18*
+*Analysis date: 2026-08-18*

@@ -1,405 +1,405 @@
-# Turms 深度架构分析
+# Turms Deep Architecture Analysis
 
-> 来源：[turms-im/turms](https://github.com/turms-im/turms) ⭐ ~1.9k | Apache-2.0 | Java
-> 官方文档：https://turms-im.github.io/docs/
-> 定位：面向 10万~1000万 并发用户的开源即时通讯引擎
-
----
-
-## 1. 项目概览
-
-Turms 是目前开源社区中面向中大型 IM 场景最专业的 Java 实现。其架构设计脱胎于商业即时通讯系统，以**极致性能**为第一优先级，支持完整（而非丰富）的 IM 功能。
-
-### 核心子项目
-
-| 子项目 | 职责 | 状态 |
-|--------|------|------|
-| **turms-gateway** | 客户端接入网关：协议解析、连接管理、用户认证、会话管理、消息推送、turms-service 负载均衡 | 必选 |
-| **turms-service** | IM 业务逻辑：消息路由、用户/群组/关系链管理、RBAC、集群管理 | 必选 |
-| **turms-admin** | 管理后台：业务数据管理、集群监控、运营报表 | 可选 |
-| **turms-client-*** | 多端 SDK：Java/JS/Kotlin/Swift/Dart | 可选 |
-| **turms-plugin** | 插件框架：用户上下线、消息收发等事件触发自定义逻辑 | 可选 |
-| **turms-plugin-antispam** | 敏感词过滤插件（Aho-Corasick + 双数组字典树，O(n) 检测） | 可选 |
-| **turms-plugin-minio** | MinIO 对象存储插件 | 可选 |
-| **turms-plugin-rasa** | Rasa 聊天机器人插件 | 可选 |
-
-### 技术栈
-
-| 层级 | 技术 |
-|------|------|
-| 语言 | Java (Reactive, 全异步) |
-| 网络 | Netty (TCP + WebSocket) |
-| 数据库 | MongoDB 分片集群 |
-| 缓存 | Redis (分布式内存) + 本地内存缓存 |
-| 序列化 | Protobuf (客户端) + 自定义二进制编码 (服务间 RPC) |
-| 监控 | Prometheus + Grafana |
-| 部署 | Docker / Docker Compose / Terraform |
+> Source: [turms-im/turms](https://github.com/turms-im/turms) ⭐ ~1.9k | Apache-2.0 | Java
+> Official docs: https://turms-im.github.io/docs/
+> Positioning: Open-source instant messaging engine for 100K~10M concurrent users
 
 ---
 
-## 2. 架构设计
+## 1. Project Overview
 
-### 2.1 整体架构
+Turms is currently the most professional Java implementation in the open-source community for medium-to-large IM scenarios. Its architecture design is derived from commercial instant messaging systems, with **extreme performance** as the top priority, supporting complete (not feature-rich) IM functionality.
+
+### Core Sub-projects
+
+| Sub-project | Responsibility | Status |
+|-------------|---------------|--------|
+| **turms-gateway** | Client access gateway: protocol parsing, connection management, user auth, session management, message push, turms-service load balancing | Required |
+| **turms-service** | IM business logic: message routing, user/group/relationship management, RBAC, cluster management | Required |
+| **turms-admin** | Admin backend: business data management, cluster monitoring, operational reports | Optional |
+| **turms-client-*** | Multi-platform SDKs: Java/JS/Kotlin/Swift/Dart | Optional |
+| **turms-plugin** | Plugin framework: custom logic triggered by events like user online/offline, message send/receive | Optional |
+| **turms-plugin-antispam** | Sensitive word filtering plugin (Aho-Corasick + double-array trie, O(n) detection) | Optional |
+| **turms-plugin-minio** | MinIO object storage plugin | Optional |
+| **turms-plugin-rasa** | Rasa chatbot plugin | Optional |
+
+### Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Language | Java (Reactive, fully async) |
+| Network | Netty (TCP + WebSocket) |
+| Database | MongoDB sharded cluster |
+| Cache | Redis (distributed memory) + local in-memory cache |
+| Serialization | Protobuf (client) + custom binary encoding (inter-service RPC) |
+| Monitoring | Prometheus + Grafana |
+| Deployment | Docker / Docker Compose / Terraform |
+
+---
+
+## 2. Architecture Design
+
+### 2.1 Overall Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        客户端 (TCP/WebSocket)                     │
+│                     Clients (TCP/WebSocket)                      │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
                     ┌──────────▼──────────┐
-                    │   DNS / SLB / Nginx  │  (TCP 负载均衡, Sticky Session)
+                    │   DNS / SLB / Nginx  │  (TCP load balancing, Sticky Session)
                     └──────────┬──────────┘
                                │
           ┌────────────────────┼────────────────────┐
           │                    │                    │
    ┌──────▼──────┐      ┌──────▼──────┐      ┌──────▼──────┐
    │ turms-gateway│      │ turms-gateway│      │ turms-gateway│
-   │  (无状态)    │      │  (无状态)    │      │  (无状态)    │
+   │  (stateless) │      │  (stateless) │      │  (stateless) │
    └──────┬──────┘      └──────┬──────┘      └──────┬──────┘
           │                    │                    │
-          │    RPC (自定义二进制编码, 全异步)        │
+          │    RPC (custom binary encoding, fully async) │
           └────────────────────┼────────────────────┘
                                │
           ┌────────────────────┼────────────────────┐
           │                    │                    │
    ┌──────▼──────┐      ┌──────▼──────┐      ┌──────▼──────┐
    │turms-service │      │turms-service │      │turms-service │
-   │  (无状态)    │      │  (无状态)    │      │  (无状态)    │
+   │  (stateless) │      │  (stateless) │      │  (stateless) │
    └──────┬──────┘      └──────┬──────┘      └──────┬──────┘
           │                    │                    │
    ┌──────▼────────────────────▼────────────────────▼──────┐
-   │              MongoDB 分片集群 (mongos)                 │
-   │         (读写分离, 冷热分离, 按时间分片)                 │
+   │              MongoDB sharded cluster (mongos)          │
+   │         (read-write separation, hot/cold separation, time-based sharding) │
    └──────────────────────────┬─────────────────────────────┘
                               │
    ┌──────────────────────────▼─────────────────────────────┐
-   │              Redis 集群 (分布式内存)                     │
-   │         (用户会话, 在线状态, 网关节点信息)                │
+   │              Redis cluster (distributed memory)         │
+   │         (user sessions, online status, gateway node info) │
    └────────────────────────────────────────────────────────┘
 ```
 
-### 2.2 设计哲学：极简架构
+### 2.2 Design Philosophy: Minimalist Architecture
 
-Turms 的架构设计核心原则是**"能不拆就不拆，能不引入外部服务就不引入"**：
+Turms' core architecture principle is **"don't split if you can avoid it, don't introduce external services if you can avoid it"**:
 
-| 常见 IM 架构做法 | Turms 的选择 | 原因 |
-|-----------------|-------------|------|
-| 会话管理、消息缓存、消息推送拆为 3 个独立服务 | **合并在 turms-gateway** | 减少故障点、避免 RPC 开销、业务逻辑不复杂 |
-| 引入 Kafka/RocketMQ 做消息队列异步消费 | **不引入消息队列** | 用云弹性伸缩(Auto Scaling)做流量整形更合适；统计用业务日志分析 |
-| 网络连接管理和会话逻辑拆为两个服务 | **不拆分** | gateway 几乎无会话业务逻辑，拆分收益小、增加故障点 |
-| 用 Hazelcast/Ignite 分布式 Map 替代 Redis | **选择 Redis** | 集群高可用和发布流程设计需要外部分布式内存 |
+| Common IM Architecture Practice | Turms' Choice | Reason |
+|--------------------------------|---------------|--------|
+| Split session management, message cache, message push into 3 independent services | **Merge into turms-gateway** | Reduce failure points, avoid RPC overhead, business logic is not complex |
+| Introduce Kafka/RocketMQ as message queue for async consumption | **No message queue** | Cloud auto-scaling is more suitable for traffic shaping; use business log analysis for statistics |
+| Split network connection management and session logic into two services | **Don't split** | Gateway has almost no session business logic, splitting yields little benefit and adds failure points |
+| Use Hazelcast/Ignite distributed Map instead of Redis | **Choose Redis** | Cluster high availability and deployment process design require external distributed memory |
 
-> **关键洞察**：Turms 明确批评了"为了简历好看而过度设计"的做法，指出很多 IM 项目在几万在线用户规模就引入消息队列、微服务拆分，属于不必要的技术复杂度。
+> **Key insight**: Turms explicitly criticizes "over-engineering for your resume", pointing out that many IM projects introduce message queues and microservice splits at only tens of thousands of online users, which is unnecessary technical complexity.
 
-### 2.3 无状态与多活
+### 2.3 Stateless & Multi-Active
 
-- **turms-gateway 和 turms-service 均为无状态**，可水平扩展
-- 用户会话信息存储在 **Redis + 本地缓存**
-- 支持**跨数据中心多活**部署
-- 支持**用户无感知更新**（滚动发布）
+- **Both turms-gateway and turms-service are stateless**, horizontally scalable
+- User session info stored in **Redis + local cache**
+- Supports **cross-data-center multi-active** deployment
+- Supports **user-transparent updates** (rolling release)
 
 ---
 
-## 3. 客户端接入流程
+## 3. Client Access Flow
 
-### 3.1 连接建立
-
-```
-1. 客户端 DNS 查询 → SLB/ELB (LVS/Nginx) → turms-gateway
-   - 基于客户端 IP 做 TCP 负载均衡
-   - 强烈建议开启 Sticky Session (缓解 DDoS)
-   - SSL 证书放在上游 SLB/Nginx
-
-2. turms-gateway 检测：
-   - IP 是否被封禁 → 主动断开
-   - 服务是否过载 → 主动断开
-   - 通过则建立 TCP 连接
-
-3. 协议选择：
-   - TCP: 直接发送 Protobuf 数据流
-   - WebSocket: HTTP Upgrade → 二进制帧承载 Protobuf
-```
-
-### 3.2 登录与会话建立
+### 3.1 Connection Establishment
 
 ```
-客户端 → turms-gateway (TurmsRequest: login)
+1. Client DNS query → SLB/ELB (LVS/Nginx) → turms-gateway
+   - TCP load balancing based on client IP
+   - Strongly recommend enabling Sticky Session (mitigates DDoS)
+   - SSL certificate offloaded at upstream SLB/Nginx
+
+2. turms-gateway checks:
+   - Is IP banned? → actively disconnect
+   - Is service overloaded? → actively disconnect
+   - Pass → establish TCP connection
+
+3. Protocol selection:
+   - TCP: directly send Protobuf data stream
+   - WebSocket: HTTP Upgrade → binary frames carrying Protobuf
+```
+
+### 3.2 Login & Session Establishment
+
+```
+Client → turms-gateway (TurmsRequest: login)
   │
-  ├─ gateway 解析出 user ID + device type → 组成 session ID
-  ├─ 查询 Redis/本地缓存 → 检测 session ID 是否冲突
-  │   ├─ 冲突 → 拒绝登录 (CREATE_EXISTING_SESSION)
-  │   └─ 不冲突 → 注册会话到 Redis → 返回成功
+  ├─ Gateway parses user ID + device type → composes session ID
+  ├─ Query Redis/local cache → check if session ID conflicts
+  │   ├─ Conflict → reject login (CREATE_EXISTING_SESSION)
+  │   └─ No conflict → register session in Redis → return success
   │
-  └─ 用户进入 online 状态
+  └─ User enters online state
 ```
 
-**Session ID 设计：**
+**Session ID design:**
 - `session ID = user ID + device type`
-- 同一用户的不同设备可连接**不同的** gateway
-- **但建议同用户所有设备连同一 gateway**，原因：
-  1. 推送消息只需发给一个 gateway，减少资源开销
-  2. 同用户多设备共享心跳时钟，减少 Redis TTL 刷新次数
-  3. 避免用户状态缓存未更新导致新消息延迟
+- Different devices of the same user can connect to **different** gateways
+- **But recommend all devices of same user connect to same gateway**, because:
+  1. Push messages only need to be sent to one gateway, reducing resource overhead
+  2. Multiple devices of same user share heartbeat clock, reducing Redis TTL refresh count
+  3. Avoid new message delay caused by user status cache not being updated
 
-### 3.3 请求转发
+### 3.3 Request Forwarding
 
 ```
-客户端请求 → turms-gateway
+Client request → turms-gateway
   │
-  ├─ gateway 能自己处理？(login/logout/心跳)
-  │   └─ 是 → 直接处理并返回
+  ├─ Can gateway handle it itself? (login/logout/heartbeat)
+  │   └─ Yes → handle directly and return
   │
-  └─ 否 → 检查用户是否已登录
-      ├─ 未登录 → 拒绝
-      └─ 已登录 → 按负载均衡策略选一个 turms-service
-          → RPC 转发 (自定义二进制编码)
-          → turms-service 处理 → 返回 response
-          → 处理中产生的 notification → 查询 Redis 获取目标用户的 gateway 节点
-          → RPC 推送到对应 gateway → gateway 转发给客户端
+  └─ No → check if user is logged in
+      ├─ Not logged in → reject
+      └─ Logged in → select a turms-service by load balancing strategy
+          → RPC forward (custom binary encoding)
+          → turms-service processes → returns response
+          → Notifications generated during processing → query Redis for target user's gateway node
+          → RPC push to corresponding gateway → gateway forwards to client
 ```
 
 ---
 
-## 4. 网络通信设计
+## 4. Network Communication Design
 
-### 4.1 协议栈
+### 4.1 Protocol Stack
 
-| 通信方向 | 传输协议 | 编码方式 |
-|---------|---------|---------|
-| 客户端 ↔ turms-gateway | TCP 或 WebSocket | **Protobuf** |
-| turms-gateway ↔ turms-service | TCP (Netty) | **自定义二进制编码**（无冗余数据） |
-| turms-service ↔ MongoDB | MongoDB 驱动 | BSON |
-| turms-service ↔ Redis | Redis 协议 | RESP |
+| Communication Direction | Transport Protocol | Encoding |
+|------------------------|-------------------|----------|
+| Client ↔ turms-gateway | TCP or WebSocket | **Protobuf** |
+| turms-gateway ↔ turms-service | TCP (Netty) | **Custom binary encoding** (no redundant data) |
+| turms-service ↔ MongoDB | MongoDB driver | BSON |
+| turms-service ↔ Redis | Redis protocol | RESP |
 
-### 4.2 TCP 协议格式
+### 4.2 TCP Protocol Format
 
 ```
 ┌──────────────────┬──────────────────────┐
 │  body-length     │  body (Protobuf)     │
-│  (ZigZag 编码)   │  (TurmsRequest 或    │
+│  (ZigZag encoded)│  (TurmsRequest or    │
 │                  │   TurmsNotification) │
 └──────────────────┴──────────────────────┘
 ```
 
-- `body-length`：ZigZag 编码的变长整数，减少小数字的字节占用
-- `body`：Protobuf 编码的 `TurmsRequest`（客户端→服务端）或 `TurmsNotification`（服务端→客户端）
+- `body-length`: ZigZag-encoded variable-length integer, reduces byte usage for small numbers
+- `body`: Protobuf-encoded `TurmsRequest` (client→server) or `TurmsNotification` (server→client)
 
-### 4.3 WebSocket 协议格式
+### 4.3 WebSocket Protocol Format
 
-- WebSocket 二进制帧的 payload 直接承载 Protobuf 编码的 `TurmsRequest`/`TurmsNotification`
-- 帧长度由 WebSocket 协议本身处理，无需额外的 body-length header
+- WebSocket binary frame payload directly carries Protobuf-encoded `TurmsRequest`/`TurmsNotification`
+- Frame length handled by WebSocket protocol itself, no extra body-length header needed
 
-### 4.4 心跳机制
+### 4.4 Heartbeat Mechanism
 
-| 协议 | 心跳实现 |
-|------|---------|
-| TCP | 客户端发送单字节 `[0]` 作为心跳 |
-| WebSocket | 标准 WebSocket Ping/Pong 帧 |
+| Protocol | Heartbeat Implementation |
+|----------|-------------------------|
+| TCP | Client sends single byte `[0]` as heartbeat |
+| WebSocket | Standard WebSocket Ping/Pong frames |
 
-- 心跳间隔默认 **30秒**
-- 三层保护机制：应用层心跳 + TCP Keepalive + 网关读空闲检测
-- 心跳超时后 gateway 关闭连接，Redis 会话过期后用户变为离线
+- Default heartbeat interval **30 seconds**
+- Three-layer protection: application-layer heartbeat + TCP Keepalive + gateway read idle detection
+- After heartbeat timeout, gateway closes connection; after Redis session expires, user goes offline
 
-### 4.5 全异步 Reactive 模型
+### 4.5 Fully Async Reactive Model
 
-> **所有网络 IO 操作（数据库调用、Redis 调用、服务发现、RPC）均基于 Netty 实现非阻塞 IO。**
+> **All network IO operations (database calls, Redis calls, service discovery, RPC) are implemented as non-blocking IO based on Netty.**
 
-- 没有同步阻塞调用
-- 充分利用系统资源
-- 线程数恒定（见第 6 节）
-
----
-
-## 5. 消息模型与存储设计
-
-### 5.1 读扩散（Fanout Read）
-
-Turms 的核心架构决策是**读扩散**（而非写扩散）：
-
-| 模型 | 写时操作 | 读时操作 | 适用场景 |
-|------|---------|---------|---------|
-| **写扩散 (Fanout Write)** | 发消息时写入每个收件人的 inbox | 直接读自己的 inbox | 小群、活跃用户少 |
-| **读扩散 (Fanout Read)** ⭐ | 消息只存一份，按收件人索引 | 读时查询所有相关会话的消息 | 大群、中大规模 |
-| **推拉结合** | 在线用户推送 + 离线用户拉取 | 上线后拉取离线消息 | 通用 IM |
-
-Turms 采用读扩散，消息按**收件人维度**存储和索引，避免大群写扩散导致的写放大。
-
-### 5.2 Message 集合设计
-
-**默认索引方案（方案 1）：**
-- 复合索引：`message sending time + recipient ID`
-- 分片键：`message sending time`
-- 目的：支持**冷热数据分离**，不同时间段的数据分到不同 Shard
-
-**可选方案（方案 2，use-conversation-id=true）：**
-- 复合索引：`message sending time + session ID`
-- 分片键：`message sending time`
-- 私聊 session ID：16 字节（sender ID + receiver ID 排序组合）
-- 群聊 session ID：8 字节（group ID）
-- 适用：需要支持"发件人查询自己发过的消息"
-
-**不推荐方案（方案 3）：**
-- 在方案 1 基础上给 sender ID 加可选索引
-- 问题：查询会话内消息需要查两次（对方发的 + 自己发的），效率低
-
-### 5.3 冷热分离
-
-- Message 是**唯一支持冷热分离**的集合
-- 热数据（近期消息）→ 高性能服务器（16核 128G）
-- 冷数据（历史消息）→ 低成本服务器（4核 8G）
-- 按消息发送时间分片，天然支持冷热分离
-
-### 5.4 索引设计原则
-
-| 原则 | 说明 |
-|------|------|
-| **基于分布式分片特性设计** | 索引首要考虑 mongos 路由效率，而非单表查询性能 |
-| **多读少写** | 索引为读优化，写操作尽量少 |
-| **优先关键通用需求** | 不为"丰富功能"增加额外索引 |
-| **不用 Hashed 索引** | MongoDB Hashed 索引不支持唯一性约束，会自动额外建 B-tree 索引，得不偿失 |
-| **可选索引默认关闭** | 扩展功能的索引通过配置开启，避免小项目思维 |
-
-### 5.5 其他集合设计要点
-
-| 集合 | 复合 ID / 分片键 | 说明 |
-|------|-----------------|------|
-| GroupMember | `group ID + user ID` | 按 group ID 分片，快速查群成员；按 user ID 查群需 scatter-gather（默认不支持） |
-| FriendRequest | `recipient ID + creation time` | 按 recipient ID 分片，快速查收到的请求；发件人查自己发的请求需可选索引 |
-| GroupRequest | `recipient ID + creation time` | 同上 |
-| User | user ID | 按用户 ID 分片 |
-| Group | group ID | 按群组 ID 分片 |
+- No synchronous blocking calls
+- Fully utilize system resources
+- Constant thread count (see Section 6)
 
 ---
 
-## 6. 并发与性能设计
+## 5. Message Model & Storage Design
 
-### 6.1 线程模型
+### 5.1 Read Fanout
 
-> **Turms 服务端的峰值线程数是恒定的，与在线用户数和请求数无关。**
+Turms' core architecture decision is **read fanout** (rather than write fanout):
 
-| 组件 | 线程数 | 说明 |
-|------|--------|------|
-| 接入层 (Netty EventLoop) | = CPU 核心数 | 充分利用 CPU 缓存，减少上下文切换和线程竞争 |
-| 业务逻辑处理 | 复用接入层线程 | 全异步，无阻塞，无需额外业务线程池 |
-| 其他（监控、日志等） | 少量固定线程 | 不随负载增长 |
+| Model | Write Operation | Read Operation | Use Case |
+|-------|----------------|---------------|----------|
+| **Write Fanout** | Write to each recipient's inbox when sending | Directly read own inbox | Small groups, few active users |
+| **Read Fanout** ⭐ | Message stored once, indexed by recipient | Query messages from all relevant conversations on read | Large groups, medium-to-large scale |
+| **Push-Pull Hybrid** | Push to online users + pull for offline | Pull offline messages after coming online | General IM |
 
-### 6.2 无锁设计
+Turms uses read fanout, messages stored and indexed by **recipient dimension**, avoiding write amplification caused by write fanout in large groups.
 
-- 业务逻辑处理中**几乎没有锁**，只有 **CAS 操作**
-- 无锁设计是高吞吐量的关键
-- 状态存储在 Redis/数据库，不在内存中维护共享可变状态
+### 5.2 Message Collection Design
 
-### 6.3 内存优化
+**Default index scheme (Scheme 1):**
+- Compound index: `message sending time + recipient ID`
+- Shard key: `message sending time`
+- Purpose: support **hot/cold data separation**, data from different time periods sharded to different Shards
 
-- **智能分配堆内/堆外内存**，根据使用场景选择
-- **重构 MongoDB/Redis 客户端依赖**，消除冗余内存分配
-- **充分利用本地内存缓存**，减少远程调用
-- 直接内存（Direct Memory）用于 Netty IO，避免堆内拷贝
+**Optional scheme (Scheme 2, use-conversation-id=true):**
+- Compound index: `message sending time + session ID`
+- Shard key: `message sending time`
+- Private chat session ID: 16 bytes (sender ID + receiver ID sorted combination)
+- Group chat session ID: 8 bytes (group ID)
+- Applicable: need to support "sender queries messages they sent"
 
-### 6.4 性能目标
+**Not recommended (Scheme 3):**
+- Add optional index for sender ID on top of Scheme 1
+- Problem: querying messages within a conversation requires two queries (other's sent + own sent), low efficiency
 
-- 设计目标：**10万 ~ 1000万 并发用户**
-- 单 gateway 节点可承载大量连接（Netty 非阻塞 IO）
-- 所有操作异步非阻塞，无线程阻塞点
+### 5.3 Hot/Cold Separation
+
+- Message is the **only collection supporting hot/cold separation**
+- Hot data (recent messages) → high-performance servers (16-core 128G)
+- Cold data (historical messages) → low-cost servers (4-core 8G)
+- Sharded by message sending time, naturally supports hot/cold separation
+
+### 5.4 Index Design Principles
+
+| Principle | Description |
+|-----------|-------------|
+| **Design based on distributed sharding characteristics** | Index primarily considers mongos routing efficiency, not single-table query performance |
+| **More reads fewer writes** | Index optimized for reads, minimize write operations |
+| **Prioritize key general requirements** | Don't add extra indexes for "rich features" |
+| **No Hashed indexes** | MongoDB Hashed indexes don't support uniqueness constraints, automatically add extra B-tree index, not worth it |
+| **Optional indexes disabled by default** | Extended feature indexes enabled via configuration, avoid small-project thinking |
+
+### 5.5 Other Collection Design Points
+
+| Collection | Compound ID / Shard Key | Description |
+|------------|------------------------|-------------|
+| GroupMember | `group ID + user ID` | Shard by group ID, fast query of group members; query groups by user ID requires scatter-gather (not supported by default) |
+| FriendRequest | `recipient ID + creation time` | Shard by recipient ID, fast query of received requests; sender queries own sent requests requires optional index |
+| GroupRequest | `recipient ID + creation time` | Same as above |
+| User | user ID | Shard by user ID |
+| Group | group ID | Shard by group ID |
 
 ---
 
-## 7. 安全设计
+## 6. Concurrency & Performance Design
 
-| 机制 | 说明 |
-|------|------|
-| **API 限流** | 网关层限流，防止 CC 攻击 |
-| **全局用户/IP 黑名单** | gateway 自动检测异常行为并封禁，封禁数据 10~15 秒同步到其他 gateway |
-| **Sticky Session** | SLB 开启粘性会话，缓解 DDoS（封禁 IP 后黑客无法快速切换 gateway） |
-| **SSL/TLS** | 证书放在上游 SLB/Nginx 卸载 |
-| **敏感词过滤** | turms-plugin-antispam（Aho-Corasick + 双数组字典树，O(n) 时间复杂度） |
+### 6.1 Thread Model
+
+> **Turms server's peak thread count is constant, independent of online user count and request count.**
+
+| Component | Thread Count | Description |
+|-----------|-------------|-------------|
+| Access layer (Netty EventLoop) | = CPU cores | Fully utilize CPU cache, reduce context switching and thread contention |
+| Business logic processing | Reuse access layer threads | Fully async, no blocking, no extra business thread pool needed |
+| Others (monitoring, logging, etc.) | Small fixed number of threads | Does not grow with load |
+
+### 6.2 Lock-Free Design
+
+- Business logic processing has **almost no locks**, only **CAS operations**
+- Lock-free design is the key to high throughput
+- State stored in Redis/database, no shared mutable state maintained in memory
+
+### 6.3 Memory Optimization
+
+- **Smart allocation of on-heap/off-heap memory**, chosen based on usage scenario
+- **Refactor MongoDB/Redis client dependencies**, eliminate redundant memory allocation
+- **Fully utilize local memory cache**, reduce remote calls
+- Direct Memory used for Netty IO, avoid on-heap copying
+
+### 6.4 Performance Target
+
+- Design target: **100K ~ 10M concurrent users**
+- Single gateway node can carry large number of connections (Netty non-blocking IO)
+- All operations async non-blocking, no thread blocking points
 
 ---
 
-## 8. 可观测性
+## 7. Security Design
 
-### 三类日志
+| Mechanism | Description |
+|-----------|-------------|
+| **API rate limiting** | Gateway-layer rate limiting, prevent CC attacks |
+| **Global user/IP blacklist** | Gateway auto-detects abnormal behavior and bans, ban data synced to other gateways in 10~15 seconds |
+| **Sticky Session** | SLB enables sticky sessions, mitigates DDoS (after banning IP, attacker can't quickly switch gateway) |
+| **SSL/TLS** | Certificate offloaded at upstream SLB/Nginx |
+| **Sensitive word filtering** | turms-plugin-antispam (Aho-Corasick + double-array trie, O(n) time complexity) |
 
-| 日志类型 | 用途 |
-|---------|------|
-| 监控日志 | 系统指标、性能监控 |
-| 业务日志 | 业务事件记录，用于数据分析 |
-| 统计日志 | 运营报表数据 |
+---
 
-### 监控栈
+## 8. Observability
+
+### Three Types of Logs
+
+| Log Type | Purpose |
+|----------|---------|
+| Monitoring logs | System metrics, performance monitoring |
+| Business logs | Business event records, for data analysis |
+| Statistics logs | Operational report data |
+
+### Monitoring Stack
 
 - Prometheus + Grafana
-- 业务日志可对接 CloudWatch Logs → Kinesis Firehose → S3 → Athena/QuickSight 做数据分析
+- Business logs can be integrated with CloudWatch Logs → Kinesis Firehose → S3 → Athena/QuickSight for data analysis
 
 ---
 
-## 9. 插件系统
+## 9. Plugin System
 
-Turms 提供事件驱动的插件框架，核心事件包括：
+Turms provides an event-driven plugin framework, core events include:
 
-| 事件 | 触发位置 | 用途 |
-|------|---------|------|
-| 用户上线/下线 | turms-gateway | 自定义在线状态处理 |
-| 消息接收 | turms-gateway | 敏感词过滤、消息审计 |
-| 消息转发 | turms-gateway | 离线推送、消息加密 |
-| 客户端请求处理 | turms-service | 自定义业务逻辑 |
+| Event | Trigger Location | Purpose |
+|-------|-----------------|---------|
+| User online/offline | turms-gateway | Custom online status processing |
+| Message received | turms-gateway | Sensitive word filtering, message auditing |
+| Message forwarded | turms-gateway | Offline push, message encryption |
+| Client request processing | turms-service | Custom business logic |
 
-插件实现示例：
-- `turms-plugin-antispam`：敏感词过滤
-- `turms-plugin-minio`：对象存储
-- `turms-plugin-rasa`：AI 聊天机器人
-
----
-
-## 10. 对 CBOL 项目的参考价值
-
-### 10.1 架构层面
-
-| Turms 设计 | CBOL 可借鉴 |
-|-----------|------------|
-| gateway + service 两层拆分 | 接入层与业务层分离，gateway 专注连接管理 |
-| 无状态服务 + Redis 会话 | 水平扩展方案 |
-| 不盲目引入消息队列 | 评估是否真的需要 Kafka/RocketMQ，避免过度设计 |
-| 读扩散消息模型 | 大群消息场景的存储设计 |
-
-### 10.2 网络通信层面
-
-| Turms 设计 | CBOL 可借鉴 |
-|-----------|------------|
-| 全异步 Netty Reactive 模型 | 避免同步阻塞，用 CompletableFuture/Reactor |
-| Protobuf 客户端通信 | 高性能序列化方案 |
-| 自定义二进制 RPC 编码 | 服务间通信极致优化（如需要） |
-| TCP + WebSocket 双协议支持 | 多端接入 |
-| 恒定线程数 = CPU 核心数 | 线程池配置参考 |
-| 几乎无锁，只有 CAS | 并发设计思路 |
-
-### 10.3 数据存储层面
-
-| Turms 设计 | CBOL 可借鉴 |
-|-----------|------------|
-| MongoDB 分片 + 冷热分离 | 消息存储方案（如用 MongoDB） |
-| 索引基于分片特性设计 | 数据库索引设计方法论 |
-| 可选索引默认关闭 | 避免过度索引 |
-| session ID = user ID + device type | 多设备会话管理 |
-
-### 10.4 设计哲学层面
-
-- **性能优先，功能完整而非丰富**：中大规模 IM 系统的核心取舍
-- **极简架构，反对过度设计**：不盲目拆分服务、不盲目引入中间件
-- **关键需求决定架构，次要需求验证架构**：需求优先级驱动设计
-- **架构是权衡的艺术**：明确每个设计决策的 trade-off
+Plugin implementation examples:
+- `turms-plugin-antispam`: sensitive word filtering
+- `turms-plugin-minio`: object storage
+- `turms-plugin-rasa`: AI chatbot
 
 ---
 
-## 11. 参考资料
+## 10. Reference Value for CBOL Project
+
+### 10.1 Architecture Level
+
+| Turms Design | CBOL Can Learn |
+|-------------|---------------|
+| gateway + service two-layer split | Access layer separated from business layer, gateway focuses on connection management |
+| Stateless services + Redis sessions | Horizontal scaling solution |
+| Don't blindly introduce message queues | Evaluate whether Kafka/RocketMQ is really needed, avoid over-engineering |
+| Read fanout message model | Storage design for large group message scenarios |
+
+### 10.2 Network Communication Level
+
+| Turms Design | CBOL Can Learn |
+|-------------|---------------|
+| Fully async Netty Reactive model | Avoid synchronous blocking, use CompletableFuture/Reactor |
+| Protobuf client communication | High-performance serialization solution |
+| Custom binary RPC encoding | Extreme optimization for inter-service communication (if needed) |
+| TCP + WebSocket dual protocol support | Multi-platform access |
+| Constant thread count = CPU cores | Thread pool configuration reference |
+| Almost no locks, only CAS | Concurrency design approach |
+
+### 10.3 Data Storage Level
+
+| Turms Design | CBOL Can Learn |
+|-------------|---------------|
+| MongoDB sharding + hot/cold separation | Message storage solution (if using MongoDB) |
+| Index design based on sharding characteristics | Database index design methodology |
+| Optional indexes disabled by default | Avoid over-indexing |
+| session ID = user ID + device type | Multi-device session management |
+
+### 10.4 Design Philosophy Level
+
+- **Performance first, complete functionality not feature-rich**: core trade-off for medium-to-large IM systems
+- **Minimalist architecture, oppose over-engineering**: don't blindly split services, don't blindly introduce middleware
+- **Key requirements determine architecture, secondary requirements validate architecture**: requirement priority drives design
+- **Architecture is the art of trade-offs**: clearly state the trade-off of each design decision
+
+---
+
+## 11. References
 
 - GitHub: https://github.com/turms-im/turms
-- 官方文档: https://turms-im.github.io/docs/
-- 架构设计: https://turms-im.github.io/docs/design/architecture
-- Schema 设计: https://turms-im.github.io/docs/design/schema
-- 通信协议: https://turms-im.github.io/docs/client/communication-protocol.html
+- Official docs: https://turms-im.github.io/docs/
+- Architecture design: https://turms-im.github.io/docs/design/architecture
+- Schema design: https://turms-im.github.io/docs/design/schema
+- Communication protocol: https://turms-im.github.io/docs/client/communication-protocol.html
 - Playground: http://playground.turms.im (guest/guest)
 
 ---
 
-*分析日期：2026-08-18*
+*Analysis date: 2026-08-18*

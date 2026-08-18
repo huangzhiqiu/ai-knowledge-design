@@ -89,136 +89,137 @@ Each service owns its database. Cross-service transactions need coordination.
 
 ## Open Source Project Architecture Patterns
 
-### Turms: 极简架构哲学 (Anti-Over-Engineering)
+### Turms: Minimalist Architecture Philosophy (Anti-Over-Engineering)
 
-Turms 的架构设计最鲜明的特点是**明确反对过度设计**，其核心原则：
+The most distinctive feature of Turms' architecture design is its **explicit opposition to over-engineering**, with core principles:
 
-> "不要为了简历好看而过度设计。不盲目拆服务，不引入消息队列。"
+> "Don't over-engineer for your resume. Don't blindly split services, don't introduce message queues."
 
-**Turms 的实际架构只有两层：**
+**Turms' actual architecture has only two layers:**
 ```
 ┌──────────────┐     RPC      ┌──────────────┐
 │   Gateway    │◄────────────►│   Service    │
-│ (连接管理)    │              │ (业务逻辑)    │
+│ (connection  │              │ (business    │
+│  management) │              │  logic)      │
 └──────────────┘              └──────────────┘
        │                            │
        ▼                            ▼
    MongoDB/Redis              MongoDB/Redis
 ```
 
-**Turms 明确不做的事：**
-1. **不引入消息队列**（Kafka/RabbitMQ）：Gateway 和 Service 之间用自定义二进制 RPC，延迟更低
-2. **不盲目拆微服务**：核心业务在一个 Service 进程中，按包划分模块
-3. **不用服务网格**：直接 TCP 连接，简单高效
-4. **不做分布式事务**：消息不可变，最终一致性即可
+**What Turms explicitly does NOT do:**
+1. **No message queue** (Kafka/RabbitMQ): Gateway and Service use custom binary RPC, lower latency
+2. **No blind microservice splitting**: Core business in one Service process, divided by packages
+3. **No service mesh**: Direct TCP connections, simple and efficient
+4. **No distributed transactions**: Messages are immutable, eventual consistency is sufficient
 
-**什么时候才拆服务？**
-- Turms 只有在明确的性能瓶颈出现时才考虑拆分
-- Admin 服务是独立的（管理后台，与业务流量隔离）
-- 插件系统是独立进程（稳定性隔离）
+**When to split services?**
+- Turms only considers splitting when clear performance bottlenecks appear
+- Admin service is independent (management backend, isolated from business traffic)
+- Plugin system is separate process (stability isolation)
 
-**对 CBOL 的启示：**
-- CBOL 项目初期应采用**模块化单体**，按领域分包（接回话、回话管理、回话转发）
-- 不要一开始就拆微服务，等有明确的性能或团队边界需求时再拆
-- Gateway 和 Business 可以是一个进程的不同层，也可以是两个进程，取决于规模
+**Implications for CBOL:**
+- CBOL project should start with a **modular monolith**, divided by domain (conversation handoff, conversation management, conversation forwarding)
+- Don't split microservices from the start; wait for clear performance or team boundary requirements
+- Gateway and Business can be different layers in one process, or two processes, depending on scale
 
-### Rocket.Chat: 渐进式微服务演进
+### Rocket.Chat: Gradual Microservices Evolution
 
-Rocket.Chat 展示了从单体到微服务的**渐进式演进路径**：
+Rocket.Chat demonstrates a **gradual evolution path** from monolith to microservices:
 
-**阶段一：Meteor 单体**
-- 所有功能在一个 Meteor 进程中
-- DDP + MongoDB OpLog 实现实时
-- 适合小团队快速迭代
+**Phase 1: Meteor Monolith**
+- All functionality in one Meteor process
+- DDP + MongoDB OpLog for real-time
+- Suitable for small teams, rapid iteration
 
-**阶段二：单体 + 外部服务**
-- 核心仍在 Meteor 进程
-- 逐步将无状态服务拆出：
-  - Authorization（授权）
-  - Account（账户）
-  - Presence（在线状态）
-  - DDPStreamer（DDP 连接管理）
-- 服务间通过 NATS 通信
+**Phase 2: Monolith + External Services**
+- Core still in Meteor process
+- Gradually split out stateless services:
+  - Authorization
+  - Account
+  - Presence
+  - DDPStreamer (DDP connection management)
+- Services communicate via NATS
 
-**阶段三：全微服务（目标）**
-- 所有服务独立部署
-- StreamHub 统一实时数据分发
-- NATS 作为服务总线
+**Phase 3: Full Microservices (Target)**
+- All services independently deployed
+- StreamHub unifies real-time data distribution
+- NATS as service bus
 
-**关键设计：内部服务 vs 外部服务**
+**Key design: Internal vs External Services**
 
-| 类型 | 运行位置 | 例子 | 扩展性 |
-|------|---------|------|--------|
-| 内部服务 | Meteor 进程内 | Messaging, Room, Push, Upload, Settings | 随单体扩展 |
-| 外部服务 | 独立进程 | Authorization, Account, Presence, DDPStreamer | 可独立水平扩展 |
+| Type | Runtime | Examples | Scalability |
+|------|---------|----------|-------------|
+| Internal service | Inside Meteor process | Messaging, Room, Push, Upload, Settings | Scales with monolith |
+| External service | Independent process | Authorization, Account, Presence, DDPStreamer | Independently horizontally scalable |
 
-**StreamHub 的角色：**
-- 捕获 MongoDB OpLog 变更
-- 广播实时数据给其他服务
-- 当前是单实例（架构瓶颈），未来计划支持水平扩展
+**StreamHub's role:**
+- Captures MongoDB OpLog changes
+- Broadcasts real-time data to other services
+- Currently single-instance (architecture bottleneck), future plans for horizontal scaling
 
-**对 CBOL 的启示：**
-- 微服务改造不需要一次性完成，可以逐个服务拆分
-- 优先拆无状态、CPU 密集或独立扩展需求的服务
-- 保留一个"核心单体"处理状态密集的业务，降低复杂度
-- NATS 是轻量级服务总线的好选择（比 Kafka 简单，比 Redis Pub/Sub 可靠）
+**Implications for CBOL:**
+- Microservices refactoring doesn't need to be done all at once; split services one by one
+- Prioritize splitting stateless, CPU-intensive, or independently scalable services
+- Keep a "core monolith" for state-intensive business, reducing complexity
+- NATS is a good choice for lightweight service bus (simpler than Kafka, more reliable than Redis Pub/Sub)
 
-### Mattermost: 传输无关的分层架构
+### Mattermost: Transport-Agnostic Layered Architecture
 
-Mattermost 的架构亮点是**业务逻辑与传输机制完全解耦**：
+Mattermost's architecture highlight is **complete decoupling of business logic from transport mechanism**:
 
 ```
 ┌─────────────────────────────────────────┐
-│  api4 (REST)     wsapi (WebSocket)       │  传输层
+│  api4 (REST)     wsapi (WebSocket)       │  Transport layer
 ├─────────────────────────────────────────┤
-│              app (业务逻辑)               │  与传输无关
+│              app (business logic)        │  Transport-agnostic
 ├─────────────────────────────────────────┤
-│           store (数据访问)                │
+│           store (data access)            │
 └─────────────────────────────────────────┘
 ```
 
-- `app` 层不依赖 HTTP 或 WebSocket，可以被任意传输层调用
-- 新增传输协议（如 gRPC）只需加一层适配器，不改业务逻辑
-- 插件通过 RPC 调用 app 层，与传输层无关
+- `app` layer does not depend on HTTP or WebSocket, can be called by any transport layer
+- Adding a new transport protocol (e.g., gRPC) only requires adding an adapter, no business logic changes
+- Plugins call app layer via RPC, independent of transport layer
 
-### Matrix/Synapse: Worker + Replication 架构
+### Matrix/Synapse: Worker + Replication Architecture
 
-Synapse 的扩展模式是**主进程 + Worker**，类似数据库的主从复制：
+Synapse's scaling model is **main process + Workers**, similar to database master-slave replication:
 
 ```
           ┌─────────────┐
-          │  主进程       │  数据库写入管理
+          │  Main Process│  Database write management
           └──────┬──────┘
                  │ Replication Stream (Redis pub/sub)
     ┌────────────┼────────────┐
     ▼            ▼            ▼
 ┌────────┐  ┌────────┐  ┌────────┐
 │Worker 1│  │Worker 2│  │Worker 3│
-│(API)   │  │(联邦)   │  │(媒体)   │
+│(API)   │  │(federation)│  │(media)│
 └────────┘  └────────┘  └────────┘
 ```
 
-- 主进程负责数据库写入，Worker 负责读请求和特定功能
-- Worker 间通过 Redis pub/sub 同步 replication stream
-- Worker 类型：generic_worker（API）、federation_sender（联邦）、media_repository（媒体）
-- 类似的模式可用于 CBOL：主进程写，多个 worker 处理不同类型的请求
+- Main process handles database writes, Workers handle read requests and specific functions
+- Workers sync replication stream via Redis pub/sub
+- Worker types: generic_worker (API), federation_sender (federation), media_repository (media)
+- Similar pattern can be used for CBOL: main process writes, multiple workers handle different request types
 
-### 架构选择决策树
+### Architecture Selection Decision Tree
 
 ```
-项目初期？
-├── 是 → 模块化单体（Mattermost 风格分层）
-└── 否 → 有明确性能瓶颈？
-    ├── 是 → 渐进式拆分（Rocket.Chat 风格）
-    │       ├── 优先拆无状态服务
-    │       └── 保留核心单体
-    └── 否 → 维持现状，不要为了拆而拆
+Early stage project?
+├── Yes → Modular monolith (Mattermost-style layering)
+└── No → Clear performance bottleneck?
+    ├── Yes → Gradual splitting (Rocket.Chat-style)
+    │       ├── Prioritize stateless services
+    │       └── Keep core monolith
+    └── No → Maintain status quo, don't split just for the sake of it
 
-需要极致性能(10万+连接)？
-├── 是 → Turms 风格：极简两层 + 全异步无锁
-└── 否 → 常规分层架构即可
+Need extreme performance (100K+ connections)?
+├── Yes → Turms style: minimalist two-layer + fully async lock-free
+└── No → Conventional layered architecture is fine
 
-需要跨组织/跨服务器通信？
-├── 是 → 联邦架构（Matrix 风格）
-└── 否 → 中心化架构
+Need cross-organization/cross-server communication?
+├── Yes → Federation architecture (Matrix style)
+└── No → Centralized architecture
 ```

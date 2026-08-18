@@ -90,75 +90,75 @@ Timeline model: each message has seq_id, seq in rear > seq in front. Message dat
 
 ### Turms: MongoDB Sharding & Index Design
 
-Turms 以 MongoDB 为主要存储，其索引设计基于分布式数据库分片特性，有一套系统方法论：
+Turms uses MongoDB as its primary storage, with a systematic methodology for index design based on distributed database sharding characteristics:
 
-**核心原则：索引设计必须考虑分片特性**
+**Core principle: Index design must consider sharding characteristics**
 
-| 索引方案 | 查询模式 | 适用场景 |
-|---------|---------|---------|
-| `{recipient_id: 1, sending_time: -1}` | 按收件人+时间范围查询 | **默认推荐**，匹配读扩散的收件箱查询 |
-| `{sender_id: 1, sending_time: -1}` | 按发件人查询 | 可选，用于发件箱/审计 |
-| `{conversation_id: 1, sending_time: -1}` | 按会话查询 | 群组消息场景 |
+| Index Scheme | Query Pattern | Use Case |
+|-------------|---------------|----------|
+| `{recipient_id: 1, sending_time: -1}` | Query by recipient + time range | **Default recommended**, matches read-fanout inbox queries |
+| `{sender_id: 1, sending_time: -1}` | Query by sender | Optional, for outbox/audit |
+| `{conversation_id: 1, sending_time: -1}` | Query by conversation | Group message scenarios |
 
-**Turms 索引设计要点：**
-1. **不用 Hashed 索引**：Hashed 索引不支持范围查询，而消息查询几乎都是时间范围查询
-2. **基于分片键设计索引**：如果按 `recipient_id` 分片，则索引前缀必须包含 `recipient_id`，否则 scatter-gather 性能差
-3. **可选索引默认关闭**：如 `sender_id` 索引只在需要发件箱查询时启用，避免写入开销
-4. **冷热分离**：热数据（近 30 天）存高性能分片，冷数据归档到低成本存储
-5. **消息不可变**：消息内容不更新，编辑=新消息+标记原消息，避免分布式事务
+**Turms index design points:**
+1. **No Hashed indexes**: Hashed indexes don't support range queries, and message queries are almost always time-range queries
+2. **Design indexes based on shard key**: If sharding by `recipient_id`, index prefix must include `recipient_id`, otherwise scatter-gather performance is poor
+3. **Optional indexes disabled by default**: e.g., `sender_id` index only enabled when outbox queries are needed, to avoid write overhead
+4. **Hot/cold separation**: Hot data (last 30 days) on high-performance shards, cold data archived to low-cost storage
+5. **Immutable messages**: Message content is never updated; editing = new message + flag original, avoiding distributed transactions
 
-**MongoDB 分片键选择：**
+**MongoDB shard key selection:**
 ```
-推荐：{ recipient_id: 1, sending_time: -1 }
-  - 按收件人分片，同一用户的消息在同一分片
-  - 收件箱查询（读扩散）命中单分片
-  - sending_time 作为分片键后缀，支持时间范围裁剪
+Recommended: { recipient_id: 1, sending_time: -1 }
+  - Shard by recipient, same user's messages on same shard
+  - Inbox queries (read fanout) hit a single shard
+  - sending_time as shard key suffix supports time-range pruning
 ```
 
 ### Mattermost: PostgreSQL Schema & Online Migration
 
-Mattermost 以 PostgreSQL 为主，其 schema 演进策略值得参考：
+Mattermost uses PostgreSQL as primary, with a noteworthy schema evolution strategy:
 
-**Schema 版本管理：**
-- Schema 版本存储在 `Configurations` 表的 JSON 配置中（`SchemaVersion` 字段）
-- 启动时检查版本，自动执行迁移脚本
-- 支持**在线迁移**（不锁表），如 v7.1 给 Reactions 表加列+索引：
-  - 1200万 Posts + 250万 Reactions，约 1分34秒（8核16GB）
-  - 使用 `CREATE INDEX CONCURRENTLY` 避免锁表
+**Schema version management:**
+- Schema version stored in `Configurations` table's JSON config (`SchemaVersion` field)
+- On startup, check version and auto-run migration scripts
+- Supports **online migration** (no table lock), e.g., v7.1 adding column+index to Reactions table:
+  - 12M Posts + 2.5M Reactions, ~1min 34sec (8-core 16GB)
+  - Uses `CREATE INDEX CONCURRENTLY` to avoid locking
 
-**MySQL 兼容注意事项：**
-- MySQL 用 `text` 类型，PostgreSQL 用 `varchar`，迁移时需检查长度
-- MySQL 大小写不敏感，PostgreSQL 大小写敏感，webhook 频道名需统一小写
-- 生产环境推荐 PostgreSQL，MySQL 仅兼容
+**MySQL compatibility notes:**
+- MySQL uses `text` type, PostgreSQL uses `varchar`, check lengths during migration
+- MySQL is case-insensitive, PostgreSQL is case-sensitive; webhook channel names must be lowercase
+- Production recommends PostgreSQL, MySQL only for compatibility
 
 ### Rocket.Chat: MongoDB OpLog Tailing
 
-Rocket.Chat 的实时更新核心机制是 **MongoDB OpLog 尾部跟踪**：
+Rocket.Chat's real-time update core mechanism is **MongoDB OpLog tailing**:
 
 ```
-数据写入 MongoDB → OpLog 记录变更 → StreamHub 捕获 → 广播给订阅者 → DDPStreamer 推送给客户端
+Data write to MongoDB -> OpLog records change -> StreamHub captures -> broadcast to subscribers -> DDPStreamer pushes to clients
 ```
 
-- 所有服务实例监听 MongoDB OpLog（需要副本集）
-- 数据变更自动推送到订阅客户端，无需轮询
-- StreamHub 是单实例（当前架构瓶颈），负责统一分发
-- 这种模式将数据库作为消息总线，简化了架构但强依赖 MongoDB
+- All service instances listen to MongoDB OpLog (requires replica set)
+- Data changes automatically pushed to subscribed clients, no polling needed
+- StreamHub is single-instance (current architecture bottleneck), responsible for unified distribution
+- This pattern uses the database as a message bus, simplifying architecture but strongly dependent on MongoDB
 
 ### OpenChat: Canister Per User/Group
 
-OpenChat 采用完全不同的存储范式——每个用户和群组一个独立 canister：
-- 无中心化数据库，数据分布在数千个 canister 中
-- 每个 canister 有独立的稳定内存（stable memory），升级时不丢数据
-- 无限扩展：用户增长只需创建新 canister
-- 但跨 canister 查询需要聚合，延迟较高
+OpenChat adopts a completely different storage paradigm - one independent canister per user and group:
+- No centralized database, data distributed across thousands of canisters
+- Each canister has independent stable memory, no data loss on upgrade
+- Infinite scaling: user growth simply creates new canisters
+- But cross-canister queries require aggregation, higher latency
 
 ### Storage Technology Comparison
 
-| 项目 | 主存储 | 实时机制 | 分片/扩展 |
-|------|--------|---------|----------|
-| Turms | MongoDB | 内存+推 | 按 recipient_id 分片 |
-| Mattermost | PostgreSQL | WebSocket | 主从复制+集群 |
-| Rocket.Chat | MongoDB | OpLog tailing | 副本集+微服务 |
-| Matrix/Synapse | PostgreSQL | /sync 长轮询 | Worker+Replication |
-| Chat21 | RabbitMQ+MongoDB | MQTT | Observer 水平扩展 |
-| OpenChat | ICP Canister | 轮询+更新 | 每用户/群组独立 canister |
+| Project | Primary Storage | Real-time Mechanism | Sharding/Scaling |
+|---------|----------------|--------------------|-----------------|
+| Turms | MongoDB | In-memory + push | Shard by recipient_id |
+| Mattermost | PostgreSQL | WebSocket | Master-slave replication + cluster |
+| Rocket.Chat | MongoDB | OpLog tailing | Replica set + microservices |
+| Matrix/Synapse | PostgreSQL | /sync long polling | Worker + Replication |
+| Chat21 | RabbitMQ+MongoDB | MQTT | Observer horizontal scaling |
+| OpenChat | ICP Canister | Poll + update | Per user/group independent canister |
