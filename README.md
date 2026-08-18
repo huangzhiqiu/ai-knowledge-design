@@ -110,6 +110,11 @@ ai-knowledge-design/
 │
 └── 06-Skills/                                   # 🤖 自动化技能
     ├── README.md
+    ├── # === OpenCode 兼容技能 (SKILL.md + frontmatter) ===
+    ├── java-maven-project-analyzer/             # Java Maven 多模块项目分析
+    ├── architecture-analyzer-skill/             # 通用代码库深度分析 (16章节)
+    ├── codebase-architecture-analyst/           # 文件级逆向工程 + OWASP安全审计
+    └── # === 知识库概念技能 ===
     ├── cbol-knowledge-collector/                # CBOL 知识收集技能
     ├── chat-pattern-collector/                  # 开源项目模式收集技能
     ├── code-analyzer/                           # 代码分析技能
@@ -128,7 +133,7 @@ ai-knowledge-design/
 | 03-Design-Guidelines | 4 | 🟢 已预填 |
 | 04-Coding-Guidelines | 7 | 🟢 已预填 |
 | 05-References | 1 | 🟡 待填写 |
-| 06-Skills | 5 | 🟢 已预填 |
+| 06-Skills | 8 | 🟢 已预填（3个OpenCode技能 + 4个概念技能） |
 | **合计** | **60+** | |
 
 ---
