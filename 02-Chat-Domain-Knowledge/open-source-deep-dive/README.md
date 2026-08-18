@@ -7,7 +7,7 @@
 | 项目 | 文档 | 语言 | 核心参考价值 |
 |------|------|------|-------------|
 | **Turms** | [turms-deep-analysis.md](./turms-deep-analysis.md) | Java | ⭐⭐⭐⭐⭐ 全异步 Netty、读扩散、极简架构、无锁并发、MongoDB 分片 |
-| Mattermost | (待分析) | Go + React | 分层架构、插件系统 |
+| **Mattermost** | [mattermost-deep-analysis.md](./mattermost-deep-analysis.md) | Go + React | ⭐⭐⭐⭐ 分层架构、插件系统(RPC独立进程)、WebSocket事件作用域、企业级安全 |
 | Rocket.Chat | (待分析) | TypeScript | 实时推送、NATS 微服务 |
 | Matrix/Synapse | (待分析) | Python | 联邦架构、事件 DAG |
 | Tiledesk/Chat21 | (待分析) | Node.js | MQTT 路由、客服流程 |
