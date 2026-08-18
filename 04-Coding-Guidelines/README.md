@@ -11,6 +11,7 @@
 | [code-quality.md](./code-quality.md) | Complexity, coverage, SonarQube quality gates, code smells |
 | [concurrency-guidelines.md](./concurrency-guidelines.md) | Thread pools, thread safety, async programming |
 | [exception-and-logging.md](./exception-and-logging.md) | Exception handling, error codes, structured logging |
+| [websocket-guidelines.md](./websocket-guidelines.md) | WebSocket protocol, security, connection management, performance, Netty |
 | [sonar-rules.md](./sonar-rules.md) | SonarQube rules and quality configuration |
 
 ## Coding Standards Summary
@@ -75,6 +76,16 @@ A01 Broken Access Control, A02 Cryptographic Failures, A03 Injection, A04 Insecu
 - Never log passwords, tokens, secrets
 - Mask PII (email, phone, ID)
 - JSON structured logging in production
+
+## WebSocket Summary
+- **Protocol**: RFC 6455, version 13, WSS in production, sub-protocol negotiation
+- **Security**: Origin validation, handshake auth, connection limits, message size/frequency limits
+- **Heartbeat**: Ping/Pong frames, 60s server idle, 30s client interval, 3 misses → reconnect
+- **Reconnect**: Exponential backoff (1s→2s→4s→...→30s max), resume with last seq_id
+- **Messages**: Unique msg_id for idempotency, type field, server timestamp, ≤4KB text
+- **Performance**: Netty pooled allocator, async business logic, per-session serialization, permessage-deflate
+- **Errors**: Structured error response (code/message/ref_msg_id), business errors don't close connection
+- **Testing**: 100K concurrent connections/node, 100K msg/s, P99 latency ≤100ms
 
 ## References
 - Google Java Style Guide
