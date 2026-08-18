@@ -11,7 +11,7 @@
 | **Rocket.Chat** | [rocketchat-deep-analysis.md](./rocketchat-deep-analysis.md) | TypeScript + MongoDB | ⭐⭐⭐⭐ DDP协议、MongoDB OpLog实时、NATS微服务、Apps Engine沙箱、Omnichannel |
 | **Matrix/Synapse** | [matrix-synapse-deep-analysis.md](./matrix-synapse-deep-analysis.md) | Python + PostgreSQL | ⭐⭐⭐ 联邦去中心化、Event DAG、PDU/EDU/Query、状态解析v2、Olm/Megolm加密、Worker+Replication |
 | **Tiledesk/Chat21** | [tiledesk-chat21-deep-analysis.md](./tiledesk-chat21-deep-analysis.md) | Node.js + RabbitMQ/MQTT | ⭐⭐ Inbox模式(类SMTP/POP3)、RabbitMQ Observer、MQTT路径路由、JWT细粒度安全、全渠道客服、AI集成 |
-| OpenChat | (待分析) | Rust | 去中心化架构 |
+| **OpenChat** | [openchat-deep-analysis.md](./openchat-deep-analysis.md) | Rust + Svelte (ICP区块链) | ⭐ 完全上链、每用户/群组独立canister、SNS DAO治理、可验证构建、内置加密支付、Evidence Vault |
 
 ## 分析维度
 
