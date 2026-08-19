@@ -1,272 +1,347 @@
-﻿# CBOL Refactor — Project Knowledge Base
+# CBOL Refactor — Project Knowledge Base
 
-> 面向 AI Messaging Hub（Self-Development）的即时通讯项目知识库，覆盖领域模型、架构设计、Java 实现参考、设计规范与编码标准，支持基于知识库生成 Java 代码。
-
----
-
-## 📋 项目简介
-
-本知识库为 **CBOL Refactor** 项目提供系统化的知识管理，目标是：
-
-- **沉淀领域知识**：从现有代码库和关联系统中提取 CBOL 特定的领域模型、接口定义、数据库设计
-- **参考业界最佳实践**：收集 Mattermost、Rocket.Chat、Matrix、Turms 等优秀开源 IM 项目的架构模式和设计模式
-- **支撑代码生成**：提供 Java 技术栈、数据结构、Netty 网络通信、并发模型等可直接参考的实现细节
-- **统一规范标准**：集成设计原则、API 规范、编码规范、安全规范、质量门禁
+> AI Messaging Hub (Self-Development) knowledge base for instant messaging: message reception, message management, message forwarding, and related IM features. Supports AI-driven development with Jira workflow, design guidelines, coding standards, and OpenCode-compatible skills.
 
 ---
 
-## 📁 目录结构
+## Project Overview
+
+**CBOL Refactor (Self-Development)** — An AI Messaging Hub for instant messaging with a custom lightweight state machine, Jira-driven AI development pipeline, and comprehensive knowledge base for code generation.
+
+- **Language**: Java 17+
+- **Framework**: Spring Boot 3.x
+- **Network**: Netty 4.1.x (WebSocket/TCP)
+- **Database**: MySQL 8.0 / MongoDB 6.x
+- **Cache**: Redis 6.x (Cluster)
+- **Message Queue**: Kafka / RocketMQ
+- **Build**: Maven
+- **AI Development**: OpenCode + custom skills + Jira workflow pipeline
+
+---
+
+## Directory Structure
 
 ```
 ai-knowledge-design/
-├── README.md                                    # 本文件
+├── README.md                                    # This file
+├── AGENTS.md                                    # AI agent instructions (OpenCode/Claude/Cursor)
+├── QUICKSTART.md                                # Quick start guide
+├── .gitignore
 │
-├── 00-Project-Overview/                         # 项目概述
-│   └── project-intro.md                         # 背景、目标、范围、里程碑
+├── .ai-workflow/                                # AI workflow configuration
+│   ├── config.example.yaml                      # Example config (copy to config.yaml)
+│   ├── project_mapping.yaml                     # Project mapping
+│   ├── templates/                               # PR body template, etc.
+│   └── state/                                   # Pipeline state files (gitignored)
 │
-├── 01-CBOL-Domain-Knowledge/                    # 🔧 CBOL 特定领域知识（待项目组填写）
+├── .opencode/                                   # OpenCode configuration
+│   ├── opencode.json                            # Main config
+│   ├── README.md                                # OpenCode usage guide
+│   ├── commands/                                # Custom slash commands (/workflow, /analyze, /sdd)
+│   ├── rules/                                   # Additional rules
+│   └── skills/                                  # Skill junctions → 06-Skills/ (gitignored)
+│
+├── 00-Project-Overview/                         # Project background, goals, timeline
+│
+├── 01-CBOL-Domain-Knowledge/                    # CBOL-specific domain knowledge
 │   ├── README.md
-│   ├── domain-model/                            # CBOL 领域实体与关系
-│   ├── module-structure/                        # Maven 模块划分与依赖
-│   ├── database-schema/                         # 数据库表、索引、分片策略
-│   ├── api-definitions/                         # OpenAPI/YAML 接口定义
-│   ├── uml-diagrams/                            # 类图、时序图、组件图
-│   ├── configuration/                           # application.yml 配置说明
-│   ├── deployment-architecture/                 # 部署拓扑、容量规划、CI/CD
-│   ├── related-systems/                         # 上下游系统与集成点
-│   └── state-machine/                           # 自研轻量级状态机设计
-│       ├── README.md                            # 设计原则与对比
-│       ├── architecture.md                      # 核心架构与数据流
-│       ├── api-design.md                        # API 与 Builder 模式
-│       └── integration.md                       # 与 AI Messaging Hub 集成
+│   ├── domain-model/                            # Domain entities and relationships
+│   ├── module-structure/                        # Maven module structure
+│   ├── database-schema/                         # Database tables, indexes, sharding
+│   ├── api-definitions/                         # OpenAPI/YAML API definitions
+│   ├── uml-diagrams/                            # Class, sequence, component diagrams
+│   ├── configuration/                           # application.yml config
+│   ├── deployment-architecture/                 # Deployment topology, capacity, CI/CD
+│   ├── related-systems/                         # Upstream/downstream systems
+│   └── state-machine/                           # Custom lightweight state machine
+│       ├── README.md                            # Design principles
+│       ├── architecture.md                      # Core architecture
+│       ├── api-design.md                        # API & Builder pattern
+│       └── integration.md                       # Integration with AI Messaging Hub
 │
-├── 02-Chat-Domain-Knowledge/                    # 📚 通用 IM 知识 + Java 实现参考（已预填）
+├── 02-Chat-Domain-Knowledge/                    # Generic IM knowledge + Java implementation
 │   ├── README.md
-│   │
-│   ├── # === 领域与设计 ===
-│   ├── domain-model/                            # 5 大核心实体模型
-│   │   ├── user-model.md                        # 用户模型
-│   │   ├── conversation-model.md                # 会话模型
-│   │   ├── message-model.md                     # 消息模型（msg_id + seq_id）
-│   │   ├── group-model.md                       # 群组模型
-│   │   └── device-session-model.md              # 设备与会话模型
-│   ├── message-design/                          # 消息设计
-│   │   ├── message-id-design.md                 # 消息 ID 设计（Snowflake/UUID）
-│   │   ├── message-types.md                     # 消息类型分类
-│   │   └── message-states.md                    # 消息状态机
-│   ├── sync-mechanism/                          # 同步机制
-│   │   ├── multi-device-sync.md                 # 多端同步策略
-│   │   ├── cursor-design.md                     # 游标设计
-│   │   └── push-pull-models.md                  # 推拉模型对比
-│   ├── storage-design/                          # 存储设计
-│   │   ├── message-storage.md                   # 消息存储（MySQL/Cassandra）
-│   │   ├── offline-messages.md                  # 离线消息队列
-│   │   └── timeline-model.md                    # 时间线模型（写扩散/读扩散）
-│   │
-│   ├── # === 架构与模式 ===
-│   ├── architecture-patterns/                   # 架构模式
-│   │   ├── layered-architecture.md              # 分层架构
-│   │   ├── microservices.md                     # 微服务架构
-│   │   ├── event-driven.md                      # 事件驱动（Matrix DAG）
-│   │   └── federation.md                        # 联邦架构
-│   ├── design-patterns/                         # 设计模式
-│   │   ├── gateway-pattern.md                   # 网关模式
-│   │   ├── message-routing.md                   # 消息路由
-│   │   ├── fanout-pattern.md                    # 扇出模式
-│   │   └── presence-management.md               # 在线状态管理
-│   ├── reliability/                             # 可靠性设计
-│   │   ├── message-delivery.md                  # 投递保证
-│   │   ├── idempotency.md                       # 幂等性
-│   │   └── retry-backoff.md                     # 重试与退避
-│   │
-│   └── # === Java 实现参考 ===
-│   ├── java-implementation/                     # Java 技术栈与项目结构
-│   ├── concurrency/                             # 并发模型（线程池/SessionRegistry/分布式锁）
-│   ├── networking/                              # Netty WebSocket 实现
-│   │   ├── websocket-protocol.md                # WebSocket 协议设计
-│   │   └── connection-management.md             # 连接管理与重连
-│   ├── serialization/                           # Protobuf/JSON 序列化
-│   ├── data-structures/                         # POJO/Enum/Redis Key/DDL
-│   └── code-templates/                          # 代码模板
-│   └── open-source-deep-dive/                   # 开源项目深度架构分析
-│       ├── README.md
-│       ├── turms-deep-analysis.md               # Turms (Java/Netty/读扩散/无锁)
-│       ├── mattermost-deep-analysis.md          # Mattermost (Go/分层架构/插件RPC)
-│       ├── rocketchat-deep-analysis.md          # Rocket.Chat (DDP/OpLog/NATS微服务)
-│       ├── matrix-synapse-deep-analysis.md      # Matrix/Synapse (联邦/Event DAG/Olm加密)
-│       ├── tiledesk-chat21-deep-analysis.md     # Tiledesk/Chat21 (Inbox模式/MQTT/RabbitMQ)
-│       └── openchat-deep-analysis.md            # OpenChat (ICP区块链/Canister/SNS DAO)
+│   ├── domain-model/                            # User, conversation, message, group, device models
+│   ├── message-design/                          # Message ID, types, state machine
+│   ├── sync-mechanism/                          # Multi-device sync, cursor design, push-pull
+│   ├── storage-design/                          # Message storage, offline messages, timeline
+│   ├── architecture-patterns/                   # Layered, microservices, event-driven, federation
+│   ├── design-patterns/                         # Gateway, routing, fanout, presence
+│   ├── reliability/                             # Delivery guarantees, idempotency, retry
+│   ├── java-implementation/                     # Java tech stack, project structure
+│   ├── concurrency/                             # Thread pools, SessionRegistry, distributed locks
+│   ├── networking/                              # Netty WebSocket, protocol, connection management
+│   ├── serialization/                           # Protobuf/JSON serialization
+│   ├── data-structures/                         # POJO, Enum, Redis Key, DDL
+│   ├── code-templates/                          # Code templates
+│   └── open-source-deep-dive/                   # Deep analysis of 6+ open source IM projects
+│       ├── turms-deep-analysis.md               # Turms (Java/Netty/read diffusion/lock-free)
+│       ├── mattermost-deep-analysis.md          # Mattermost (Go/layered/plugins RPC)
+│       ├── rocketchat-deep-analysis.md          # Rocket.Chat (DDP/OpLog/NATS microservices)
+│       ├── matrix-synapse-deep-analysis.md      # Matrix/Synapse (federation/Event DAG/Olm)
+│       ├── tiledesk-chat21-deep-analysis.md     # Tiledesk/Chat21 (Inbox/MQTT/RabbitMQ)
+│       └── openchat-deep-analysis.md            # OpenChat (ICP blockchain/Canister/SNS DAO)
 │
-├── 03-Design-Guidelines/                        # 🎨 设计指南
+├── 03-Design-Guidelines/                        # Design guidelines (6 categories)
 │   ├── README.md
-│   ├── design-principles.md                     # SOLID/DRY/KISS/YAGNI 等设计原则
-│   ├── api-design-guidelines.md                 # RESTful API 设计规范
-│   ├── architecture-principles.md               # 分布式/微服务/12-Factor 架构原则
-│   └── self-development-standards.md            # Self-Development 内部编码要求
+│   ├── 01-architecture/                         # Architecture design
+│   │   ├── architecture-principles.md           # Distributed systems, microservices, 12-Factor
+│   │   ├── design-principles.md                 # SOLID, DRY, KISS, YAGNI
+│   │   ├── layered-architecture.md              # Layered, hexagonal, clean architecture
+│   │   ├── microservices-patterns.md            # Service decomposition, API gateway, discovery
+│   │   ├── event-driven-architecture.md         # Domain events, event sourcing, CQRS, Outbox
+│   │   └── ddd-guidelines.md                    # Bounded contexts, aggregates, value objects
+│   ├── 02-api-design/                            # API design
+│   │   ├── rest-api-design.md                   # REST resources, HTTP methods, status codes
+│   │   ├── api-contract.md                      # OpenAPI 3.1, request/response, idempotency
+│   │   ├── websocket-api-design.md              # WebSocket lifecycle, framing, heartbeat, reconnect
+│   │   ├── api-versioning.md                    # Versioning strategies, deprecation, migration
+│   │   └── api-design-guidelines.md             # General API best practices
+│   ├── 03-data-design/                           # Data design
+│   │   ├── data-modeling.md                     # ER modeling, normalization, indexing, schema evolution
+│   │   ├── database-design.md                   # Polyglot persistence, replication, sharding, transactions
+│   │   ├── cache-design.md                      # Multi-level caching, cache-aside, invalidation, consistency
+│   │   └── message-queue-design.md              # Topic design, partitioning, ordering, DLQ, backpressure
+│   ├── 04-security-design/                      # Security design
+│   │   └── security-architecture.md             # Defense in depth, zero trust, least privilege
+│   └── 06-design-process/                       # Design process
+│       └── self-development-standards.md        # Self-Development internal standards
 │
-├── 04-Coding-Guidelines/                        # 💻 编码规范
+├── 04-Coding-Guidelines/                        # Coding guidelines (6 categories, 21 docs)
 │   ├── README.md
-│   ├── java-coding-standards.md                 # Google + 阿里 Java 编码规范
-│   ├── security-guidelines.md                   # OWASP Top 10 安全编码规范
-│   ├── code-quality.md                          # 代码质量与 SonarQube 质量门禁
-│   ├── concurrency-guidelines.md                # Java 并发编程规范
-│   ├── exception-and-logging.md                 # 异常处理与结构化日志
-│   └── sonar-rules.md                           # Sonar 规则配置
+│   ├── 01-java-core/                            # Java core
+│   │   ├── java-coding-standards.md             # Naming, formatting, OOP principles
+│   │   ├── java-concurrency.md                  # Thread pools, locks, CAS, CompletableFuture
+│   │   ├── java-exception-logging.md            # Exception hierarchy, SLF4J, MDC
+│   │   ├── java-collections-io.md               # Collections, Stream API, NIO.2, serialization
+│   │   └── state-machine-guidelines.md          # Stateless engine, table-driven, testing
+│   ├── 02-spring-framework/                     # Spring framework
+│   │   ├── spring-boot-best-practices.md        # Layered architecture, DI, thin controllers, DTO
+│   │   └── spring-configuration-transaction-aop.md # Profiles, config, transactions, AOP
+│   ├── 03-networking-api/                       # Networking & API
+│   │   ├── websocket-guidelines.md              # WebSocket protocol, connection management
+│   │   ├── http-rest-api-guidelines.md          # REST design, HTTP client, caching, rate limiting
+│   │   └── netty-guidelines.md                  # Thread model, ChannelPipeline, memory, zero-copy
+│   ├── 04-data-layer/                           # Data layer
+│   │   ├── relational-database-mysql.md         # Schema, indexing, SQL best practices, connection pool
+│   │   ├── nosql-database-mongodb.md            # Document design, read diffusion, indexing, sharding
+│   │   ├── redis-cache-guidelines.md            # Key design, data structures, caching patterns, locks
+│   │   └── message-queue-guidelines.md          # Kafka/RocketMQ, producer/consumer, idempotency, DLQ
+│   ├── 05-security/                             # Security
+│   │   ├── security-guidelines.md               # OWASP Top 10, input validation, secure storage
+│   │   ├── authentication-authorization.md      # JWT, refresh tokens, RBAC/ABAC, WebSocket security
+│   │   └── sonarqube-devsecops-guidelines.md   # SonarQube quality gates, DevSecOps pipeline, SAST/DAST
+│   └── 06-quality-ops/                          # Quality & operations
+│       ├── code-quality.md                       # Code review checklist, complexity, refactoring
+│       ├── sonar-rules.md                        # SonarQube rules, quality profiles, Maven config
+│       ├── unit-testing-guidelines.md            # FIRST principles, AAA, Mockito, AssertJ, parameterized
+│       ├── testing-guidelines.md                 # Test pyramid, integration tests, Testcontainers, performance
+│       └── observability-guidelines.md           # Logging, metrics, distributed tracing, alerting
 │
-├── 05-References/                               # 🔗 外部参考资料
+├── 05-References/                               # External references
 │   ├── README.md
-│   ├── open-source-projects.md                  # 开源 IM 项目详细参考
-│   └── ai-driven-development.md                 # AI 驱动开发参考项目 (Forge/Jira-Flow/ai-coding-workflow/Devin)
+│   ├── open-source-projects.md                  # Open source IM project references
+│   └── ai-driven-development.md                 # AI-driven development references (Forge/Jira-Flow/etc.)
 │
-└── 06-Skills/                                   # 🤖 自动化技能
+└── 06-Skills/                                   # OpenCode-compatible skills
     ├── README.md
-    ├── # === OpenCode 兼容技能 (SKILL.md + frontmatter) ===
-    ├── workflow-ticket-to-deploy/               # 流水线总编排: Ticket→SDD→Code→Test→PR→Deploy
-    ├── jira-ticket-fetcher/                     # Jira Ticket 拉取与结构化
-    ├── sdd-generator/                           # SDD 生成 (12章节 + 知识库注入)
-    ├── java-maven-project-analyzer/             # Java Maven 多模块项目分析
-    ├── architecture-analyzer-skill/             # 通用代码库深度分析 (16章节)
-    ├── codebase-architecture-analyst/           # 文件级逆向工程 + OWASP安全审计
-    └── # === 知识库概念技能 ===
-    ├── cbol-knowledge-collector/                # CBOL 知识收集技能
-    ├── chat-pattern-collector/                  # 开源项目模式收集技能
-    ├── code-analyzer/                           # 代码分析技能
-    └── doc-generator/                           # 文档生成技能
+    ├── 01-ai-development-pipeline/              # AI development pipeline skills
+    │   ├── workflow-ticket-to-deploy/            # Pipeline orchestration: Ticket→SDD→Code→Test→PR→Deploy
+    │   ├── jira-ticket-fetcher/                  # Jira ticket fetching and structuring
+    │   ├── sdd-generator/                        # SDD generation (12 sections + knowledge injection)
+    │   ├── tdd-implementer/                      # TDD implementation: RED→GREEN→REFACTOR
+    │   ├── test-verifier/                        # Test verification and coverage
+    │   ├── pr-creator/                           # PR creation with template
+    │   └── deploy-doc-updater/                   # Deployment documentation update
+    ├── 02-code-analysis/                         # Code analysis skills
+    │   ├── java-maven-project-analyzer/          # Java Maven multi-module project analysis
+    │   ├── architecture-analyzer-skill/          # General codebase deep analysis (16 sections)
+    │   └── codebase-architecture-analyst/        # File-level reverse engineering + OWASP audit
+    └── 03-knowledge-collection/                  # Knowledge collection skills
+        ├── cbol-knowledge-collector/             # CBOL knowledge collection
+        └── chat-pattern-collector/               # Open source project pattern collection
 ```
 
 ---
 
-## 📊 文档统计
+## Documentation Statistics
 
-| 目录 | 文档数 | 状态 |
-|------|--------|------|
-| 00-Project-Overview | 1 | 🟡 待填写 |
-| 01-CBOL-Domain-Knowledge | 13 | 🟡 模板就绪，待填写 |
-| 02-Chat-Domain-Knowledge | 40+ | 🟢 已预填（含6个开源项目深度分析） |
-| 03-Design-Guidelines | 4 | 🟢 已预填 |
-| 04-Coding-Guidelines | 7 | 🟢 已预填 |
-| 05-References | 2 | 🟢 已预填 |
-| 06-Skills | 13 | 🟢 已预填（10个OpenCode技能 + 2个概念技能） |
-| **合计** | **95+** | |
+| Directory | Documents | Status |
+|-----------|-----------|--------|
+| 00-Project-Overview | 1 | 🟡 Template ready |
+| 01-CBOL-Domain-Knowledge | 13+ | 🟡 Templates ready, to be filled by team |
+| 02-Chat-Domain-Knowledge | 40+ | 🟢 Pre-filled (6+ open source deep analyses) |
+| 03-Design-Guidelines | 18 | 🟢 Pre-filled (4 categories) |
+| 04-Coding-Guidelines | 21 | 🟢 Pre-filled (6 categories) |
+| 05-References | 2 | 🟢 Pre-filled |
+| 06-Skills | 10 skills | 🟢 Pre-filled (OpenCode-compatible) |
+| **Total** | **105+** | |
 
 ---
 
-## 🚀 快速开始
+## Quick Start
 
-### 1. 浏览通用 IM 知识
-从 `02-Chat-Domain-Knowledge/` 开始，了解即时通讯系统的通用领域模型、架构模式和 Java 实现参考。
+### 1. Set Up OpenCode
 
-### 2. 填写 CBOL 特定知识
-参考 `01-CBOL-Domain-Knowledge/` 中的模板，从现有代码库提取：
-- 领域实体 → `domain-model/`
-- 模块结构 → `module-structure/`
-- 数据库设计 → `database-schema/`
-- API 定义 → `api-definitions/`
-- 配置说明 → `configuration/`
+```bash
+# Install OpenCode
+npm install -g opencode-ai
 
-### 3. 应用设计与编码规范
-开发时遵循 `03-Design-Guidelines/` 和 `04-Coding-Guidelines/` 中的标准。
+# Navigate to project
+cd ai-knowledge-design
 
-### 4. 使用自动化技能
-利用 `06-Skills/` 中的技能模板，自动化收集和整理知识。
-
-### 5. Jira 驱动的 AI 开发流水线
-使用 `06-Skills/workflow-ticket-to-deploy/` 技能，从 Jira ticket 驱动完整开发流程：
-
-```
-/workflow-ticket-to-deploy jira_key=CBOL-123
+# Start OpenCode (automatically loads AGENTS.md, .opencode config, skills)
+opencode
 ```
 
-流水线包含 7 个阶段 + 6 个人工审批门控：
-- Stage 0: Ticket Intake (`jira-ticket-fetcher`)
-- Stage 1: Requirements Analysis
-- Stage 2: SDD Generation (`sdd-generator`)
-- Stage 3: Implementation (TDD)
-- Stage 4: Test & Verification
-- Stage 5: PR Creation
-- Stage 6: Deploy & Doc Update
+### 2. Configure Workflow
 
-参考 `05-References/ai-driven-development.md` 了解业界最佳实践（Forge、Jira-Flow、ai-coding-workflow）。
+```bash
+# Copy example config
+cp .ai-workflow/config.example.yaml .ai-workflow/config.yaml
 
----
-
-## 🏗️ 技术栈参考
-
-| 层级 | 技术选型 |
-|------|---------|
-| 语言 | Java 17+ (LTS) |
-| 框架 | Spring Boot 3.x |
-| 网络通信 | Netty 4.1.x (WebSocket/TCP) |
-| 数据库 | MySQL 8.0 / MongoDB |
-| 缓存 | Redis 6.x (集群) |
-| 消息队列 | Kafka / RocketMQ |
-| 对象存储 | MinIO / S3 |
-| 序列化 | Protobuf / Jackson JSON |
-| 构建工具 | Maven / Gradle |
-| 容器化 | Docker + Kubernetes |
-| 监控 | Prometheus + Grafana + ELK |
-| 链路追踪 | SkyWalking / Jaeger |
-
----
-
-## 📖 参考项目
-
-| 项目 | 语言 | 参考价值 |
-|------|------|---------|
-| [Mattermost](https://github.com/mattermost/mattermost) | Go + React | 分层架构、插件系统、企业级协作 |
-| [Rocket.Chat](https://github.com/RocketChat/Rocket.Chat) | Node.js + MongoDB | 实时通信、NATS 微服务、DDP 协议 |
-| [Matrix/Synapse](https://github.com/matrix-org/synapse) | Python | 联邦架构、事件 DAG、状态解析 |
-| [Turms](https://github.com/turms-im/turms) | Java | 高并发 IM、扇出读、推拉模型 |
-| [Tiledesk/Chat21](https://github.com/chat21) | Node.js | MQTT + RabbitMQ 消息路由 |
-| [OpenChat](https://github.com/open-chat-labs/open-chat) | Go | WebSocket + Redis pub/sub 水平扩展 |
-
----
-
-## 🤝 贡献指南
-
-### 文档规范
-- 所有文档使用 **Markdown** 格式
-- 文件名使用 **kebab-case**（小写+连字符）
-- 每个目录包含 `README.md` 作为索引
-- 技术文档需标注参考来源
-
-### 提交规范
+# Edit config with your Jira/GitHub credentials
+# Or set environment variables:
+export JIRA_API_TOKEN="your-jira-token"
+export GITHUB_TOKEN="your-github-token"
 ```
-<type>(<scope>): <subject>
 
-类型:
-  feat:     新增文档/内容
-  update:   更新现有文档
-  refactor: 重构文档结构
-  docs:     文档元信息更新
-  chore:    杂项
+### 3. Run AI Development Pipeline
 
-示例:
+```bash
+# In OpenCode:
+/workflow jira_key=CBOL-123
+
+# Or use individual skills:
+/skill jira-ticket-fetcher
+/skill sdd-generator
+/skill tdd-implementer
+```
+
+### 4. Browse Knowledge Base
+
+- **Generic IM knowledge**: Start with `02-Chat-Domain-Knowledge/`
+- **Design guidelines**: `03-Design-Guidelines/`
+- **Coding standards**: `04-Coding-Guidelines/`
+- **Open source references**: `02-Chat-Domain-Knowledge/open-source-deep-dive/`
+
+---
+
+## AI Development Pipeline
+
+Jira-driven AI development pipeline with 7 stages + 6 approval gates:
+
+```
+CBOL-XXX
+  │
+  ▼
+[0] Ticket Intake ──── [Gate 0] Clarity?
+  │
+  ▼
+[1] Requirements ───── [Gate 1] Approve?
+  │
+  ▼
+[2] SDD ───────────── [Gate 2] Approve?
+  │
+  ▼
+[3] TDD Implement ─── [Gate 3] Auto-review
+  │
+  ▼
+[4] Test ──────────── [Gate 4] Approve?
+  │
+  ▼
+[5] PR ────────────── [Gate 5] Peer review
+  │
+  ▼
+[6] Deploy + Docs ──── Complete
+```
+
+**Core principles**:
+- Design before code (SDD must be approved)
+- TDD (RED → GREEN → REFACTOR → Commit)
+- Evidence over claims (command + output + exit code)
+- 3-strike escalation (auto-retry 3×, then ask human)
+- State persistence (resume from breakpoint)
+- Knowledge injection (every stage reads relevant KB docs)
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Language | Java 17+ (LTS) |
+| Framework | Spring Boot 3.x |
+| Network | Netty 4.1.x (WebSocket/TCP) |
+| Database | MySQL 8.0 + MongoDB 6.x |
+| Cache | Redis 6.x (Cluster) |
+| Message Queue | Kafka / RocketMQ |
+| State Machine | Custom lightweight (stateless, table-driven, zero-dependency) |
+| Build | Maven |
+| Code Quality | SonarQube + SpotBugs + Semgrep |
+| Testing | JUnit 5 + Mockito + AssertJ + Testcontainers |
+| Observability | SLF4J + Micrometer + Prometheus + OpenTelemetry |
+| Container | Docker + Kubernetes |
+| AI Development | OpenCode + custom skills + Jira workflow |
+
+---
+
+## Reference Projects
+
+| Project | Language | Reference Value |
+|---------|----------|-----------------|
+| [Turms](https://github.com/turms-im/turms) | Java | High-concurrency IM, read diffusion, lock-free, Netty |
+| [Mattermost](https://github.com/mattermost/mattermost) | Go + React | Layered architecture, plugin system, enterprise collaboration |
+| [Rocket.Chat](https://github.com/RocketChat/Rocket.Chat) | Node.js + MongoDB | Real-time communication, NATS microservices, DDP protocol |
+| [Matrix/Synapse](https://github.com/matrix-org/synapse) | Python | Federation architecture, Event DAG, Olm encryption |
+| [Tiledesk/Chat21](https://github.com/chat21) | Node.js | MQTT + RabbitMQ message routing, Inbox pattern |
+| [OpenChat](https://github.com/open-chat-labs/open-chat) | Go | WebSocket + Redis pub/sub horizontal scaling |
+
+---
+
+## Contributing
+
+### Document Standards
+- All documents in **Markdown** format
+- File names in **kebab-case** (lowercase + hyphens)
+- Every directory has a `README.md` as index
+- Technical documents cite reference sources
+- Code examples use ✅ Good / ❌ Bad comparison format
+
+### Commit Standards
+```
+<type>(<scope>): <subject> (CBOL-XXX)
+
+Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore
+
+Examples:
   feat(02-chat): add websocket protocol design
   update(01-cbol): fill database schema
+  docs(04-coding): add unit testing guidelines
+  refactor(03-design): reorganize by categories
 ```
 
-### CBOL 特定内容填写流程
-1. 从现有代码库提取信息
-2. 按对应目录的模板格式整理
-3. 提交 PR / 直接提交
-4. 团队评审后合并
+### CBOL-Specific Content Workflow
+1. Extract information from existing codebase
+2. Organize by corresponding directory template
+3. Submit PR / direct commit
+4. Team review and merge
 
 ---
 
-## ⚠️ 注意事项
+## Notes
 
-- **敏感信息**：不要在文档中提交密码、Token、内部 IP 等敏感信息
-- **Self-Development 合规**：涉及内部标准的内容需确认合规性后再提交
-- **代码引用**：引用开源项目代码时需遵守对应许可证
-- **Token 安全**：Git 远程 URL 中的 Token 仅用于推送，公开仓库前请移除
-
----
-
-## 📄 许可证
-
-本项目知识库仅供 CBOL Refactor 项目内部使用。
+- **Sensitive information**: Never commit passwords, tokens, internal IPs
+- **Self-Development compliance**: Internal standards must be verified before commit
+- **Code references**: Open source code references must comply with respective licenses
+- **Token security**: Git remote URL tokens are for push only, remove before public sharing
 
 ---
 
-*最后更新：2026-08-19*
+## License
+
+This knowledge base is for internal use by the CBOL Refactor (Self-Development) project.
+
+---
+
+*Last updated: 2026-08-19*
