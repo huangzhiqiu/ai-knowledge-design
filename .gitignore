@@ -22,6 +22,12 @@ desktop.ini
 .ai-workflow/state/
 .ai-workflow/logs/
 
+# OpenCode - skill junctions (point to 06-Skills/, avoid duplicate tracking)
+.opencode/skills/
+# OpenCode - local state (if any)
+.opencode/local/
+.opencode/*.local.json
+
 # Generated artifacts
 docs/operations/
 design/sdd/

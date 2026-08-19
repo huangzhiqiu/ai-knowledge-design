@@ -1,0 +1,37 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "project": {
+    "name": "CBOL Messaging Hub",
+    "description": "AI Messaging Hub - Jira-driven AI development pipeline with knowledge base"
+  },
+  "instructions": [
+    "AGENTS.md"
+  ],
+  "env": {
+    "JIRA_API_TOKEN": {
+      "description": "Jira API token for ticket fetching",
+      "required": false
+    },
+    "GITHUB_TOKEN": {
+      "description": "GitHub token for PR creation",
+      "required": false
+    }
+  },
+  "skills": {
+    "auto_load": false,
+    "note": "Skills are loaded on-demand via /skill command. See .opencode/skills/ for available skills."
+  },
+  "permissions": {
+    "allow": [
+      "read:project",
+      "write:project",
+      "execute:shell",
+      "execute:git"
+    ],
+    "deny": [
+      "write:.env",
+      "write:.ai-workflow/config.yaml",
+      "execute:rm -rf /"
+    ]
+  }
+}

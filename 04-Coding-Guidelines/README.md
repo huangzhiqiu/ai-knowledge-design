@@ -51,8 +51,9 @@
 | Document | Description |
 |----------|-------------|
 | [code-quality.md](./06-quality-ops/code-quality.md) | Code review checklist, complexity metrics, duplication, refactoring patterns |
-| [sonar-rules.md](./06-quality-ops/sonar-rules.md) | SonarQube rule configuration, quality profiles |
-| [testing-guidelines.md](./06-quality-ops/testing-guidelines.md) | Test pyramid, JUnit 5, Mockito, AssertJ, integration tests, Testcontainers, coverage, performance testing |
+| [sonar-rules.md](./06-quality-ops/sonar-rules.md) | SonarQube quality gates, Java rule profiles (bugs/vulnerabilities/hotspots/code smells), Maven plugin config, CI integration, suppression rules |
+| [unit-testing-guidelines.md](./06-quality-ops/unit-testing-guidelines.md) | FIRST principles, AAA pattern, Mockito strategy, AssertJ, parameterized tests, exception testing, coverage strategy, test data builders, anti-patterns |
+| [testing-guidelines.md](./06-quality-ops/testing-guidelines.md) | Test pyramid, integration tests, Testcontainers, performance testing (Gatling), overall testing strategy |
 | [observability-guidelines.md](./06-quality-ops/observability-guidelines.md) | Logging (SLF4J/MDC), metrics (Micrometer/Prometheus), distributed tracing (OpenTelemetry), alerting, Grafana dashboards |
 
 ## Quick Reference
