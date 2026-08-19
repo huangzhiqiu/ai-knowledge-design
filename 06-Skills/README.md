@@ -18,6 +18,9 @@ These can be installed directly into OpenCode (`~/.config/opencode/skills/`) and
 
 | Skill | Directory | Purpose |
 |-------|-----------|---------|
+| **Workflow: Ticket to Deploy** | [workflow-ticket-to-deploy/](./workflow-ticket-to-deploy/) | Full pipeline orchestration: Jira Ticket → Requirements → SDD → Code(TDD) → Test → PR → Deploy, with approval gates, evidence discipline, 3-strike escalation, operation logs |
+| **Jira Ticket Fetcher** | [jira-ticket-fetcher/](./jira-ticket-fetcher/) | Stage 0: Fetch Jira ticket, structure content, extract acceptance criteria, clarity check, post clarification questions |
+| **SDD Generator** | [sdd-generator/](./sdd-generator/) | Stage 2: Generate comprehensive SDD from requirements + knowledge base injection (12 sections: domain model, architecture, interfaces, data model, concurrency, security, testing, deployment, risks) |
 | **Java Maven Project Analyzer** | [java-maven-project-analyzer/](./java-maven-project-analyzer/) | Analyze Java Maven multi-module projects → `PROJECT_ARCHITECTURE.md` (APIs, data models, business logic, system boundaries, dependencies) |
 | **Architecture Analyzer** | [architecture-analyzer-skill/](./architecture-analyzer-skill/) | Deeply analyze any codebase → single `architecture.md` optimized for LLM consumption (16 sections: tech stack, design patterns, data layer, API layer, business flows, legacy guidance, with real code snippets) |
 | **Codebase Architecture Analyst** | [codebase-architecture-analyst/](./codebase-architecture-analyst/) | File-level reverse engineering → 6 output folders (source files, dependency graph, architecture docs, OWASP security audit, interactive query DB, Mermaid visuals). Supports SAST tools (SpotBugs, PMD, semgrep, grype) |

@@ -88,6 +88,14 @@ ai-knowledge-design/
 │   ├── serialization/                           # Protobuf/JSON 序列化
 │   ├── data-structures/                         # POJO/Enum/Redis Key/DDL
 │   └── code-templates/                          # 代码模板
+│   └── open-source-deep-dive/                   # 开源项目深度架构分析
+│       ├── README.md
+│       ├── turms-deep-analysis.md               # Turms (Java/Netty/读扩散/无锁)
+│       ├── mattermost-deep-analysis.md          # Mattermost (Go/分层架构/插件RPC)
+│       ├── rocketchat-deep-analysis.md          # Rocket.Chat (DDP/OpLog/NATS微服务)
+│       ├── matrix-synapse-deep-analysis.md      # Matrix/Synapse (联邦/Event DAG/Olm加密)
+│       ├── tiledesk-chat21-deep-analysis.md     # Tiledesk/Chat21 (Inbox模式/MQTT/RabbitMQ)
+│       └── openchat-deep-analysis.md            # OpenChat (ICP区块链/Canister/SNS DAO)
 │
 ├── 03-Design-Guidelines/                        # 🎨 设计指南
 │   ├── README.md
@@ -106,11 +114,16 @@ ai-knowledge-design/
 │   └── sonar-rules.md                           # Sonar 规则配置
 │
 ├── 05-References/                               # 🔗 外部参考资料
-│   └── README.md
+│   ├── README.md
+│   ├── open-source-projects.md                  # 开源 IM 项目详细参考
+│   └── ai-driven-development.md                 # AI 驱动开发参考项目 (Forge/Jira-Flow/ai-coding-workflow/Devin)
 │
 └── 06-Skills/                                   # 🤖 自动化技能
     ├── README.md
     ├── # === OpenCode 兼容技能 (SKILL.md + frontmatter) ===
+    ├── workflow-ticket-to-deploy/               # 流水线总编排: Ticket→SDD→Code→Test→PR→Deploy
+    ├── jira-ticket-fetcher/                     # Jira Ticket 拉取与结构化
+    ├── sdd-generator/                           # SDD 生成 (12章节 + 知识库注入)
     ├── java-maven-project-analyzer/             # Java Maven 多模块项目分析
     ├── architecture-analyzer-skill/             # 通用代码库深度分析 (16章节)
     ├── codebase-architecture-analyst/           # 文件级逆向工程 + OWASP安全审计
@@ -129,12 +142,12 @@ ai-knowledge-design/
 |------|--------|------|
 | 00-Project-Overview | 1 | 🟡 待填写 |
 | 01-CBOL-Domain-Knowledge | 13 | 🟡 模板就绪，待填写 |
-| 02-Chat-Domain-Knowledge | 30+ | 🟢 已预填 |
+| 02-Chat-Domain-Knowledge | 40+ | 🟢 已预填（含6个开源项目深度分析） |
 | 03-Design-Guidelines | 4 | 🟢 已预填 |
 | 04-Coding-Guidelines | 7 | 🟢 已预填 |
-| 05-References | 1 | 🟡 待填写 |
-| 06-Skills | 8 | 🟢 已预填（3个OpenCode技能 + 4个概念技能） |
-| **合计** | **60+** | |
+| 05-References | 2 | 🟢 已预填 |
+| 06-Skills | 11 | 🟢 已预填（6个OpenCode技能 + 4个概念技能） |
+| **合计** | **80+** | |
 
 ---
 
@@ -156,6 +169,24 @@ ai-knowledge-design/
 
 ### 4. 使用自动化技能
 利用 `06-Skills/` 中的技能模板，自动化收集和整理知识。
+
+### 5. Jira 驱动的 AI 开发流水线
+使用 `06-Skills/workflow-ticket-to-deploy/` 技能，从 Jira ticket 驱动完整开发流程：
+
+```
+/workflow-ticket-to-deploy jira_key=CBOL-123
+```
+
+流水线包含 7 个阶段 + 6 个人工审批门控：
+- Stage 0: Ticket Intake (`jira-ticket-fetcher`)
+- Stage 1: Requirements Analysis
+- Stage 2: SDD Generation (`sdd-generator`)
+- Stage 3: Implementation (TDD)
+- Stage 4: Test & Verification
+- Stage 5: PR Creation
+- Stage 6: Deploy & Doc Update
+
+参考 `05-References/ai-driven-development.md` 了解业界最佳实践（Forge、Jira-Flow、ai-coding-workflow）。
 
 ---
 
@@ -238,4 +269,4 @@ ai-knowledge-design/
 
 ---
 
-*最后更新：2026-08-16*
+*最后更新：2026-08-19*
