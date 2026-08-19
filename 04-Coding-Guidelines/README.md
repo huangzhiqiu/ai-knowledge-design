@@ -1,96 +1,123 @@
 # Coding Guidelines
 
-> Industry-standard coding standards, security, quality, and best practices.
+> Comprehensive coding guidelines for CBOL Messaging Hub, organized by technology stack. Covers Java, Spring, networking, data layer, security, and quality operations.
 
-## Documents
+## Categories
+
+### 01-java-core — Java Core Guidelines
 
 | Document | Description |
 |----------|-------------|
-| [java-coding-standards.md](./java-coding-standards.md) | Google + Alibaba Java coding standards |
-| [security-guidelines.md](./security-guidelines.md) | OWASP Top 10, secure coding, cryptography |
-| [code-quality.md](./code-quality.md) | Complexity, coverage, SonarQube quality gates, code smells |
-| [concurrency-guidelines.md](./concurrency-guidelines.md) | Thread pools, thread safety, async programming |
-| [exception-and-logging.md](./exception-and-logging.md) | Exception handling, error codes, structured logging |
-| [websocket-guidelines.md](./websocket-guidelines.md) | WebSocket protocol, security, connection management, performance, Netty |
-| [sonar-rules.md](./sonar-rules.md) | SonarQube rules and quality configuration |
+| [java-coding-standards.md](./01-java-core/java-coding-standards.md) | Java naming conventions, formatting, comments, OOP principles |
+| [java-concurrency.md](./01-java-core/java-concurrency.md) | Thread pools, locks, CAS, CompletableFuture, concurrent collections |
+| [java-exception-logging.md](./01-java-core/java-exception-logging.md) | Exception hierarchy, handling patterns, SLF4J logging, MDC |
+| [java-collections-io.md](./01-java-core/java-collections-io.md) | Collections framework, Stream API, NIO.2, serialization, resource management |
+| [state-machine-guidelines.md](./01-java-core/state-machine-guidelines.md) | Stateless engine, table-driven transitions, testing, visualization (CBOL custom state machine) |
 
-## Coding Standards Summary
+### 02-spring-framework — Spring Framework Guidelines
 
-### Naming & Formatting
-- Classes: UpperCamelCase; Methods/Variables: lowerCamelCase; Constants: UPPER_SNAKE_CASE
-- 4-space indent, max 120 chars/line, braces always used
-- No wildcard imports, remove unused
+| Document | Description |
+|----------|-------------|
+| [spring-boot-best-practices.md](./02-spring-framework/spring-boot-best-practices.md) | Layered architecture, DI, thin controllers, DTO mapping, global exception handling |
+| [spring-configuration-transaction-aop.md](./02-spring-framework/spring-configuration-transaction-aop.md) | Profile strategy, type-safe config, transaction propagation/isolation, AOP patterns |
 
-### OOP & Collections
-- BigDecimal for money, never float/double
-- Specify collection initial capacity
-- Use entrySet() for Map iteration
-- Use isEmpty() not size()==0
+### 03-networking-api — Networking & API Guidelines
 
-### Concurrency
-- Thread pools with bounded queues, meaningful thread names
-- ThreadLocal MUST be cleaned up (try-finally)
-- Concurrent collections, immutable objects, atomic variables
-- Avoid shared mutable state
+| Document | Description |
+|----------|-------------|
+| [websocket-guidelines.md](./03-networking-api/websocket-guidelines.md) | WebSocket protocol, connection management, heartbeat, message framing |
+| [http-rest-api-guidelines.md](./03-networking-api/http-rest-api-guidelines.md) | REST design, HTTP methods, status codes, versioning, pagination, HTTP client best practices |
+| [netty-guidelines.md](./03-networking-api/netty-guidelines.md) | Thread model, ChannelPipeline, concurrency, memory management, zero-copy (Turms reference) |
 
-### Exception Handling
-- Never catch Error/Throwable
-- Never swallow exceptions (log and handle)
-- Catch specific exceptions, not Exception
-- Custom business exception hierarchy with error codes
-- Global exception handler (Spring @RestControllerAdvice)
+### 04-data-layer — Data Layer Guidelines
 
-## Security Summary
+| Document | Description |
+|----------|-------------|
+| [relational-database-mysql.md](./04-data-layer/relational-database-mysql.md) | Schema design, indexing, SQL best practices, connection pool, transactions |
+| [nosql-database-mongodb.md](./04-data-layer/nosql-database-mongodb.md) | Document design, read diffusion (Turms), indexing, sharding, query optimization |
+| [redis-cache-guidelines.md](./04-data-layer/redis-cache-guidelines.md) | Key design, data structures, caching patterns, rate limiting, distributed locks |
+| [message-queue-guidelines.md](./04-data-layer/message-queue-guidelines.md) | Kafka/RocketMQ topic design, producer/consumer patterns, idempotency, DLQ, outbox pattern |
 
-### OWASP Top 10 (2021)
-A01 Broken Access Control, A02 Cryptographic Failures, A03 Injection, A04 Insecure Design, A05 Security Misconfiguration, A06 Vulnerable Components, A07 Auth Failures, A08 Integrity Failures, A09 Logging Failures, A10 SSRF
+### 05-security — Security Guidelines
 
-### Key Rules
-- Validate all input (whitelist, not blacklist)
-- Parameterized queries (no SQL injection)
-- Strong crypto: bcrypt/argon2 for passwords, AES-256-GCM, TLS 1.2+
-- SecureRandom for security contexts
-- No hardcoded secrets
-- Mask sensitive data in logs
-- Security headers (CSP, HSTS, X-Frame-Options)
+| Document | Description |
+|----------|-------------|
+| [security-guidelines.md](./05-security/security-guidelines.md) | OWASP Top 10, input validation, output encoding, secure storage, transport security |
+| [authentication-authorization.md](./05-security/authentication-authorization.md) | JWT, refresh tokens, RBAC/ABAC, WebSocket security, API security, CORS, security headers |
+| [sonarqube-devsecops-guidelines.md](./05-security/sonarqube-devsecops-guidelines.md) | SonarQube quality gates, issue types (bugs/vulnerabilities/hotspots), DevSecOps pipeline, SAST/DAST/SCA, secret scanning, incident response |
 
-## Quality Summary
+### 06-quality-ops — Quality & Operations Guidelines
 
-### Thresholds
-- Cyclomatic complexity ≤ 10/function
-- Method ≤ 50 lines, Class ≤ 500 lines
-- Duplication ≤ 3%
-- Line coverage ≥ 80%, new code ≥ 90%
-- 0 blocker/critical issues
+| Document | Description |
+|----------|-------------|
+| [code-quality.md](./06-quality-ops/code-quality.md) | Code review checklist, complexity metrics, duplication, refactoring patterns |
+| [sonar-rules.md](./06-quality-ops/sonar-rules.md) | SonarQube rule configuration, quality profiles |
+| [testing-guidelines.md](./06-quality-ops/testing-guidelines.md) | Test pyramid, JUnit 5, Mockito, AssertJ, integration tests, Testcontainers, coverage, performance testing |
+| [observability-guidelines.md](./06-quality-ops/observability-guidelines.md) | Logging (SLF4J/MDC), metrics (Micrometer/Prometheus), distributed tracing (OpenTelemetry), alerting, Grafana dashboards |
 
-### SonarQube Quality Gate
-- Coverage on new code ≥ 80%
-- Duplication on new code ≤ 3%
-- Reliability/Security/Maintainability rating = A
-- Security hotspots 100% reviewed
+## Quick Reference
 
-## Logging Summary
-- SLF4J facade, parameterized logging
-- Levels: ERROR (failures), WARN (potential issues), INFO (business events), DEBUG (diagnostics)
-- Include traceId/requestId via MDC
-- Never log passwords, tokens, secrets
-- Mask PII (email, phone, ID)
-- JSON structured logging in production
+### Mandatory Rules
 
-## WebSocket Summary
-- **Protocol**: RFC 6455, version 13, WSS in production, sub-protocol negotiation
-- **Security**: Origin validation, handshake auth, connection limits, message size/frequency limits
-- **Heartbeat**: Ping/Pong frames, 60s server idle, 30s client interval, 3 misses → reconnect
-- **Reconnect**: Exponential backoff (1s→2s→4s→...→30s max), resume with last seq_id
-- **Messages**: Unique msg_id for idempotency, type field, server timestamp, ≤4KB text
-- **Performance**: Netty pooled allocator, async business logic, per-session serialization, permessage-deflate
-- **Errors**: Structured error response (code/message/ref_msg_id), business errors don't close connection
-- **Testing**: 100K concurrent connections/node, 100K msg/s, P99 latency ≤100ms
+1. **No `System.out.println`** — use SLF4J logger
+2. **No hardcoded secrets** — use environment variables / secret manager
+3. **No SQL string concatenation** — use PreparedStatement / ORM parameterization
+4. **No production code before failing test** — TDD discipline
+5. **No `com.hsbc.*` package** — use `com.selfdevelopment.ai.messaging.*`
+6. **No Chinese folder/file names** — use English, kebab-case
+7. **Always set TTL on Redis cache keys** — except specific use cases
+8. **Always use parameterized logging** — `log.debug("msg: {}", var)` not `log.debug("msg: " + var)`
+9. **Always include exception as last parameter** — `log.error("msg", e)` for stack trace
+10. **Always set timeouts on HTTP clients** — connect + read timeouts
+
+### Quality Gates (SonarQube)
+
+| Metric | Threshold |
+|--------|-----------|
+| Coverage | >= 80% |
+| New Code Coverage | >= 80% |
+| Duplicated Lines | <= 3% |
+| Critical/Blocker Issues | 0 |
+| Security Hotspots Reviewed | 100% |
+| Vulnerabilities | 0 |
+| Maintainability Rating | A |
+| Reliability Rating | A |
+| Security Rating | A |
+
+### Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Language | Java 17+ |
+| Framework | Spring Boot 3.x |
+| Network | Netty 4.1.x (WebSocket/TCP) |
+| Database | MySQL 8.0 + MongoDB 6.x |
+| Cache | Redis 6.x (Cluster) |
+| Message Queue | Kafka / RocketMQ |
+| Build | Maven |
+| Code Quality | SonarQube + SpotBugs + Semgrep |
+| Testing | JUnit 5 + Mockito + AssertJ + Testcontainers |
+| Observability | SLF4J + Micrometer + Prometheus + OpenTelemetry |
+| Container | Docker + Kubernetes |
+
+## How to Use
+
+1. **Before writing code**: Read relevant category guidelines
+2. **During code review**: Use guidelines as checklist
+3. **In CI/CD**: Enforce quality gates via SonarQube
+4. **For new technologies**: Add new guideline documents to appropriate category
 
 ## References
-- Google Java Style Guide
-- Alibaba Java Development Manual
+
+- Google Java Style Guide: https://google.github.io/styleguide/javaguide.html
+- Alibaba Java Coding Guidelines: https://github.com/alibaba/p3c
+- Spring Boot Best Practices: https://github.com/kunaljainflair/Springboot_dev_best_practices
 - OWASP Top 10: https://owasp.org/www-project-top-ten/
+- OWASP ASVS: https://owasp.org/www-project-application-security-verification-standard/
 - SonarQube Rules: https://rules.sonarsource.com/java
-- Java Concurrency in Practice by Brian Goetz
-- Effective Java by Joshua Bloch
+- 12-Factor App: https://12factor.net/
+- Turms (Java/Netty IM reference): https://github.com/turms-im/turms
+
+---
+
+*Last updated: 2026-08-19*
