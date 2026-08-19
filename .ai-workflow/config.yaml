@@ -1,0 +1,268 @@
+# AI Workflow Configuration
+# Jira-driven AI development pipeline configuration
+# Copy this file to .ai-workflow/config.yaml and fill in your values
+
+# ============================================================
+# Jira Configuration
+# ============================================================
+jira:
+  # Jira Cloud base URL (e.g., https://your-domain.atlassian.net)
+  # For Jira Server/Data Center: https://jira.your-company.com
+  base_url: https://your-domain.atlassian.net
+
+  # Project key prefix (e.g., CBOL for CBOL-123)
+  project_key: CBOL
+
+  # Authentication: email + API token (Jira Cloud)
+  # For Jira Server: use username + password or personal access token
+  email: your-email@company.com
+  api_token: ${JIRA_API_TOKEN}  # Set as environment variable, NEVER commit real token
+
+  # Optional: Jira API version (2 for Server, 3 for Cloud)
+  api_version: 3
+
+  # Optional: Custom fields mapping
+  # Map Jira custom field IDs to semantic names
+  custom_fields:
+    story_points: customfield_10016
+    epic_link: customfield_10014
+    sprint: customfield_10020
+    acceptance_criteria: customfield_10030
+
+# ============================================================
+# GitHub Configuration
+# ============================================================
+github:
+  # Repository owner (username or org)
+  owner: huangzhiqiu
+
+  # Repository name
+  repo: cbol-refactor
+
+  # Default branch for PRs
+  default_branch: main
+
+  # GitHub API token (for creating PRs, adding labels)
+  # Use fine-grained token with: Contents (read/write), Pull requests (read/write)
+  api_token: ${GITHUB_TOKEN}  # Set as environment variable
+
+  # Optional: GitHub Enterprise Server URL
+  # enterprise_url: https://github.your-company.com
+
+# ============================================================
+# Knowledge Base Configuration
+# ============================================================
+knowledge_base:
+  # Path to the knowledge base (relative to project root)
+  path: ./
+
+  # Directories to search for knowledge injection (by stage)
+  stage_injection:
+    stage0_ticket:
+      - 01-CBOL-Domain-Knowledge/README.md
+    stage1_requirements:
+      - 01-CBOL-Domain-Knowledge/
+    stage2_sdd:
+      - 02-Chat-Domain-Knowledge/
+      - 03-Design-Guidelines/
+    stage3_implementation:
+      - 04-Coding-Guidelines/
+      - 02-Chat-Domain-Knowledge/java-implementation/
+      - 02-Chat-Domain-Knowledge/code-templates/
+      - 02-Chat-Domain-Knowledge/data-structures/
+    stage4_test:
+      - 04-Coding-Guidelines/code-quality.md
+      - 04-Coding-Guidelines/sonar-rules.md
+    stage5_pr:
+      - 03-Design-Guidelines/api-design-guidelines.md
+    stage6_deploy:
+      - 01-CBOL-Domain-Knowledge/configuration/
+      - 01-CBOL-Domain-Knowledge/deployment-architecture/
+
+# ============================================================
+# Operations & Output Configuration
+# ============================================================
+operations:
+  # Directory for operation logs (relative to project root)
+  log_dir: docs/operations
+
+  # Directory for generated SDDs
+  sdd_dir: design/sdd
+
+  # Operation log filename pattern
+  # Available variables: {stage_number}, {stage_name}, {version}
+  log_filename_pattern: "{stage_number}-{stage_name}-v{version}.md"
+
+# ============================================================
+# Limits & Escalation
+# ============================================================
+limits:
+  # Maximum revision loops per gate before escalating to human
+  max_revision_loops: 3
+
+  # Maximum test retry attempts before escalating
+  max_test_retries: 3
+
+  # Maximum CI repair loops before escalating
+  max_ci_repair_loops: 3
+
+  # Maximum TDD cycles per ticket (prevents infinite implementation)
+  max_tdd_cycles: 50
+
+  # Maximum files changed per PR (warn if exceeded)
+  max_files_per_pr: 50
+
+# ============================================================
+# Branch & Commit Configuration
+# ============================================================
+branch:
+  # Branch naming pattern
+  # Available variables: {key}, {short_desc}, {type}
+  pattern: "feat/{key}-{short_desc}"
+
+  # Maximum length of short description in branch name
+  max_short_desc_length: 30
+
+  # Branch types mapping
+  types:
+    story: feat
+    bug: fix
+    task: chore
+    epic: epic
+
+commit:
+  # Commit message convention
+  # Available variables: {type}, {scope}, {subject}, {key}
+  message_pattern: "{type}({scope}): {subject} ({key})"
+
+  # Conventional commit types
+  conventional_types:
+    - feat
+    - fix
+    - docs
+    - style
+    - refactor
+    - perf
+    - test
+    - build
+    - ci
+    - chore
+    - revert
+
+# ============================================================
+# PR Configuration
+# ============================================================
+pr:
+  # PR title pattern
+  # Available variables: {key}, {title}, {type}
+  title_pattern: "[{key}] {title}"
+
+  # PR body template (relative path to markdown template)
+  body_template: .ai-workflow/templates/pr-body.md
+
+  # Auto-assign PR creator
+  auto_assign_creator: true
+
+  # Required labels (added automatically)
+  required_labels:
+    - ai-generated
+
+  # Optional: Required reviewers (GitHub usernames)
+  # required_reviewers:
+  #   - reviewer1
+  #   - reviewer2
+
+  # Enforce that ticket creator cannot approve PR
+  enforce_no_self_approval: true
+
+# ============================================================
+# TDD Configuration
+# ============================================================
+tdd:
+  # Test framework
+  framework: junit5  # Options: junit5, junit4, testng
+
+  # Test directory pattern
+  test_dir_pattern: "src/test/java/{package_path}/"
+
+  # Test class naming pattern
+  test_class_pattern: "{class_name}Test"
+
+  # Test method naming convention
+  test_method_pattern: "should_{behavior}_when_{condition}"
+
+  # Coverage thresholds (warn if below)
+  coverage:
+    line: 80
+    branch: 70
+
+  # Mock framework
+  mock_framework: mockito  # Options: mockito, easymock, jmock
+
+# ============================================================
+# Build & Test Commands
+# ============================================================
+build:
+  # Build tool
+  tool: maven  # Options: maven, gradle
+
+  # Maven wrapper path (relative to project root)
+  maven_wrapper: ./mvnw
+
+  # Compile command
+  compile_command: "./mvnw compile -q"
+
+  # Test command
+  test_command: "./mvnw test -q"
+
+  # Test specific class command
+  # Available variables: {test_class}
+  test_specific_command: "./mvnw test -Dtest={test_class} -q"
+
+  # Package command
+  package_command: "./mvnw package -DskipTests -q"
+
+  # Sonar analysis command (optional)
+  sonar_command: "./mvnw sonar:sonar -q"
+
+# ============================================================
+# Deployment Configuration
+# ============================================================
+deployment:
+  # Deployment tool
+  tool: kubernetes  # Options: kubernetes, docker, helm, script
+
+  # Environment list
+  environments:
+    - name: dev
+      namespace: cbol-dev
+    - name: staging
+      namespace: cbol-staging
+    - name: prod
+      namespace: cbol-prod
+
+  # Deployment manifest directory
+  manifest_dir: k8s/
+
+  # Rollback strategy
+  rollback:
+    enabled: true
+    max_revisions: 5
+
+# ============================================================
+# Logging & Observability
+# ============================================================
+observability:
+  # Structured logging
+  structured_logging: true
+
+  # Log level for AI-generated code
+  ai_log_level: INFO  # Options: DEBUG, INFO, WARN, ERROR
+
+  # Key log points (auto-instrumented)
+  key_log_points:
+    - entry_exit
+    - error
+    - state_transition
+    - external_call
+    - cache_hit_miss

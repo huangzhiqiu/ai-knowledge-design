@@ -1,0 +1,68 @@
+# Project Mapping Configuration
+# Maps Jira projects to GitHub repositories and workspaces
+# Reference: ai-coding-workflow multi-project + cross-project support
+
+projects:
+  # ============================================================
+  # CBOL Refactor (Main project)
+  # ============================================================
+  - jira_project_key: CBOL
+    jira_project_name: CBOL Refactor
+    github_owner: huangzhiqiu
+    github_repo: cbol-refactor
+    default_branch: main
+    workspace: cbol-refactor
+    # VS Code workspace file (optional)
+    vscode_workspace: cbol-refactor.code-workspace
+    # Build tool
+    build_tool: maven
+    # Test command
+    test_command: "./mvnw test -q"
+    # Knowledge base path (relative to repo root)
+    knowledge_base_path: ./
+    # Deployment environment
+    deployment:
+      tool: kubernetes
+      namespace: cbol-dev
+
+  # ============================================================
+  # Example: Frontend project (cross-project)
+  # ============================================================
+  # - jira_project_key: CBOLF
+  #   jira_project_name: CBOL Frontend
+  #   github_owner: huangzhiqiu
+  #   github_repo: cbol-frontend
+  #   default_branch: main
+  #   workspace: cbol-frontend
+  #   build_tool: npm
+  #   test_command: "npm test"
+  #   knowledge_base_path: ./docs/
+  #   deployment:
+  #     tool: docker
+  #     namespace: cbol-frontend-dev
+
+# ============================================================
+# Cross-project ticket rules
+# ============================================================
+cross_project:
+  # When a ticket spans multiple projects, use contract-first design
+  contract_first: true
+
+  # Contract types supported
+  contract_types:
+    - openapi    # REST API contract
+    - protobuf   # gRPC / Protobuf contract
+    - graphql    # GraphQL schema
+    - asyncapi   # Event-driven / WebSocket contract
+
+  # Implementation order for cross-project tickets
+  implementation_order:
+    - backend    # Implement backend first (producer)
+    - frontend   # Then frontend (consumer)
+    - integration # Finally cross-repo integration test
+
+  # Integration test stage (runs after all repos implemented)
+  integration_test:
+    enabled: true
+    stage: "4.5"  # Inserted between Stage 4 (Test) and Stage 5 (PR)
+    command: "./scripts/integration-test.sh"

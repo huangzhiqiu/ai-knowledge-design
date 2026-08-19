@@ -1,4 +1,4 @@
-# CBOL Refactor — Project Knowledge Base
+﻿# CBOL Refactor — Project Knowledge Base
 
 > 面向 AI Messaging Hub（Self-Development）的即时通讯项目知识库，覆盖领域模型、架构设计、Java 实现参考、设计规范与编码标准，支持基于知识库生成 Java 代码。
 
@@ -146,8 +146,8 @@ ai-knowledge-design/
 | 03-Design-Guidelines | 4 | 🟢 已预填 |
 | 04-Coding-Guidelines | 7 | 🟢 已预填 |
 | 05-References | 2 | 🟢 已预填 |
-| 06-Skills | 11 | 🟢 已预填（6个OpenCode技能 + 4个概念技能） |
-| **合计** | **80+** | |
+| 06-Skills | 15 | 🟢 已预填（10个OpenCode技能 + 4个概念技能） |
+| **合计** | **90+** | |
 
 ---
 
