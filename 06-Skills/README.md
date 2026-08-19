@@ -1,4 +1,4 @@
-# Skills
+﻿# Skills
 
 > Automation skills for AI-driven development, code analysis, and knowledge collection. All skills are OpenCode-compatible (standard `SKILL.md` with frontmatter) unless noted as concept skills.
 
@@ -90,14 +90,12 @@ Jira Ticket (CBOL-XXX)
 
 ## Category 3: Knowledge Collection (`03-knowledge-collection/`)
 
-> Concept skills (documentation templates) for collecting and organizing knowledge from existing codebases and open-source projects. These are not executable OpenCode skills — they are workflow guides.
+> Concept skills (documentation templates) for collecting and organizing knowledge. Code analysis and doc generation are now handled by executable skills in `02-code-analysis/`.
 
 | Skill | Directory | Purpose | Output Target |
 |-------|-----------|---------|---------------|
 | **CBOL Knowledge Collector** | [cbol-knowledge-collector/](./03-knowledge-collection/cbol-knowledge-collector/) | Extract CBOL domain knowledge from existing code and related systems | `01-CBOL-Domain-Knowledge/` |
 | **Chat Pattern Collector** | [chat-pattern-collector/](./03-knowledge-collection/chat-pattern-collector/) | Collect design patterns and code templates from open-source IM projects | `02-Chat-Domain-Knowledge/` |
-| **Code Analyzer** | [code-analyzer/](./03-knowledge-collection/code-analyzer/) | Analyze code structure, dependencies, and quality | `01-CBOL-Domain-Knowledge/module-structure/`, `database-schema/` |
-| **Doc Generator** | [doc-generator/](./03-knowledge-collection/doc-generator/) | Generate API docs, UML diagrams, and reports | `01-CBOL-Domain-Knowledge/api-definitions/`, `uml-diagrams/` |
 
 ---
 

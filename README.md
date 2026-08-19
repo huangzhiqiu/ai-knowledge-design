@@ -146,8 +146,8 @@ ai-knowledge-design/
 | 03-Design-Guidelines | 4 | 🟢 已预填 |
 | 04-Coding-Guidelines | 7 | 🟢 已预填 |
 | 05-References | 2 | 🟢 已预填 |
-| 06-Skills | 15 | 🟢 已预填（10个OpenCode技能 + 4个概念技能） |
-| **合计** | **90+** | |
+| 06-Skills | 13 | 🟢 已预填（10个OpenCode技能 + 2个概念技能） |
+| **合计** | **95+** | |
 
 ---
 

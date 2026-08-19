@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+*.pyc
+__pycache__/
+target/
+*.class
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# AI Workflow - actual config (contains secrets)
+.ai-workflow/config.yaml
+.ai-workflow/state/
+.ai-workflow/logs/
+
+# Generated artifacts
+docs/operations/
+design/sdd/
+*.log
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+dist/
+build/
+*.jar
+*.war
+
+# Temporary files
+*.tmp
+*.bak
+*.old
