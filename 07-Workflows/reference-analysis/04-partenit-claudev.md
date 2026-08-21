@@ -30,6 +30,55 @@ A Jira-driven Claude Code pipeline where moving a Jira task to "In Progress" tri
 
 ## 3. Architecture Deep Dive
 
+### 3.0 Mermaid Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph Jira["Jira (Source of Truth)"]
+        J1[Task created<br/>with requirements]
+        J2[In Progress<br/>trigger pipeline]
+        J3[Ready to Merge<br/>trigger auto-merge]
+        J4[Done]
+    end
+
+    subgraph Automation["Jira Automation"]
+        A1[Webhook trigger<br/>→ GitHub Actions]
+        A2[Status sync<br/>→ update Jira]
+    end
+
+    subgraph Pipeline["Claude Code Pipeline"]
+        P1[Create subtasks]
+        P2[System analysis<br/>understand codebase]
+        P3[Architecture design]
+        P4[Write code]
+        P5[Write tests]
+        P6[Open PR<br/>linked to Jira]
+    end
+
+    subgraph GitHub["GitHub"]
+        G1[PR created]
+        G2[CI runs]
+        G3[Human review]
+        G4[Auto-merge]
+    end
+
+    J1 --> J2
+    J2 --> A1
+    A1 --> P1
+    P1 --> P2 --> P3 --> P4 --> P5 --> P6
+    P6 --> G1
+    G1 --> G2 --> G3
+    G3 -->|Approved| J3
+    J3 --> A2 --> G4
+    G4 --> J4
+    G3 -->|Rejected| P4
+
+    style Jira fill:#e3f2fd
+    style Pipeline fill:#fff3e0
+    style GitHub fill:#e8f5e9
+    style J4 fill:#c8e6c9
+```
+
 ### 3.1 Pipeline Flow
 
 ```

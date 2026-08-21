@@ -31,6 +31,72 @@ An 8-stage agentic development template with:
 
 ## 3. Architecture Deep Dive
 
+### 3.0 Mermaid Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph SDLC["8-Stage SDLC"]
+        direction TB
+        S1[1. Requirements<br/>PM/TL + Copilot<br/>📋 01-requirement.yml]
+        S2[2. Design<br/>Architect + Copilot<br/>📋 02-design-request.yml]
+        S3[3. Planning<br/>TL + Copilot<br/>📋 03-task-breakdown.yml]
+        S4[4. Implementation<br/>Developer + Copilot<br/>code + tests]
+        S5[5. Testing<br/>QA + Copilot<br/>📋 04-test-request.yml]
+        S6[6. Code Review<br/>Reviewer + Copilot<br/>review record]
+        S7[7. Release & Ops<br/>DevOps + Copilot<br/>📋 07-release-request.yml]
+        S8[8. Incident Response<br/>SRE + Copilot<br/>📋 08-incident-report.yml]
+    end
+
+    S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7
+    S7 -.->|incident| S8
+    S8 -.->|learnings| S1
+
+    style S1 fill:#e3f2fd
+    style S2 fill:#bbdefb
+    style S3 fill:#90caf9
+    style S4 fill:#fff9c4
+    style S5 fill:#c8e6c9
+    style S6 fill:#fce4ec
+    style S7 fill:#e8f5e9
+    style S8 fill:#ffcdd2
+```
+
+### 3.0.1 Role + AI Support Mapping
+
+```mermaid
+flowchart LR
+    subgraph Human["Human (judgment, review)"]
+        H1[PM/TL]
+        H2[Architect]
+        H3[Developer]
+        H4[QA]
+        H5[Reviewer]
+        H6[DevOps]
+        H7[SRE]
+    end
+
+    subgraph AI["AI (generation, analysis)"]
+        A1[Context gathering]
+        A2[Architecture suggestions]
+        A3[Code generation]
+        A4[Test generation]
+        A5[Pre-review analysis]
+        A6[Pipeline generation]
+        A7[Incident analysis]
+    end
+
+    H1 <--> A1
+    H2 <--> A2
+    H3 <--> A3
+    H4 <--> A4
+    H5 <--> A5
+    H6 <--> A6
+    H7 <--> A7
+
+    style Human fill:#e3f2fd
+    style AI fill:#fff3e0
+```
+
 ### 3.1 8-Stage Workflow
 
 | Stage | Traditional Role | Copilot Support | Key Output | Issue Template |

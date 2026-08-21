@@ -43,6 +43,113 @@ A **Standard Operating Procedure (SOP)** for AI-assisted software projects. Ever
 
 ## 3. Architecture Deep Dive
 
+### 3.0 Mermaid Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph ConfigLayer["Layer 1: Config (committed)"]
+        L1[AGENTS.md<br/>roles / build / invariants]
+    end
+
+    subgraph SpecLayer["Layer 2: Spec (committed)"]
+        L2[SPEC.md<br/>FR-001... source of truth]
+    end
+
+    subgraph DesignLayer["Layer 3: Design (committed)"]
+        L3[specs/YYYY-MM-DD-topic-design.md]
+    end
+
+    subgraph PlanLayer["Layer 4: Plan (committed)"]
+        L4[plans/YYYY-MM-DD-topic.md<br/>task breakdown]
+    end
+
+    subgraph StateLayer["Layer 5: State (gitignored)"]
+        L5[SPRINT.md<br/>live sprint tracker]
+    end
+
+    subgraph TestLayer["Layer 6: Tests (committed)"]
+        L6[test/<br/>traceable to FR/invariant]
+    end
+
+    subgraph CodeLayer["Layer 7: Code (committed)"]
+        L7[src/<br/>implementation]
+    end
+
+    L1 --> L2
+    L2 --> L3
+    L3 --> L4
+    L4 --> L5
+    L5 --> L6
+    L6 --> L7
+
+    style ConfigLayer fill:#e3f2fd
+    style SpecLayer fill:#bbdefb
+    style DesignLayer fill:#90caf9
+    style PlanLayer fill:#64b5f6
+    style StateLayer fill:#fff9c4
+    style TestLayer fill:#c8e6c9
+    style CodeLayer fill:#a5d6a7
+```
+
+### 3.0.1 Five Roles & Flow
+
+```mermaid
+flowchart TB
+    subgraph Roles["Five Roles (never mix)"]
+        direction LR
+        R1[Planner<br/>standard tier]
+        R2[Test Designer<br/>frontier tier]
+        R3[Developer<br/>per-task tier]
+        R4[Spec Reviewer<br/>per-task tier]
+        R5[Code Reviewer<br/>per-task tier]
+    end
+
+    subgraph Lifecycle["Sprint Lifecycle"]
+        direction TB
+        P0[User: I want X] --> P1[Planner<br/>propose build order]
+        P1 --> P2[Design doc<br/>user approves]
+        P2 --> P3[Plan doc<br/>user approves]
+        P3 --> P4[Test Designer<br/>write failing tests]
+        P4 --> P5[Spec Reviewer pre<br/>tests match FR?]
+        P5 -->|✅| P6[Developer<br/>implement until pass]
+        P5 -->|❌| P4
+        P6 --> P7[Spec Reviewer post<br/>code matches spec?]
+        P7 -->|✅| P8[Code Reviewer<br/>quality/arch/coverage]
+        P7 -->|❌ findings| P6
+        P8 -->|✅| P9[Version bump<br/>build → PR]
+        P8 -->|❌ findings| P6
+        P9 --> P10[Human smoke check]
+        P10 -->|✅| P11[Merge → release tag<br/>close issues]
+    end
+
+    R1 -.-> P1
+    R2 -.-> P4
+    R3 -.-> P6
+    R4 -.-> P5
+    R4 -.-> P7
+    R5 -.-> P8
+
+    style Roles fill:#f3e5f5
+    style P11 fill:#c8e6c9
+```
+
+### 3.0.2 Review Rejection Loop
+
+```mermaid
+flowchart LR
+    A[Developer<br/>implements task] --> B[Reviewer<br/>produces findings doc]
+    B -->|PASS| C[Next task]
+    B -->|CHANGES REQUESTED| D[Fresh Developer<br/>fixes findings]
+    D --> E[Same reviewer role<br/>fresh instance re-review]
+    E -->|PASS| C
+    E -->|CHANGES REQUESTED| F{2 failed cycles?}
+    F -->|No| D
+    F -->|Yes| G[STOP<br/>escalate to human]
+
+    style G fill:#ffcdd2
+    style C fill:#c8e6c9
+```
+
 ### 3.1 Document Stack (7 Layers)
 
 ```

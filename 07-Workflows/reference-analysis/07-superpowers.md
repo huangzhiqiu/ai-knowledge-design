@@ -36,6 +36,67 @@ Superpowers is an agentic framework that provides:
 
 ## 3. Architecture Deep Dive
 
+### 3.0 Mermaid Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph Framework["Superpowers Framework (27k+ stars)"]
+        direction TB
+        subgraph Core["4 Core Pillars"]
+            direction LR
+            P1[Skills<br/>specialized<br/>capabilities]
+            P2[Instincts<br/>automatic<br/>behaviors]
+            P3[Memory<br/>persistent<br/>context]
+            P4[Security<br/>safety guards<br/>permissions]
+        end
+        Plugin[Plugin System<br/>.opencode/plugin/superpowers.js]
+    end
+
+    subgraph Platforms["Multi-Platform Support"]
+        direction LR
+        PL1[Claude Code]
+        PL2[OpenCode]
+        PL3[Codex]
+        PL4[Cursor]
+    end
+
+    subgraph Progressive["Progressive Disclosure"]
+        PD1[Skills activate<br/>only when relevant]
+        PD2[No context bloat]
+        PD3[Agent sees only<br/>what it needs]
+    end
+
+    Core --> Plugin
+    Plugin --> Platforms
+    Core --> Progressive
+
+    style Core fill:#e3f2fd
+    style Plugin fill:#fff3e0
+    style Platforms fill:#e8f5e9
+    style Progressive fill:#f3e5f5
+```
+
+### 3.0.1 Skill Activation Flow
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle: Agent starts
+    Idle --> Detect: User request received
+    Detect --> Match: Analyze request against skill triggers
+    Match --> Activate: Relevant skill found
+    Activate --> Execute: Skill provides instructions
+    Execute --> Complete: Task done
+    Complete --> Idle: Wait for next request
+    Match --> NoSkill: No relevant skill
+    NoSkill --> Idle: Use default behavior
+
+    note right of Activate
+        Progressive disclosure:
+        only relevant skills
+        are loaded into context
+    end note
+```
+
 ### 3.1 Core Components
 
 ```

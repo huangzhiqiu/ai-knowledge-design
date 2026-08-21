@@ -48,6 +48,64 @@ An MCP (Model Context Protocol) server that provides the **data plumbing and orc
 
 ## 3. Architecture Deep Dive
 
+### 3.0 Mermaid Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph Client["MCP Client (IDE)"]
+        A1[Claude Code]
+        A2[Copilot]
+        A3[Cursor]
+    end
+
+    subgraph Server["ai-coding-workflow MCP Server"]
+        direction TB
+        C[Config<br/>env vars / paths / mapping]
+        S[State<br/>op logs / retry / frontmatter]
+        subgraph Tools["MCP Tools"]
+            T1[Jira Tools]
+            T2[GitHub Tools]
+            T3[Repo/Git Tools]
+            T4[Test Tools]
+            T5[Deploy Tools]
+        end
+        R[Resources<br/>skill_mapping.yaml / templates]
+    end
+
+    subgraph External["External Systems"]
+        E1[Jira API<br/>tickets]
+        E2[GitHub API<br/>issues/PRs]
+        E3[Local Repo<br/>git/code]
+    end
+
+    Client -->|MCP protocol<br/>JSON-RPC over stdio| Server
+    T1 --> E1
+    T2 --> E2
+    T3 --> E3
+    T4 --> E3
+    T5 --> E3
+```
+
+### 3.0.1 Pipeline Flow
+
+```mermaid
+flowchart LR
+    J[Jira Ticket] --> S1[Stage 1<br/>Design]
+    S1 -->|Gate: Design Approved?| S2[Stage 2<br/>Code PR]
+    S2 -->|Gate: PR Ready?| S3[Stage 3<br/>Test]
+    S3 -->|Gate: Tests Pass?| S4[Stage 4<br/>Deploy]
+    S4 -->|Gate: Deploy OK?| S5[Stage 5<br/>Doc Update]
+    S5 --> D[Done]
+
+    style J fill:#e1f5fe
+    style D fill:#c8e6c9
+    style S1 fill:#fff3e0
+    style S2 fill:#fff3e0
+    style S3 fill:#fff3e0
+    style S4 fill:#fff3e0
+    style S5 fill:#fff3e0
+```
+
 ### 3.1 High-Level Architecture
 
 ```

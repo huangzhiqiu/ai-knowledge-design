@@ -41,6 +41,110 @@ A self-contained Claude Code plugin that carries a feature from a one-line idea 
 
 ## 3. Architecture Deep Dive
 
+### 3.0 Mermaid Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph SkillTaxonomy["Three Kinds of Skills"]
+        direction TB
+        subgraph Backbone["BACKBONE (run in order)"]
+            B0[0. survey<br/>once/repo]
+            B1[1. specify]
+            B2[2. clarify]
+            B3[3. design]
+            B4[4. sequences]
+            B5[5. data-model]
+            B6[6. api]
+            B7[7. tasks]
+            B8[8. plan-tests]
+            B9[9. implement<br/>TDD engine]
+        end
+        subgraph Utilities["UTILITIES (call anytime)"]
+            U1[interview]
+            U2[classify-size]
+            U3[glossary]
+            U4[decide-adr]
+        end
+        subgraph CloseLoop["CLOSE LOOP (after code)"]
+            C1[10. review]
+            C2[11. ship]
+        end
+    end
+
+    subgraph Agents["Specialized Agents (10+)"]
+        AG1[explorer]
+        AG2[test-author]
+        AG3[implementer]
+        AG4[reviewer]
+        AG5[critic]
+        AG6[devils-advocate]
+    end
+
+    subgraph Shared["Shared Modules (_shared/)"]
+        SH1[socratic-loop]
+        SH2[critic]
+        SH3[size-matrix]
+        SH4[handoff]
+        SH5[tool-adapters]
+    end
+
+    Backbone --> Agents
+    Utilities --> Agents
+    CloseLoop --> Agents
+    Agents --> Shared
+
+    style Backbone fill:#e3f2fd
+    style Utilities fill:#fff3e0
+    style CloseLoop fill:#f3e5f5
+    style Agents fill:#e8f5e9
+    style Shared fill:#fce4ec
+```
+
+### 3.0.1 Backbone Flow
+
+```mermaid
+flowchart LR
+    S0[/survey<br/>once per repo/] --> S1[specify<br/>write spec.md]
+    S1 --> S2[clarify<br/>devil's advocate]
+    S2 --> S3[design<br/>Arc42 SAD + C4 + ADRs]
+    S3 --> S4[sequences<br/>Mermaid diagrams]
+    S4 --> S5[data-model<br/>schema + migrations]
+    S5 --> S6[api<br/>OpenAPI contract]
+    S6 --> S7[tasks<br/>tasks.json DAG]
+    S7 --> S8[plan-tests<br/>AC → test mapping]
+    S8 --> S9[implement<br/>TDD engine]
+    S9 --> S10[review<br/>clean context]
+    S10 --> S11[ship<br/>PR + changelog]
+    S11 --> D([shipped])
+
+    style D fill:#c8e6c9
+    style S0 fill:#e1f5fe
+    style S9 fill:#fff9c4
+```
+
+### 3.0.2 TDD Implementation Engine
+
+```mermaid
+stateDiagram-v2
+    [*] --> SELECT: Pick next task from DAG
+    SELECT --> RED: Write failing test
+    RED --> GREEN: Test fails for right reason?
+    GREEN --> REFACTOR: Write minimal code to pass
+    REFACTOR --> GATE: Keep tests green
+    GATE --> COMMIT: Unit + integration + lint + vet pass
+    COMMIT --> SELECT: More tasks?
+    COMMIT --> [*]: All tasks done
+
+    note right of RED
+        Prove failure is for
+        the right reason
+    end note
+    note right of GATE
+        3 execution modes:
+        sequential / team / dynamic
+    end note
+```
+
 ### 3.1 Skill Taxonomy
 
 ```

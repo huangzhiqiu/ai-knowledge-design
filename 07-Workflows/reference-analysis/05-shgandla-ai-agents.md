@@ -27,19 +27,64 @@ A multi-agent system with 4 core commands that chain together: `/build`, `/test`
 
 ## 3. Architecture Deep Dive
 
+### 3.0 Mermaid Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph Commands["4 Core Commands"]
+        direction LR
+        C1[/build<br/>TDD slices<br/>atomic commits<br/>quality scoring/]
+        C2[/test<br/>6 quality gates/]
+        C3[/review<br/>5-axis review/]
+        C4[/ship<br/>pre-flight checks<br/>PR creation<br/>ship report/]
+    end
+
+    subgraph Gates["6 Quality Gates (/test)"]
+        direction TB
+        G1[1. Functional<br/>tests pass]
+        G2[2. Security<br/>vulns / input / auth]
+        G3[3. DevOps<br/>build / CI / deploy]
+        G4[4. DX<br/>readability / docs]
+        G5[5. Observability<br/>logging / metrics]
+        G6[6. Performance<br/>response / resources]
+    end
+
+    subgraph Review["5-Axis Review (/review)"]
+        direction TB
+        R1[1. Architecture<br/>patterns / separation]
+        R2[2. Security<br/>OWASP / validation]
+        R3[3. Quality<br/>complexity / naming]
+        R4[4. Tests<br/>coverage / edge cases]
+        R5[5. Standards<br/>conventions / best practices]
+    end
+
+    C1 -->|suggest| C2
+    C2 -->|all pass| C3
+    C3 -->|PASS| C4
+    C2 --> Gates
+    C3 --> Review
+
+    style Commands fill:#e3f2fd
+    style Gates fill:#fff3e0
+    style Review fill:#f3e5f5
+```
+
 ### 3.1 Command Flow
 
-```
-/build (TDD slices, atomic commits, code quality scoring)
-    │
-    ▼
-/test (6 quality gates: functional, security, DevOps, DX, observability)
-    │
-    ▼
-/review (5-axis review: architecture, security, quality, tests, standards)
-    │
-    ▼
-/ship (pre-flight checks, PR creation, ship report)
+```mermaid
+flowchart LR
+    B[/build<br/>TDD slices + atomic commits/] --> T[/test<br/>6 quality gates/]
+    T -->|All pass| R[/review<br/>5-axis review/]
+    T -->|Fail| B
+    R -->|PASS| S[/ship<br/>pre-flight + PR + report/]
+    R -->|CHANGES| B
+    S --> D([PR created])
+
+    style D fill:#c8e6c9
+    style B fill:#e1f5fe
+    style T fill:#fff9c4
+    style R fill:#fce4ec
+    style S fill:#e8f5e9
 ```
 
 ### 3.2 6 Quality Gates (/test)

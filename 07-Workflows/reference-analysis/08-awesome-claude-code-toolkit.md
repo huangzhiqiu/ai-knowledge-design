@@ -33,6 +33,66 @@ A collection of 8 orchestration agents that coordinate multi-agent workflows:
 
 ## 3. Architecture Deep Dive
 
+### 3.0 Mermaid Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph Orchestration["8 Orchestration Agents"]
+        direction TB
+        subgraph Coordination["Coordination Layer"]
+            A1[Task Coordinator<br/>routes work / handoffs]
+            A2[Workflow Director<br/>pipeline orchestration]
+            A3[Agent Installer<br/>install / configure]
+        end
+        subgraph Context["Context Layer"]
+            A4[Context Manager<br/>compression / summaries]
+            A5[Knowledge Synthesizer<br/>knowledge graphs]
+        end
+        subgraph Quality["Quality Layer"]
+            A6[Quality Auditor<br/>verify output]
+            A7[Resource Manager<br/>files / APIs]
+            A8[Feedback Loop<br/>continuous improvement]
+        end
+    end
+
+    subgraph Flow["Multi-Agent Orchestration Flow"]
+        direction TB
+        U[User Request] --> TC[Task Coordinator]
+        TC --> CM[Context Manager]
+        TC --> KS[Knowledge Synthesizer]
+        TC --> SA1[Specialized Agent 1]
+        SA1 --> QA[Quality Auditor]
+        TC --> SA2[Specialized Agent 2]
+        SA2 --> QA
+        QA --> FL[Feedback Loop]
+    end
+
+    Coordination --> Flow
+    Context --> Flow
+    Quality --> Flow
+
+    style Coordination fill:#e3f2fd
+    style Context fill:#fff3e0
+    style Quality fill:#e8f5e9
+    style Flow fill:#f3e5f5
+```
+
+### 3.0.1 Workflow Director Pipeline
+
+```mermaid
+flowchart LR
+    WD[Workflow Director] --> S1[Define stages]
+    S1 --> S2[Assign agents]
+    S2 --> S3[Manage handoffs]
+    S3 --> S4[Track state]
+    S4 --> S5[Handle failures]
+    S5 --> S6[Coordinate parallel]
+    S6 --> D([Pipeline complete])
+
+    style WD fill:#e1f5fe
+    style D fill:#c8e6c9
+```
+
 ### 3.1 8 Orchestration Agents
 
 | Agent | File | Purpose |

@@ -35,6 +35,57 @@ GitHub Copilot Coding Agent runs in a cloud workspace (GitHub Actions runner) an
 
 ## 3. Architecture Deep Dive
 
+### 3.0 Mermaid Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph GitHub["GitHub Native Ecosystem"]
+        direction TB
+        I[Issue<br/>assigned to Copilot]
+        subgraph Cloud["Cloud Workspace (GitHub Actions)"]
+            direction TB
+            C1[Clone repo]
+            C2[Read issue]
+            C3[Understand codebase]
+            C4[Implement solution]
+            C5[Write tests]
+            C6[Run tests + lint]
+        end
+        PR[Pull Request<br/>with tests + description]
+        CI[CI Checks<br/>tests / lint / build]
+        HR[Human Review]
+        M[Merge]
+    end
+
+    I -->|trigger| Cloud
+    C1 --> C2 --> C3 --> C4 --> C5 --> C6
+    C6 -->|create branch + commit| PR
+    PR --> CI
+    CI -->|pass| HR
+    HR -->|approve| M
+    HR -->|changes requested| C4
+
+    style GitHub fill:#e3f2fd
+    style Cloud fill:#fff3e0
+    style M fill:#c8e6c9
+```
+
+### 3.0.1 Iterative Review Loop
+
+```mermaid
+flowchart LR
+    A[Copilot implements] --> B[Open PR]
+    B --> C[CI runs]
+    C -->|pass| D[Human reviews]
+    C -->|fail| A
+    D -->|approve| E([Merge])
+    D -->|changes requested| F[Copilot reads comments]
+    F --> G[Updates PR]
+    G --> C
+
+    style E fill:#c8e6c9
+```
+
 ### 3.1 Pipeline Flow
 
 ```

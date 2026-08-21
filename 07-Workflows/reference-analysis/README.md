@@ -2,6 +2,48 @@
 
 > Deep, per-project analysis of 10 reference AI development workflows. Each document covers project background, architecture, core features, configuration, pros/cons, and lessons for CBOL.
 
+## Ecosystem Overview
+
+```mermaid
+flowchart TB
+    subgraph FullPipeline["Full Pipeline Projects"]
+        direction TB
+        P1[wenttt/ai-coding-workflow<br/>~2k stars<br/>MCP Server, pull-based]
+        P2[genkovich/sdd<br/>~800 stars<br/>19 skills, TDD engine]
+        P3[stel1os/ai-sdd-sop<br/>~500 stars<br/>5 roles, document stack]
+        P4[shgandla/ai-agents<br/>~200 stars<br/>4 commands, 6 gates]
+        P5[agentic-dev-template<br/>~150 stars<br/>8-stage SDLC]
+    end
+
+    subgraph JiraIntegrated["Jira-Integrated Projects"]
+        direction TB
+        J1[partenit-claudev<br/>~300 stars<br/>Jira state-driven, auto-merge]
+        J2[OpenAI Codex + Jira<br/>N/A<br/>label-triggered, minimal]
+    end
+
+    subgraph AgentFrameworks["Agent Frameworks"]
+        direction TB
+        A1[obra/superpowers<br/>27k+ stars<br/>skills/instincts/memory/security]
+        A2[awesome-claude-code-toolkit<br/>~5k stars<br/>8 orchestration agents]
+    end
+
+    subgraph Industry["Industry Standard"]
+        direction TB
+        I1[GitHub Copilot Coding Agent<br/>N/A<br/>cloud workspace, issue→PR]
+    end
+
+    FullPipeline --> CBOL[CBOL Pipeline]
+    JiraIntegrated --> CBOL
+    AgentFrameworks --> CBOL
+    Industry --> CBOL
+
+    style FullPipeline fill:#e3f2fd
+    style JiraIntegrated fill:#fff3e0
+    style AgentFrameworks fill:#f3e5f5
+    style Industry fill:#e8f5e9
+    style CBOL fill:#c8e6c9
+```
+
 ## Analysis Index
 
 | # | Project | Stars | Type | File |

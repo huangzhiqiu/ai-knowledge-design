@@ -35,6 +35,66 @@ A Jira-label-triggered pipeline:
 
 ## 3. Architecture Deep Dive
 
+### 3.0 Mermaid Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph Jira["Jira Cloud"]
+        J1[Issue created<br/>with requirements]
+        J2[Add label<br/>codex-implement]
+        J3[Jira Automation<br/>webhook trigger]
+        J4[Status sync<br/>In Progress → Done]
+    end
+
+    subgraph GitHub["GitHub Actions (Cloud Runner)"]
+        direction TB
+        G1[repository_dispatch<br/>workflow triggered]
+        G2[Checkout repo]
+        G3[Install codex-cli]
+        G4[Fetch Jira issue<br/>via Jira API]
+        G5[Run codex-cli<br/>implement + tests]
+        G6[Create branch + commit]
+        G7[Open PR<br/>linked to Jira]
+    end
+
+    subgraph Review["Review & Merge"]
+        R1[CI runs]
+        R2[Human reviews PR]
+        R3[Merge]
+        R4[Update Jira → Done]
+    end
+
+    J1 --> J2 --> J3
+    J3 -->|webhook| G1
+    G1 --> G2 --> G3 --> G4 --> G5 --> G6 --> G7
+    G7 --> R1 --> R2
+    R2 -->|approve| R3 --> R4
+    R2 -->|reject| G5
+
+    style Jira fill:#e3f2fd
+    style GitHub fill:#fff3e0
+    style Review fill:#e8f5e9
+    style R4 fill:#c8e6c9
+```
+
+### 3.0.1 Minimal Stack Architecture
+
+```mermaid
+flowchart LR
+    subgraph ThreeTools["Only 3 Tools"]
+        T1[Jira<br/>issue tracking<br/>automation]
+        T2[GitHub Actions<br/>cloud runner<br/>codex-cli]
+        T3[OpenAI Codex<br/>AI coding agent]
+    end
+
+    T1 -->|webhook| T2
+    T2 -->|API call| T3
+    T3 -->|code + tests| T2
+    T2 -->|PR| T1
+
+    style ThreeTools fill:#f3e5f5
+```
+
 ### 3.1 Pipeline Flow
 
 ```
