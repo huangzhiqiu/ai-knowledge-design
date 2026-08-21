@@ -7,8 +7,9 @@
 | Document | Description |
 |----------|-------------|
 | [ticket-to-deploy-workflow.md](./ticket-to-deploy-workflow.md) | Complete specification of the CBOL Jira ticket-to-deploy AI pipeline: 7 stages, 6 approval gates, state management, anti-drift checks, knowledge injection, escalation protocol |
-| [reference-workflows.md](./reference-workflows.md) | Comparison of 8+ industry AI development workflows from GitHub and open source projects, with star counts, key features, and lessons learned |
+| [reference-workflows.md](./reference-workflows.md) | Comparison of 10 industry AI development workflows from GitHub and open source projects, with star counts, key features, and lessons learned |
 | [best-practices.md](./best-practices.md) | Consolidated best practices for AI-driven development: pipeline design, human-in-the-loop, evidence-based completion, anti-drift, knowledge injection, tooling recommendations |
+| [reference-analysis/](./reference-analysis/) | 📖 Deep per-project analysis of all 10 reference workflows — architecture, core features, config, pros/cons, and lessons for CBOL |
 
 ## Workflow Overview
 

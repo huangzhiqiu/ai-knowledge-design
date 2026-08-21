@@ -4,18 +4,20 @@
 
 ## Summary Table
 
-| # | Project | Stars | Language/Tool | Key Feature | Relevance |
-|---|---------|-------|---------------|-------------|-----------|
-| 1 | [wenttt/ai-coding-workflow](https://github.com/wenttt/ai-coding-workflow) | ~1.2k | MCP Server + Claude | Pull-based pipeline, operation logs, 6 stages | ⭐⭐⭐⭐⭐ Direct inspiration |
-| 2 | [genkovich/sdd](https://github.com/genkovich/sdd) | ~800 | Claude Code Skills | Spec-Driven Development, 12 Socratic skills, TDD engine | ⭐⭐⭐⭐⭐ SDD methodology |
-| 3 | [stel1os/ai-sdd-sop](https://github.com/stel1os/ai-sdd-sop) | ~500 | Claude Code | SDD + review rejection loop, findings document | ⭐⭐⭐⭐ Review loop pattern |
-| 4 | [GradeBuilderSL/partenit-claudev](https://github.com/GradeBuilderSL/partenit-claudev) | ~300 | Claude Code + Jira | Jira task → subtasks → design → code → tests → PR → auto-merge | ⭐⭐⭐⭐ Jira integration |
-| 5 | [shgandla/ai-agents](https://github.com/shgandla/ai-agents) | ~200 | Multi-agent | /build /test /review /ship commands, 6 quality gates | ⭐⭐⭐⭐ Command chaining |
-| 6 | [grammy-jiang/agentic-dev-template](https://github.com/grammy-jiang/agentic-dev-template) | ~150 | Template | 8-stage workflow with issue templates, Copilot support | ⭐⭐⭐ Template structure |
-| 7 | [obra/superpowers](https://github.com/obra/superpowers) | ~27k | Claude Code/OpenCode/Codex | Agentic framework, skills, instincts, memory, security | ⭐⭐⭐⭐ Skill architecture |
-| 8 | [TheStack-ai/awesome-claude-code-toolkit](https://github.com/TheStack-ai/awesome-claude-code-toolkit) | ~5k | Claude Code | 8 orchestration agents, workflow director, context manager | ⭐⭐⭐ Orchestration patterns |
-| 9 | [GitHub Copilot Coding Agent](https://docs.github.com/en/copilot) | N/A | GitHub Cloud | Assign issue → Copilot implements → PR with tests → human review | ⭐⭐⭐⭐ Industry standard |
-| 10 | [OpenAI Codex + Jira](https://developers.openai.com/cookbook/examples/codex/jira-github.md) | N/A | Codex CLI + GitHub Actions | Label Jira issue → GitHub Action → Codex → PR | ⭐⭐⭐⭐ CI/CD integration |
+| # | Project | Stars | Language/Tool | Key Feature | Relevance | Deep Analysis |
+|---|---------|-------|---------------|-------------|-----------|---------------|
+| 1 | [wenttt/ai-coding-workflow](https://github.com/wenttt/ai-coding-workflow) | ~1.2k | MCP Server + Claude | Pull-based pipeline, operation logs, 6 stages | ⭐⭐⭐⭐⭐ Direct inspiration | [📄](./reference-analysis/01-ai-coding-workflow.md) |
+| 2 | [genkovich/sdd](https://github.com/genkovich/sdd) | ~800 | Claude Code Skills | Spec-Driven Development, 19 Socratic skills, TDD engine | ⭐⭐⭐⭐⭐ SDD methodology | [📄](./reference-analysis/02-genkovich-sdd.md) |
+| 3 | [stel1os/ai-sdd-sop](https://github.com/stel1os/ai-sdd-sop) | ~500 | Claude Code | SDD + review rejection loop, findings document, 5 roles | ⭐⭐⭐⭐ Review loop pattern | [📄](./reference-analysis/03-stel1os-ai-sdd-sop.md) |
+| 4 | [GradeBuilderSL/partenit-claudev](https://github.com/GradeBuilderSL/partenit-claudev) | ~300 | Claude Code + Jira | Jira task → subtasks → design → code → tests → PR → auto-merge | ⭐⭐⭐⭐ Jira integration | [📄](./reference-analysis/04-partenit-claudev.md) |
+| 5 | [shgandla/ai-agents](https://github.com/shgandla/ai-agents) | ~200 | Multi-agent | /build /test /review /ship commands, 6 quality gates | ⭐⭐⭐⭐ Command chaining | [📄](./reference-analysis/05-shgandla-ai-agents.md) |
+| 6 | [grammy-jiang/agentic-dev-template](https://github.com/grammy-jiang/agentic-dev-template) | ~150 | Template | 8-stage workflow with issue templates, Copilot support | ⭐⭐⭐ Template structure | [📄](./reference-analysis/06-agentic-dev-template.md) |
+| 7 | [obra/superpowers](https://github.com/obra/superpowers) | ~27k | Claude Code/OpenCode/Codex | Agentic framework, skills, instincts, memory, security | ⭐⭐⭐⭐ Skill architecture | [📄](./reference-analysis/07-superpowers.md) |
+| 8 | [TheStack-ai/awesome-claude-code-toolkit](https://github.com/TheStack-ai/awesome-claude-code-toolkit) | ~5k | Claude Code | 8 orchestration agents, workflow director, context manager | ⭐⭐⭐ Orchestration patterns | [📄](./reference-analysis/08-awesome-claude-code-toolkit.md) |
+| 9 | [GitHub Copilot Coding Agent](https://docs.github.com/en/copilot) | N/A | GitHub Cloud | Assign issue → Copilot implements → PR with tests → human review | ⭐⭐⭐⭐ Industry standard | [📄](./reference-analysis/09-github-copilot-coding-agent.md) |
+| 10 | [OpenAI Codex + Jira](https://developers.openai.com/cookbook/examples/codex/jira-github.md) | N/A | Codex CLI + GitHub Actions | Label Jira issue → GitHub Action → Codex → PR | ⭐⭐⭐⭐ CI/CD integration | [📄](./reference-analysis/10-openai-codex-jira.md) |
+
+> 📖 **Deep per-project analysis** available in [`reference-analysis/`](./reference-analysis/) — 10 documents with architecture, core features, config, pros/cons, and lessons for CBOL.
 
 ---
 
