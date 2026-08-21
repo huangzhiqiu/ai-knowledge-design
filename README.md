@@ -82,30 +82,14 @@ ai-knowledge-design/
 │       ├── tiledesk-chat21-deep-analysis.md     # Tiledesk/Chat21 (Inbox/MQTT/RabbitMQ)
 │       └── openchat-deep-analysis.md            # OpenChat (ICP blockchain/Canister/SNS DAO)
 │
-├── 03-Design-Guidelines/                        # Design guidelines (6 categories)
+├── 03-Design-Guidelines/                        # Design guidelines (6 categories, 26 docs)
 │   ├── README.md
-│   ├── 01-architecture/                         # Architecture design
-│   │   ├── architecture-principles.md           # Distributed systems, microservices, 12-Factor
-│   │   ├── design-principles.md                 # SOLID, DRY, KISS, YAGNI
-│   │   ├── layered-architecture.md              # Layered, hexagonal, clean architecture
-│   │   ├── microservices-patterns.md            # Service decomposition, API gateway, discovery
-│   │   ├── event-driven-architecture.md         # Domain events, event sourcing, CQRS, Outbox
-│   │   └── ddd-guidelines.md                    # Bounded contexts, aggregates, value objects
-│   ├── 02-api-design/                            # API design
-│   │   ├── rest-api-design.md                   # REST resources, HTTP methods, status codes
-│   │   ├── api-contract.md                      # OpenAPI 3.1, request/response, idempotency
-│   │   ├── websocket-api-design.md              # WebSocket lifecycle, framing, heartbeat, reconnect
-│   │   ├── api-versioning.md                    # Versioning strategies, deprecation, migration
-│   │   └── api-design-guidelines.md             # General API best practices
-│   ├── 03-data-design/                           # Data design
-│   │   ├── data-modeling.md                     # ER modeling, normalization, indexing, schema evolution
-│   │   ├── database-design.md                   # Polyglot persistence, replication, sharding, transactions
-│   │   ├── cache-design.md                      # Multi-level caching, cache-aside, invalidation, consistency
-│   │   └── message-queue-design.md              # Topic design, partitioning, ordering, DLQ, backpressure
-│   ├── 04-security-design/                      # Security design
-│   │   └── security-architecture.md             # Defense in depth, zero trust, least privilege
-│   └── 06-design-process/                       # Design process
-│       └── self-development-standards.md        # Self-Development internal standards
+│   ├── 01-architecture/                         # Architecture design (6 docs)
+│   ├── 02-api-design/                            # API design (5 docs)
+│   ├── 03-data-design/                           # Data design (4 docs)
+│   ├── 04-security-design/                      # Security design (3 docs)
+│   ├── 05-reliability/                          # Reliability engineering (4 docs)
+│   └── 06-design-process/                       # Design process (4 docs)
 │
 ├── 04-Coding-Guidelines/                        # Coding guidelines (6 categories, 21 docs)
 │   ├── README.md
@@ -143,23 +127,17 @@ ai-knowledge-design/
 │   ├── open-source-projects.md                  # Open source IM project references
 │   └── ai-driven-development.md                 # AI-driven development references (Forge/Jira-Flow/etc.)
 │
-└── 06-Skills/                                   # OpenCode-compatible skills
+├── 06-Skills/                                   # OpenCode-compatible skills
+│   ├── README.md
+│   ├── 01-ai-development-pipeline/              # AI development pipeline skills (7 skills)
+│   ├── 02-code-analysis/                         # Code analysis skills (3 skills)
+│   └── 03-knowledge-collection/                  # Knowledge collection skills (2 skills)
+│
+└── 07-Workflows/                                 # AI development workflows
     ├── README.md
-    ├── 01-ai-development-pipeline/              # AI development pipeline skills
-    │   ├── workflow-ticket-to-deploy/            # Pipeline orchestration: Ticket→SDD→Code→Test→PR→Deploy
-    │   ├── jira-ticket-fetcher/                  # Jira ticket fetching and structuring
-    │   ├── sdd-generator/                        # SDD generation (12 sections + knowledge injection)
-    │   ├── tdd-implementer/                      # TDD implementation: RED→GREEN→REFACTOR
-    │   ├── test-verifier/                        # Test verification and coverage
-    │   ├── pr-creator/                           # PR creation with template
-    │   └── deploy-doc-updater/                   # Deployment documentation update
-    ├── 02-code-analysis/                         # Code analysis skills
-    │   ├── java-maven-project-analyzer/          # Java Maven multi-module project analysis
-    │   ├── architecture-analyzer-skill/          # General codebase deep analysis (16 sections)
-    │   └── codebase-architecture-analyst/        # File-level reverse engineering + OWASP audit
-    └── 03-knowledge-collection/                  # Knowledge collection skills
-        ├── cbol-knowledge-collector/             # CBOL knowledge collection
-        └── chat-pattern-collector/               # Open source project pattern collection
+    ├── ticket-to-deploy-workflow.md              # Complete pipeline spec: 7 stages, 6 gates, state management
+    ├── reference-workflows.md                     # 10+ industry workflow comparisons with star counts
+    └── best-practices.md                          # Consolidated best practices: pipeline design, anti-patterns, maturity model
 ```
 
 ---
@@ -170,12 +148,13 @@ ai-knowledge-design/
 |-----------|-----------|--------|
 | 00-Project-Overview | 1 | 🟡 Template ready |
 | 01-CBOL-Domain-Knowledge | 13+ | 🟡 Templates ready, to be filled by team |
-| 02-Chat-Domain-Knowledge | 40+ | 🟢 Pre-filled (6+ open source deep analyses) |
-| 03-Design-Guidelines | 18 | 🟢 Pre-filled (4 categories) |
-| 04-Coding-Guidelines | 21 | 🟢 Pre-filled (6 categories) |
-| 05-References | 2 | 🟢 Pre-filled |
-| 06-Skills | 10 skills | 🟢 Pre-filled (OpenCode-compatible) |
-| **Total** | **105+** | |
+| 02-Chat-Domain-Knowledge | 49 | 🟢 Pre-filled (6+ open source deep analyses) |
+| 03-Design-Guidelines | 26 | 🟢 Pre-filled (6 categories) |
+| 04-Coding-Guidelines | 22 | 🟢 Pre-filled (6 categories) |
+| 05-References | 3 | 🟢 Pre-filled |
+| 06-Skills | 12 skills | 🟢 Pre-filled (OpenCode-compatible) |
+| 07-Workflows | 4 | 🟢 Pre-filled (pipeline spec + references + best practices) |
+| **Total** | **120+** | |
 
 ---
 
@@ -223,6 +202,7 @@ export GITHUB_TOKEN="your-github-token"
 - **Generic IM knowledge**: Start with `02-Chat-Domain-Knowledge/`
 - **Design guidelines**: `03-Design-Guidelines/`
 - **Coding standards**: `04-Coding-Guidelines/`
+- **Workflow documentation**: `07-Workflows/` (pipeline spec, references, best practices)
 - **Open source references**: `02-Chat-Domain-Knowledge/open-source-deep-dive/`
 
 ---
@@ -263,6 +243,10 @@ CBOL-XXX
 - 3-strike escalation (auto-retry 3×, then ask human)
 - State persistence (resume from breakpoint)
 - Knowledge injection (every stage reads relevant KB docs)
+
+**Full pipeline specification**: See `07-Workflows/ticket-to-deploy-workflow.md`
+**Reference workflows**: See `07-Workflows/reference-workflows.md` (10+ industry comparisons)
+**Best practices**: See `07-Workflows/best-practices.md`
 
 ---
 
@@ -344,4 +328,4 @@ This knowledge base is for internal use by the CBOL Refactor (Self-Development) 
 
 ---
 
-*Last updated: 2026-08-19*
+*Last updated: 2026-08-21*
