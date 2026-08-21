@@ -10,6 +10,7 @@
 | [reference-workflows.md](./reference-workflows.md) | Comparison of 10 industry AI development workflows from GitHub and open source projects, with star counts, key features, and lessons learned |
 | [best-practices.md](./best-practices.md) | Consolidated best practices for AI-driven development: pipeline design, human-in-the-loop, evidence-based completion, anti-drift, knowledge injection, tooling recommendations |
 | [reference-analysis/](./reference-analysis/) | 📖 Deep per-project analysis of all 10 reference workflows — architecture, core features, config, pros/cons, and lessons for CBOL |
+| [poc-workflow/](./poc-workflow/) | 🚀 POC (Proof-of-Concept) workflow — executable 7-stage pipeline with Jira ticket intake, requirements, SDD, TDD test cases, code generation, PR review, deployment. Includes OpenCode command + skill, verify checklists, KB integration, Mermaid diagrams. |
 
 ## Workflow Overview
 
