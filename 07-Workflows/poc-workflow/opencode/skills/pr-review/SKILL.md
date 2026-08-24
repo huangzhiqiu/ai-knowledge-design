@@ -1,307 +1,386 @@
 ---
 name: pr-review
-description: Create a Pull Request with structured description and run automated PR review. Reviews code across 5 axes (correctness, design, security, performance, tests). Requires human approval after auto review. Use after code-generation skill, or when you need to create and review a PR.
-version: 1.0.0
-author: CBOL Self-Development
-tags: [pr, pull-request, code-review, auto-review, github, poc]
-triggers:
-  - "create PR"
-  - "pull request review"
-  - "auto review PR"
-  - "open pull request"
-arguments:
-  - name: jira_key
-    description: Jira ticket key (e.g., CBOL-123)
-    required: true
+description: Create a Pull Request and run automated multi-axis code review with confidence scoring. Reviews across correctness, design, security, performance, and tests axes using find-then-verify pipeline. Posts review comments, requires human approval before merge. Use after code generation, or when you need to create and review a PR.
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Bash(git:*)
+  - Bash(gh:*)
+  - Bash(mvn:*)
+  - Bash(curl:*)
+  - Bash(jq:*)
+  - Bash(grep:*)
+  - Bash(cat:*)
 ---
 
 # PR Review Skill
 
-Create PR + automated review + human approval.
+Create PR + 5-axis automated review with confidence scoring + human approval.
+
+## CRITICAL RULES
+
+1. **HUMAN APPROVAL REQUIRED**: PR CANNOT be merged without explicit human approval. Automated review is advisory only — never auto-merge.
+2. **FIND-THEN-VERIFY**: Every finding MUST be verified before reporting. Phase 1: scan for potential issues. Phase 2: verify each is a real issue (not false positive). Report ONLY verified findings.
+3. **CONFIDENCE SCORING**: Every finding carries a confidence score (0.0-1.0). Only report findings with confidence >= threshold (default 0.7).
+4. **5 AXES ONLY**: Review across exactly 5 axes: correctness, design, security, performance, tests. Do NOT invent new axes.
+5. **FOCUS ON CHANGES**: Review ONLY the diff (changed lines + necessary context). Do NOT review pre-existing issues outside the diff.
+6. **NO NITPICKS**: Do NOT report style nits, formatting, or minor preferences. Only report substantive issues that could cause bugs, security vulnerabilities, or design problems.
+7. **LINK TO CODE**: Every finding MUST include file path + line number + code snippet. Vague findings are not acceptable.
+8. **SEVERITY CLASSIFICATION**: Every finding classified as CRITICAL (block merge), MAJOR (should fix), or MINOR (consider fixing).
 
 ## References
 
-- [fanioz/claude-code-pr-automation](https://github.com/fanioz/claude-code-pr-automation) — 5 specialized review agents, auto-fix
-- [shubhesh07/claude-code-reviewer](https://github.com/shubhesh07/claude-code-reviewer) — gstack two-pass review methodology
-- [gthimmes/code-reviewer](https://github.com/gthimmes/code-reviewer) — 5 axes review with confidence scoring
-- [chanmuzi/git-claw](https://github.com/chanmuzi/git-claw) — /review-reply command
+- [gthimmes/code-reviewer](https://github.com/gthimmes/code-reviewer) — 5-axis review, find-then-verify pipeline, confidence scoring
+- [fanioz/claude-code-pr-automation](https://github.com/fanioz/claude-code-pr-automation) — 5-agent PR automation (creator, reviewer, security, performance, summary)
+- [anthropics/claude-code code-review plugin](https://github.com/anthropics/claude-code) — Confidence-based scoring (threshold 80), CLAUDE.md compliance, git blame context
+- [chanmuzi/git-claw](https://github.com/chanmuzi/git-claw) — /code-review multi-agent severity-based review
+- [jjscannell/code-review](https://github.com/jjscannell/code-review) — Multiple specialized agents in parallel, prioritized remediation plan
 - [POC Stage 6 Doc](../../stages/06-pr-review.md) — Stage documentation
 - [POC Verify Checklist](../../verify-checklist.md) — Gate 6 criteria
+- [KB Integration](../../knowledge-integration.md) — KB read/write protocol
 
 ## Prerequisites
 
-1. Stage 5 (code-generation) completed — all tests pass
-2. Implementation code committed
-3. GitHub remote configured
-4. Operation directory exists: `docs/operations/{JIRA_KEY}/06-pr-review/`
+1. Stage 5 (code-generation) completed — code implemented and tests pass
+2. `docs/operations/{JIRA_KEY}/05-code-generation/implementation-summary.md` exists
+3. Git repository with remote configured
+4. `gh` CLI installed and authenticated (for GitHub PR creation)
+5. Branch created for this ticket: `feat/CBOL-XXX-{desc}` or `fix/CBOL-XXX-{desc}`
+6. Operation directory exists: `docs/operations/{JIRA_KEY}/06-pr-review/`
 
 ## Execution Steps
 
-### Step 1: Read Artifacts
+### Step 1: Prepare Branch and Commit
 
 ```bash
-cat "docs/operations/{JIRA_KEY}/03-sdd/sdd.md" | head -100
-cat "docs/operations/{JIRA_KEY}/05-code-generation/implementation-summary.md"
-```
+# Verify on correct branch
+git branch --show-current
 
-### Step 2: Inject Knowledge Base
-
-**Mandatory reads**:
-- `04-Coding-Guidelines/06-quality-ops/` (quality gates, SonarQube)
-- `04-Coding-Guidelines/05-security/` (security review checklist)
-- `03-Design-Guidelines/04-security-design/` (security architecture)
-- `03-Design-Guidelines/05-reliability/` (reliability patterns)
-
-### Step 3: Create Feature Branch
-
-```bash
-git checkout main
-git pull origin main
+# If not on feature branch, create it
 git checkout -b "feat/{JIRA_KEY}-{short-desc}"
-# If code already on a branch, skip
-```
 
-### Step 4: Push to Remote
+# Stage and commit all changes
+git add -A
+git status
+git commit -m "feat({module}): implement {JIRA_KEY} — {summary}
 
-```bash
+{detailed description from implementation-summary.md}
+
+Refs: {JIRA_KEY}"
+
+# Push branch
 git push origin "feat/{JIRA_KEY}-{short-desc}"
 ```
 
-### Step 5: Create PR
-
-Using GitHub CLI or API:
+### Step 2: Create Pull Request
 
 ```bash
-gh pr create \
-  --title "feat({scope}): {description} ({JIRA_KEY})" \
-  --body-file "docs/operations/{JIRA_KEY}/06-pr-review/pr-description.md" \
-  --base main \
-  --head "feat/{JIRA_KEY}-{short-desc}"
-```
-
-**PR Description Template**:
-```markdown
-## {JIRA_KEY}: {Summary}
-
-**Jira**: [{KEY}]({JIRA_URL})
-**Type**: {Story/Task/Bug}
-**Priority**: {High/Medium/Low}
-
+# Generate PR description
+cat > /tmp/pr-body.md << 'EOF'
 ## Summary
 {2-3 sentence summary}
 
-## Changes Made
+## Changes
 - {change 1}
 - {change 2}
 
-## Artifacts
-- [Requirements](../02-requirements/requirements.md)
-- [SDD](../03-sdd/sdd.md)
-- [Test Plan](../04-test-cases/test-plan.md)
-- [Implementation Summary](../05-code-generation/implementation-summary.md)
+## Testing
+- {N} unit tests passing
+- Coverage: {N}% line, {N}% branch
+- Full test suite: ✅
 
-## Test Results
-- Total: {N} tests
-- Passed: {N}
-- Failed: 0
-- Coverage: {X}% line / {Y}% branch
+## Related Ticket
+[{JIRA_KEY}]({JIRA_URL})
 
 ## Checklist
-- [ ] All tests pass
-- [ ] Coverage >= 80% line / 70% branch
-- [ ] No Sonar critical/blocker issues
-- [ ] Security guidelines followed
-- [ ] Coding guidelines followed
+- [ ] Tests pass
+- [ ] Code follows guidelines
 - [ ] Documentation updated
-- [ ] KB updated (if new patterns)
+- [ ] No secrets committed
+EOF
 
-## Reviewers
-@{reviewer1} @{reviewer2}
+# Create PR via gh CLI
+gh pr create \
+  --title "feat({module}): {JIRA_KEY} — {summary}" \
+  --body-file /tmp/pr-body.md \
+  --base main \
+  --head "feat/{JIRA_KEY}-{short-desc}" \
+  --label "enhancement" \
+  --assignee "@me" 2>&1
+
+echo "Exit code: $?"
 ```
 
-### Step 6: Run Auto PR Review
+**Record PR URL** in operation log.
 
-Review diff across 5 axes:
+### Step 3: Get PR Diff
 
-#### Axis 1: Correctness
-- [ ] Logic errors?
-- [ ] Edge cases handled?
-- [ ] Error handling correct?
-- [ ] Race conditions?
-- [ ] Off-by-one errors?
+```bash
+# Get diff for review
+gh pr diff {PR_NUMBER} > "docs/operations/{JIRA_KEY}/06-pr-review/pr.diff"
 
-#### Axis 2: Design
-- [ ] Follows SDD architecture?
-- [ ] Separation of concerns?
-- [ ] Appropriate design patterns?
-- [ ] No god classes?
-- [ ] Dependency injection used?
+# Get changed files list
+gh pr view {PR_NUMBER} --json files --jq '.files[].path' > "docs/operations/{JIRA_KEY}/06-pr-review/changed-files.txt"
 
-#### Axis 3: Security
-- [ ] No hardcoded secrets?
-- [ ] Input validation on all external inputs?
-- [ ] SQL injection prevention (parameterized queries)?
-- [ ] Authentication/authorization checks?
-- [ ] No sensitive data in logs?
-- [ ] CSRF protection?
-- [ ] XSS prevention?
+# Get PR metadata
+gh pr view {PR_NUMBER} --json title,body,author,baseRefName,headRefName,additions,deletions,changedFiles > "docs/operations/{JIRA_KEY}/06-pr-review/pr-meta.json"
+```
 
-#### Axis 4: Performance
-- [ ] N+1 query problems?
-- [ ] Appropriate caching?
-- [ ] No unnecessary database calls?
-- [ ] Efficient algorithms?
-- [ ] Connection pooling?
+### Step 4: Find-Then-Verify Review Pipeline
 
-#### Axis 5: Tests
-- [ ] Coverage >= 80% line / 70% branch?
-- [ ] Edge cases tested?
-- [ ] Error paths tested?
-- [ ] Test naming follows convention?
-- [ ] Tests independent (no shared state)?
-- [ ] No flaky tests?
+#### Phase 1: FIND — Scan for Potential Issues
 
-**Review Methodology** (inspired by gstack two-pass):
-1. **First pass**: Find CRITICAL issues (SQL safety, race conditions, injection, security) — these BLOCK merge
-2. **Second pass**: Find INFORMATIONAL issues (style, naming, minor improvements) — these are suggestions
+Run 5-axis scan in parallel (or sequentially). For each axis, scan the diff:
 
-### Step 7: Generate Auto Review Report
+**Axis 1: Correctness**
+- Logic errors in changed code
+- Missing null checks
+- Off-by-one errors
+- Incorrect error handling
+- Race conditions
+- Resource leaks (unclosed streams, connections)
 
-Write `docs/operations/{JIRA_KEY}/06-pr-review/auto-review-report.md`:
+**Axis 2: Design**
+- Violations of SOLID principles
+- Tight coupling
+- Missing abstractions
+- Inconsistent with existing patterns
+- Violations of `03-Design-Guidelines/`
+
+**Axis 3: Security**
+- SQL injection
+- XSS vulnerabilities
+- Input validation gaps
+- Authentication/authorization issues
+- Sensitive data exposure
+- Hardcoded secrets
+- Insecure deserialization
+- Violations of `04-Coding-Guidelines/security/`
+
+**Axis 4: Performance**
+- N+1 queries
+- Inefficient algorithms (O(n²) where O(n) possible)
+- Missing indexes
+- Memory leaks
+- Blocking calls in async context
+- Violations of `04-Coding-Guidelines/performance/`
+
+**Axis 5: Tests**
+- Missing test coverage for new code
+- Tests not following AAA pattern
+- Missing edge case tests
+- Flaky test patterns
+- Tests testing implementation instead of behavior
+- Violations of `04-Coding-Guidelines/09-testing/`
+
+**For each potential finding, record**:
+```json
+{
+  "axis": "correctness",
+  "file": "path/to/file.java",
+  "line": 42,
+  "code_snippet": "the code",
+  "issue": "description of potential issue",
+  "confidence_raw": 0.8,
+  "severity_raw": "major"
+}
+```
+
+#### Phase 2: VERIFY — Validate Each Finding
+
+For EACH potential finding:
+
+1. **Read context**: Read surrounding code (10 lines before/after)
+2. **Check if real issue**:
+   - Is this actually a bug, or is it handled elsewhere?
+   - Is this a false positive due to missing context?
+   - Does existing code already handle this?
+3. **Check KB guidelines**: Is this actually a violation, or an accepted pattern?
+4. **Assign confidence**:
+   - 0.9-1.0: Definitely a real issue, clear evidence
+   - 0.7-0.8: Likely a real issue, some uncertainty
+   - 0.5-0.6: Possible issue, significant uncertainty
+   - <0.5: Probably false positive, discard
+5. **Assign severity**:
+   - CRITICAL: Will cause bugs, security vulnerabilities, or data loss. Blocks merge.
+   - MAJOR: Significant issue, should be fixed before merge.
+   - MINOR: Minor improvement, consider fixing.
+
+**Discard** findings with confidence < 0.7.
+
+**Interactive checkpoint**:
+> Review complete. Found {N} potential issues, {M} verified (confidence >= 0.7).
+> CRITICAL: {C}, MAJOR: {J}, MINOR: {N}
+> Options: [Post review comments] [View findings] [Adjust confidence threshold] [Stop]
+
+### Step 5: Post Review Comments
+
+For each verified finding, post as PR review comment:
+
+```bash
+# Post review comment via gh CLI
+gh pr comment {PR_NUMBER} --body "## [{axis}] {severity}: {issue title}
+
+**File**: \`{file}:{line}\`
+**Confidence**: {confidence}/1.0
+
+### Issue
+{description}
+
+### Code
+\`\`\`java
+{code_snippet}
+\`\`\`
+
+### Suggested Fix
+{suggestion}
+
+### References
+- {KB guideline link}
+"
+```
+
+**Or use inline review comments** (if supported):
+```bash
+gh api repos/{owner}/{repo}/pulls/{PR_NUMBER}/comments \
+  -f body="{comment body}" \
+  -f commit_id="{head_sha}" \
+  -f path="{file}" \
+  -f line="{line}"
+```
+
+### Step 6: Generate Review Summary
+
+Write `review-summary.md`:
 
 ```markdown
-# Auto Review Report — {JIRA_KEY}
+# PR Review Summary — {JIRA_KEY}
 
-**PR**: {PR URL}
-**Date**: {ISO timestamp}
-**Result**: PASS / CHANGES REQUESTED
+**PR**: #{PR_NUMBER} — {title}
+**URL**: {pr_url}
+**Reviewer**: AI Automated Review
+**Date**: {timestamp}
+**Confidence threshold**: 0.7
 
-## Summary
-- Critical issues: {N}
-- Important issues: {N}
-- Minor issues: {N}
+## Review Statistics
+| Axis | Potential | Verified | CRITICAL | MAJOR | MINOR |
+|------|-----------|----------|----------|-------|-------|
+| Correctness | {N} | {N} | {N} | {N} | {N} |
+| Design | {N} | {N} | {N} | {N} | {N} |
+| Security | {N} | {N} | {N} | {N} | {N} |
+| Performance | {N} | {N} | {N} | {N} | {N} |
+| Tests | {N} | {N} | {N} | {N} | {N} |
+| **Total** | **{N}** | **{N}** | **{C}** | **{J}** | **{N}** |
 
-## Critical Issues (BLOCK merge)
+## CRITICAL Issues (Must Fix)
+1. **[{axis}] {title}** — {file}:{line} (confidence: {c})
+   {description}
 
-### Issue 1
-- **File**: `{path}:{line}`
-- **Axis**: Security
-- **Issue**: {description}
-- **Suggested fix**: {fix}
-
-## Important Issues
-
-### Issue 2
-- **File**: `{path}:{line}`
-- **Axis**: Performance
-- **Issue**: N+1 query in {method}
-- **Suggested fix**: Use JOIN or batch fetch
-
-## Minor Issues
+## MAJOR Issues (Should Fix)
 ...
 
-## 5-Axis Scores
-| Axis | Score | Notes |
-|------|-------|-------|
-| Correctness | 9/10 | ... |
-| Design | 8/10 | ... |
-| Security | 10/10 | ... |
-| Performance | 7/10 | ... |
-| Tests | 9/10 | ... |
+## MINOR Issues (Consider Fixing)
+...
+
+## False Positives Discarded
+- {N} findings with confidence < 0.7
+
+## Review Verdict
+- **CRITICAL issues**: {C} → {"BLOCKS MERGE" if C > 0 else "None"}
+- **Recommendation**: {"Request changes" if C > 0 or J > 2 else "Approve with comments"}
+
+## KB References Used
+- {KB doc 1}
+- {KB doc 2}
 ```
 
-### Step 8: If Auto Review FAILS — Fix Issues
+### Step 7: Present for Human Approval
 
-If critical/important issues found:
-1. Return to Stage 5 (code-generation) to fix
-2. Re-run tests
-3. Push fixes to PR branch
-4. Re-run auto review
-5. Max 3 fix cycles, then escalate
+1. Display review summary
+2. **Interactive checkpoint**:
+   > PR #{PR_NUMBER} created and reviewed. {C} CRITICAL, {J} MAJOR, {N} MINOR issues found.
+   > Options: [Approve PR] [Request changes] [View full review] [View PR on GitHub] [Fix issues] [Stop]
 
-### Step 9: Wait for CI
+3. If human requests changes → go back to Stage 5 (code generation) to fix, then re-run review
 
-Check GitHub Actions / CI:
-```bash
-gh pr checks {PR_NUMBER}
+### Step 8: Record Human Decision
+
+Write `human-decision.md`:
+```markdown
+# Human Decision — PR Review
+
+**Ticket**: {JIRA_KEY}
+**PR**: #{PR_NUMBER}
+**Decision Maker**: {name}
+**Date**: {ISO timestamp}
+**Decision**: Approved / Requested changes / Rejected
+**Comments**: {optional}
 ```
-
-Wait for all checks to pass. If CI fails, fix and push.
-
-### Step 10: Request Human Review
-
-1. Assign reviewers
-2. Add comment: "Auto review PASS, ready for human review"
-3. Wait for human approval
-
-### Step 11: Record Human Approval
-
-When human approves:
-- Update `auto-review-report.md` with human approval
-- Note any human review comments
-
-### Step 12: Verify Report + State Update
 
 ## Verify Gate (Automated + Human)
 
 | Criteria | Method | Evidence |
 |----------|--------|----------|
-| Feature branch created | Git branch exists | `git branch` |
-| Branch pushed to remote | Remote branch exists | `git ls-remote` |
-| PR created | GitHub PR exists | `gh pr view` |
-| PR title follows format | Conventional commit format | PR title |
-| PR description follows template | Template pattern match | PR body |
-| PR linked to Jira | Jira key in title/body | PR content |
-| CI checks pass | GitHub Checks API | `gh pr checks` |
-| Auto review PASS | No critical/blocker issues | auto-review-report.md |
-| 5-axis review completed | All axes scored | auto-review-report.md |
-| No Sonar critical/blocker | SonarQube API | Sonar report |
-| No security vulnerabilities | Security scan | Security report |
-| Coverage >= 80%/70% | Coverage report | coverage-report.xml |
-| Human explicitly approves | GitHub review: Approve | PR review status |
-| KB docs injected | KB injection log | operation-log.md |
+| Branch created and pushed | Git check | `git branch -a` |
+| Code committed | Git log | `git log --oneline -3` |
+| PR created | gh CLI | PR URL in operation log |
+| PR diff retrieved | File exists | pr.diff |
+| 5-axis review completed | Review summary | review-summary.md |
+| Find-then-verify applied | Verified findings count | review-summary.md |
+| Confidence threshold applied (>=0.7) | Discarded count | review-summary.md |
+| Every finding has file:line | Comment format | PR comments |
+| CRITICAL issues identified | Summary section | review-summary.md |
+| Security axis completed | Security findings | review-summary.md |
+| No secrets in PR | Grep check | `grep -rn "password\|secret\|token\|api_key" pr.diff` |
+| Review comments posted | gh CLI | PR comment count |
+| Review summary generated | File exists | review-summary.md |
+| Human explicitly approves | Decision record | human-decision.md |
+| No CRITICAL issues at approval | Decision check | human-decision.md + review-summary.md |
 
-**PASS** → Auto review PASS + CI pass + human approves → Proceed to Stage 7 (deployment)
-**FAIL** → Fix issues, push, re-review (max 3 cycles, then escalate)
+**PASS** → Human explicitly approves ✅ AND no CRITICAL issues → Proceed to Stage 7 (deployment)
+**FAIL** → Human requests changes → fix code (Stage 5), re-review (max 2 review cycles, then escalate)
 
 ## KB Injection
 
 **Read**:
-- `04-Coding-Guidelines/06-quality-ops/`
-- `04-Coding-Guidelines/05-security/`
-- `03-Design-Guidelines/04-security-design/`
-- `03-Design-Guidelines/05-reliability/`
+- `04-Coding-Guidelines/` — All coding guidelines (for review criteria)
+- `03-Design-Guidelines/` — Design guidelines (for design axis)
+- `04-Coding-Guidelines/security/` — Security guidelines (for security axis)
+- `04-Coding-Guidelines/09-testing/` — Testing guidelines (for tests axis)
+- `AGENTS.md` — Project-specific rules
 
-**Write**: None
-
-## Review Confidence Scoring
-
-Each issue gets a confidence score (inspired by gthimmes/code-reviewer):
-- **High (90-100%)**: Clear violation of known best practice
-- **Medium (70-89%)**: Likely issue, but context-dependent
-- **Low (50-69%)**: Possible improvement, subjective
-
-Only High confidence issues block merge. Medium/Low are suggestions.
+**Write**:
+- New review patterns / common issues → `04-Coding-Guidelines/`
 
 ## Error Handling
 
 | Error | Resolution |
 |-------|-----------|
-| Code not committed | Run code-generation skill first |
-| GitHub CLI not installed | Use GitHub API directly, or ask user to install gh |
-| CI fails | Fix issues, push, wait for CI |
-| Auto review finds critical issues | Fix in code-generation, re-run |
-| Human rejects 2 times | Escalate to tech lead |
-| PR merge conflicts | Rebase from main, resolve conflicts, force push |
+| gh CLI not installed | Install gh CLI, or use git + curl for PR creation |
+| gh not authenticated | Run `gh auth login`, or use GitHub API with token |
+| PR creation fails | Check branch exists, check permissions, retry |
+| Diff too large (>1000 lines) | Review in chunks, focus on most changed files first |
+| No changes in PR | Verify code was committed, check branch |
+| Review finds CRITICAL issues | Post comments, request changes, do NOT proceed to deployment |
+| Human rejects 2 times | Escalate to tech lead, create escalation ticket |
+| False positives high | Increase confidence threshold to 0.8, add more context reading |
+| API rate limited | Wait and retry, or use cached diff |
 
 ## Output Artifacts
 
-- `docs/operations/{JIRA_KEY}/06-pr-review/pr-description.md` — PR description
-- `docs/operations/{JIRA_KEY}/06-pr-review/auto-review-report.md` — Auto review report
+- `docs/operations/{JIRA_KEY}/06-pr-review/pr.diff` — PR diff
+- `docs/operations/{JIRA_KEY}/06-pr-review/changed-files.txt` — Changed files list
+- `docs/operations/{JIRA_KEY}/06-pr-review/pr-meta.json` — PR metadata
+- `docs/operations/{JIRA_KEY}/06-pr-review/review-summary.md` — Review summary
+- `docs/operations/{JIRA_KEY}/06-pr-review/human-decision.md` — Human decision record
 - `docs/operations/{JIRA_KEY}/06-pr-review/verify-report.md` — Verify report
 - `docs/operations/{JIRA_KEY}/06-pr-review/operation-log.md` — Operation log
-- GitHub Pull Request (remote)
+- GitHub PR with review comments
 
 ---
 
-*PR Review Skill v1.0.0 — 2026-08-21*
+*PR Review Skill v2.0.0 — 2026-08-24*
+*Optimized with: 5-axis find-then-verify pipeline, confidence scoring (>=0.7 threshold), severity classification, CRITICAL rules, precise allowed-tools, human approval enforcement*

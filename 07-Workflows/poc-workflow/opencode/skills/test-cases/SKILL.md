@@ -1,252 +1,327 @@
 ---
 name: test-cases
-description: Generate test cases from approved SDD using TDD RED phase. Writes failing tests FIRST, verifies they fail for the right reason (assertion failure, not compile error). Enforces test naming conventions, coverage targets, traceability to SDD requirements. Use after SDD skill, or when you need to write tests before implementation.
-version: 1.0.0
-author: CBOL Self-Development
-tags: [tdd, testing, red-phase, test-cases, coverage, poc]
-triggers:
-  - "write tests first"
-  - "TDD red"
-  - "generate test cases"
-  - "write failing tests"
-arguments:
-  - name: jira_key
-    description: Jira ticket key (e.g., CBOL-123)
-    required: true
+description: TDD RED phase — generate failing test cases from reviewed SDD + knowledge base. Writes tests FIRST, verifies they fail for the RIGHT reason (assertion failure, not compile error), then stops. Does NOT write implementation code. Use after SDD approval, or when you need to write tests first in TDD.
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Bash(mvn:*)
+  - Bash(java:*)
+  - Bash(grep:*)
+  - Bash(find:*)
+  - Bash(cat:*)
 ---
 
 # Test Cases Skill (TDD RED Phase)
 
-Generate failing test cases from SDD. Tests MUST fail before code.
+Write failing tests first. Verify RED. Stop before implementation.
+
+## CRITICAL RULES
+
+1. **TESTS FIRST, ALWAYS**: Write tests BEFORE any implementation code. If implementation exists for this feature, this is NOT TDD — stop and report.
+2. **RED MUST BE CORRECT**: Test must fail for the RIGHT reason — assertion failure or missing method/class. A compile error due to missing class IS valid RED (compile-time RED). A compile error due to syntax error is NOT valid RED — fix the test syntax.
+3. **NO IMPLEMENTATION CODE**: This skill writes ONLY test files. Do NOT create or modify production code. If test needs a class that doesn't exist, that's expected RED.
+4. **DO NOT MODIFY EXISTING TESTS**: Only create new test files or add new test methods. Never modify existing passing tests to make them fail.
+5. **VERIFY RED BEFORE STOPPING**: Run tests and confirm they fail. Do NOT assume they fail.
+6. **ONE SLICE AT A TIME**: Write tests for one functional slice, verify RED, then next slice. Do NOT write all tests at once.
+7. **FOLLOW TEST GUIDELINES**: Must follow `04-Coding-Guidelines/09-testing/unit-testing-guidelines.md`.
+8. **TRACE TO SDD**: Every test must trace to an SDD section and FR/AC.
 
 ## References
 
-- [genkovich/sdd](https://github.com/genkovich/sdd) — plan-tests + implement TDD engine
-- [Upsolve-Labs/upstack](https://github.com/Upsolve-Labs/upstack) — /execute RED: write failing tests
-- [Strict TDD Skill](https://gist.github.com/aliev/3f402f7a2b84febe65da4910aab6a97c) — human-in-the-loop checkpoints
-- [tdd-workflow](https://skillsmp.com/creators/doodooms/everything-copilot/github-skills-tdd-workflow) — RED-GREEN-REFACTOR with 80%+ coverage gate
+- [or-ituran/claude-tdd-skill](https://github.com/or-ituran/claude-tdd-skill) — Sub-agent isolation, progress persistence, interactive checkpoints
+- [Upsolve-Labs/upstack](https://github.com/Upsolve-Labs/upstack) — /execute RED/GREEN strict TDD
+- [aliev/strict-tdd](https://github.com/aliev/strict-tdd) — Strict TDD enforcement
+- [hugo-bluecorn/claude-code-tdd-workflow](https://github.com/hugo-bluecorn/claude-code-tdd-workflow) — validate-tdd-order.sh hook, auto-run-tests.sh
+- [doodooms/everything-copilot tdd-workflow](https://github.com/doodooms/everything-copilot) — Runtime RED + Compile-time RED validation
 - [POC Stage 4 Doc](../../stages/04-test-cases.md) — Stage documentation
 - [POC Verify Checklist](../../verify-checklist.md) — Gate 4 criteria
+- [KB Integration](../../knowledge-integration.md) — KB read/write protocol
 
 ## Prerequisites
 
-1. Stage 3 (SDD) completed and human-approved
-2. SDD exists: `docs/operations/{JIRA_KEY}/03-sdd/sdd.md`
-3. Test framework configured (JUnit 5 for Java)
-4. Operation directory exists: `docs/operations/{JIRA_KEY}/04-test-cases/`
-
-## TDD RED Rules (STRICT)
-
-1. ✅ Write tests FIRST — no production code in this stage
-2. ✅ Tests MUST fail when run (prove they test something real)
-3. ✅ Failure MUST be assertion failure (expected behavior not implemented)
-4. ❌ Failure must NOT be compile error (fix test to reference existing classes or create stubs)
-5. ❌ NO production code — only test files and minimal stubs/interfaces
-6. ✅ Each test traces to a specific SDD requirement
-7. ✅ Test naming: `test{Method}_{Scenario}_{ExpectedResult}`
-8. ✅ Arrange-Act-Assert pattern
-9. ✅ Coverage target: >= 80% line, >= 70% branch
+1. Stage 3 (SDD) completed and REVIEWED
+2. `docs/operations/{JIRA_KEY}/03-sdd/sdd.md` exists with status REVIEWED
+3. Java project with Maven build (`pom.xml` exists)
+4. Test framework configured (JUnit 5 + Mockito)
+5. Operation directory exists: `docs/operations/{JIRA_KEY}/04-test-cases/`
 
 ## Execution Steps
 
-### Step 1: Read SDD
+### Step 1: Read SDD and Requirements
 
 ```bash
 cat "docs/operations/{JIRA_KEY}/03-sdd/sdd.md"
+cat "docs/operations/{JIRA_KEY}/02-requirements/requirements.md"
 ```
 
-Extract: implementation plan tasks, FRs, data model, API design, state machine.
+Extract:
+- Test slices from SDD Section 10 (Testing Strategy)
+- FRs and ACs to trace tests to
+- Data models, APIs, state machines from SDD
+- Edge cases from SDD Section 10.3
 
 ### Step 2: Inject Knowledge Base
 
 **Mandatory reads**:
-- `04-Coding-Guidelines/07-testing/unit-testing-guidelines.md`
-- `04-Coding-Guidelines/07-testing/` (ALL docs)
-- `02-Chat-Domain-Knowledge/` (test patterns for IM)
+- `04-Coding-Guidelines/09-testing/unit-testing-guidelines.md`
+- `04-Coding-Guidelines/09-testing/integration-testing-guidelines.md`
+- `04-Coding-Guidelines/09-testing/test-pyramid.md`
 
-**Search for existing test patterns**:
+**Label-based reads**: Map ticket labels to relevant testing patterns.
+
+**Existing test patterns**:
 ```bash
-find src/test -name "*Test.java" | head -20
-cat src/test/java/.../ExistingTest.java 2>/dev/null | head -50
+# Find existing test files to understand conventions
+find src/test/java -name "*Test.java" | head -10
+cat src/test/java/.../ExampleTest.java  # Read one example
 ```
 
-### Step 3: Generate Test Plan
+### Step 3: Initialize TDD Session
 
-Write `docs/operations/{JIRA_KEY}/04-test-cases/test-plan.md`:
+Create progress tracking:
 
+```bash
+mkdir -p "docs/operations/{JIRA_KEY}/04-test-cases/slices"
+```
+
+Write `tdd-progress.md`:
 ```markdown
-# Test Plan — {JIRA_KEY}
+# TDD RED Progress — {JIRA_KEY}
 
-## Coverage Target
-- Line: >= 80%
-- Branch: >= 70%
+**Status**: IN_PROGRESS
+**Started**: {timestamp}
 
-## Traceability Matrix
+## Test Slices
+| # | Slice | FR | Status | Test File | RED Verified |
+|---|-------|-----|--------|-----------|-------------|
+| 1 | {slice name} | FR-001 | pending | — | — |
+| 2 | {slice name} | FR-002 | pending | — | — |
 
-| Test ID | SDD Requirement | Test Type | Test Class | Priority |
-|---------|-----------------|-----------|------------|----------|
-| T001 | FR-001 | Unit | MessageForwarderTest | High |
-| T002 | FR-001 | Integration | MessageForwardingIT | High |
-| T003 | FR-002 | Unit | ... | Medium |
-
-## Unit Tests
-### {ComponentName}Test
-- testForwardMessage_ValidMessage_MessageDelivered — FR-001
-- testForwardMessage_InvalidRecipient_ThrowsException — FR-001
-- ...
-
-## Integration Tests
-...
-
-## Edge Cases
-- Empty message body
-- Very long message (> 10MB)
-- Concurrent forwarding
-- Network failure
-- ...
-
-## Error Handling Tests
-- Invalid recipient
-- Permission denied
-- Rate limit exceeded
-- Service unavailable
-- ...
+## Current Slice
+{slice number} — {slice name}
 ```
 
-### Step 4: Write Test Cases
+### Step 4: For Each Test Slice — RED Phase
 
-For each task in SDD implementation plan:
+#### 4.1: Design Test Cases for Slice
 
-1. Create test class in `src/test/java/.../`
-2. Write test methods following:
-   - Naming: `test{Method}_{Scenario}_{ExpectedResult}`
-   - Pattern: Arrange-Act-Assert
-   - Each test has comment: `// FR-001: {requirement description}`
-3. Use existing test utilities, base classes, fixtures
-4. For WebSocket: use test client or mock
-5. For state machine: test all state transitions
-6. For database: use test containers or H2 in-memory
+For current slice, list test cases:
+- Happy path
+- Edge cases (null, empty, boundary, max/min)
+- Error cases (invalid input, timeout, network failure)
+- State transitions (if state machine)
+- Concurrency (if applicable)
 
-**Example**:
+**Interactive checkpoint**:
+> Slice {N}: "{slice name}". Planned {M} test cases: {list}.
+> Options: [Write tests] [Add more cases] [Skip slice] [Stop]
+
+#### 4.2: Write Test File
+
+Create test file following project conventions:
+```
+src/test/java/com/selfdevelopment/ai/messaging/{module}/{ClassName}Test.java
+```
+
+**Test structure** (per unit-testing-guidelines):
 ```java
-@Test
-// FR-001: Message forwarding between users
-void testForwardMessage_ValidMessage_MessageDelivered() {
-    // Arrange
-    Message message = new Message("user1", "user2", "Hello");
-    when(messageRepository.save(any())).thenReturn(message);
+@DisplayName("{Feature} tests")
+class {ClassName}Test {
 
-    // Act
-    Message result = messageForwarder.forward(message);
+    @Nested
+    @DisplayName("{Slice name}")
+    class {SliceName}Tests {
 
-    // Assert
-    assertNotNull(result);
-    assertEquals("user2", result.getRecipientId());
-    verify(messageRepository).save(message);
+        @Test
+        @DisplayName("should {expected behavior} when {condition}")
+        void should{Behavior}When{Condition}() {
+            // Given
+            // When
+            // Then
+        }
+    }
 }
 ```
 
-### Step 5: Create Minimal Stubs (if needed)
-
-If tests reference non-existent classes, create minimal stubs:
-- Interfaces with method signatures
-- Empty class skeletons
-- DO NOT implement any logic
-
+**Traceability comment** at top of each test method:
 ```java
-// Stub only — no implementation
-public interface MessageForwarder {
-    Message forward(Message message);
-}
+// FR-001, AC-001, SDD Section 4.1
 ```
 
-### Step 6: Run Tests (RED)
+#### 4.3: Run Tests and Verify RED
 
 ```bash
-# Run tests for this ticket's test classes
-mvn test -Dtest="*{ComponentName}Test,*{ComponentName}IT"
+# Run specific test class
+mvn test -Dtest={ClassName}Test -pl {module} -q 2>&1 | tee "docs/operations/{JIRA_KEY}/04-test-cases/slices/slice-{N}-red-output.txt"
 
-# Or run all tests
-mvn test
+echo "Exit code: $?"
 ```
 
-**Expected**: Tests FAIL.
+**RED validation** (per doodooms tdd-workflow):
 
-### Step 7: Verify RED
+**Runtime RED** (preferred):
+- Test compiles successfully ✅
+- Test is actually executed ✅
+- Result is RED (test fails) ✅
+- Failure reason is assertion failure or expected exception (NOT syntax error) ✅
 
-Analyze test output:
-- ✅ **Assertion failure** — `expected: X but was: Y` → CORRECT RED
-- ❌ **Compile error** — `cannot find symbol` → FIX test (create stub or reference existing class)
-- ❌ **Test passes** → implementation already exists, check scope
+**Compile-time RED** (valid when class/method doesn't exist):
+- Test newly instantiates/references the target code path ✅
+- Compile failure is due to missing class/method (NOT syntax error in test) ✅
+- The missing class/method is exactly what implementation will create ✅
 
-If compile errors, fix tests (NOT implementation) and re-run.
-
-### Step 8: Save RED Output
-
+**Check failure reason**:
 ```bash
-mvn test -Dtest="*{ComponentName}Test" 2>&1 | tee "docs/operations/{JIRA_KEY}/04-test-cases/red-test-output.txt"
+# Extract failure messages
+grep -A 5 "FAILED\|ERROR\|BUILD FAILURE" "docs/operations/{JIRA_KEY}/04-test-cases/slices/slice-{N}-red-output.txt" | head -20
 ```
 
-### Step 9: Verify Report + State Update
+#### 4.4: If RED Not Correct
+
+| Problem | Action |
+|---------|--------|
+| Test passes (GREEN) | Implementation already exists — this is NOT TDD. Report and stop. |
+| Compile error in test syntax | Fix test syntax, re-run. |
+| Compile error in import | Fix import, re-run. |
+| Test fails for wrong reason | Adjust test to fail for intended reason. |
+| Test not executed (skipped) | Remove @Disabled, fix test discovery. |
+
+**Max 3 fix attempts per slice**, then escalate.
+
+#### 4.5: Record RED Verification
+
+Update `tdd-progress.md`:
+```markdown
+| 1 | {slice name} | FR-001 | RED_VERIFIED | {file} | ✅ {failure reason} |
+```
+
+Write `slice-{N}-red-report.md`:
+```markdown
+# RED Report — Slice {N}: {name}
+
+**Test file**: {path}
+**Test count**: {N}
+**Run command**: `mvn test -Dtest=...`
+**Exit code**: {code}
+**RED verified**: ✅ / ❌
+
+## Failure Reasons
+1. {test name}: {failure message}
+2. ...
+
+## Compile-time RED (if applicable)
+- Missing class: {class name}
+- Missing method: {method signature}
+
+## Evidence
+- Output: `slice-{N}-red-output.txt`
+```
+
+**Interactive checkpoint**:
+> Slice {N} RED verified ✅. {N} tests failing for correct reason.
+> Options: [Next slice] [View test code] [View RED output] [Stop]
+
+#### 4.6: Repeat for All Slices
+
+Continue until all slices have RED-verified tests.
+
+### Step 5: Generate Test Summary
+
+Write `test-summary.md`:
+```markdown
+# Test Summary — {JIRA_KEY}
+
+**Total slices**: {N}
+**Total tests**: {M}
+**RED verified**: {N}/{N} slices ✅
+
+## Test Coverage by FR
+| FR | Test Count | Slices |
+|----|-----------|--------|
+| FR-001 | {N} | {slices} |
+
+## Test Files
+- {file 1} — {N} tests
+- {file 2} — {N} tests
+
+## Edge Cases Covered
+- {edge case 1}
+- {edge case 2}
+
+## Not Covered (deferred)
+- {item} — {reason}
+```
+
+### Step 6: Verify Gate
+
+Run all new tests together to confirm all RED:
+```bash
+mvn test -Dtest={TestClass1},{TestClass2} -pl {module} -q 2>&1 | tee "docs/operations/{JIRA_KEY}/04-test-cases/all-red-output.txt"
+```
+
+Confirm: all new tests fail, no existing tests broken.
 
 ## Verify Gate (Automated)
 
 | Criteria | Method | Evidence |
 |----------|--------|----------|
-| Test plan generated | File exists | `ls` output |
-| Test cases written | Test files exist in src/test | `find src/test -name "*{Component}*"` |
-| Each test traces to SDD req | Traceability matrix | test-plan.md |
-| Test naming follows convention | Naming check | verify-report.md |
-| Tests use AAA pattern | Code review | verify-report.md |
-| Tests run and FAIL | `mvn test` exit code != 0 | red-test-output.txt |
-| Failure is assertion (not compile) | Output analysis | red-test-output.txt |
-| No production code written | `git diff --stat` shows only test files | Git diff |
-| Coverage target defined | >= 80% line / 70% branch | test-plan.md |
-| Edge cases covered | Edge case section | test-plan.md |
-| Error paths covered | Error handling section | test-plan.md |
+| SDD reviewed and approved | Status check | sdd.md status = REVIEWED |
+| Test guidelines injected | KB read log | operation-log.md |
+| Test slices defined | Progress file | tdd-progress.md |
+| Each slice RED verified | RED reports | slice-{N}-red-report.md |
+| Tests fail for RIGHT reason | Failure analysis | RED reports + output files |
+| No implementation code written | Git diff check | `git diff --name-only src/main/` = empty |
+| No existing tests modified | Git diff check | `git diff --name-only` shows only new files |
+| Tests trace to FR/AC | Traceability comments | Test file grep |
+| Tests follow naming convention | Pattern check | verify-report.md |
+| Tests use Given-When-Then | Structure check | verify-report.md |
+| Edge cases covered | Test summary | test-summary.md |
+| All new tests RED (combined run) | Test output | all-red-output.txt |
+| No existing tests broken | Test output | all-red-output.txt |
+| Test summary generated | File exists | test-summary.md |
 
-**PASS** → Tests exist + fail for right reason + no production code → Proceed to Stage 5 (code-generation)
-**FAIL** → Fix tests (NOT code), re-run (max 3 retries, then escalate)
+**PASS** → All checks ✅ → Proceed to Stage 5 (code generation / TDD GREEN)
+**FAIL** → Fix issues, re-verify (max 3 retries, then escalate)
 
 ## KB Injection
 
 **Read**:
-- `04-Coding-Guidelines/07-testing/` (ALL)
-- `02-Chat-Domain-Knowledge/` (test patterns)
-- `03-Design-Guidelines/05-reliability/` (test strategy)
+- `04-Coding-Guidelines/09-testing/unit-testing-guidelines.md`
+- `04-Coding-Guidelines/09-testing/integration-testing-guidelines.md`
+- `04-Coding-Guidelines/09-testing/test-pyramid.md`
+- `01-CBOL-Domain-Knowledge/` (domain-specific test patterns)
+- `02-Chat-Domain-Knowledge/` (IM test patterns)
 
-**Write**: None (this stage doesn't write to KB)
-
-## Test Types by Component
-
-| Component Type | Test Types | Tools |
-|----------------|-----------|-------|
-| Service layer | Unit tests | JUnit 5 + Mockito |
-| Controller/API | Integration tests | MockMvc / TestRestTemplate |
-| WebSocket | Integration tests | Spring WebSocket test client |
-| State machine | Unit tests | State machine test framework |
-| Database | Integration tests | Testcontainers / H2 |
-| Repository | Integration tests | @DataJpaTest |
-| Message queue | Integration tests | Embedded Kafka / RabbitMQ |
+**Write**: None (tests are code, not KB)
 
 ## Error Handling
 
 | Error | Resolution |
 |-------|-----------|
-| SDD not found | Run sdd skill first |
-| Tests don't fail | Check if implementation exists — may be out of scope, ask user |
-| Compile errors | Create minimal stubs/interfaces, re-run |
-| Test framework not configured | Ask user to configure JUnit 5 + Mockito |
-| Coverage can't reach target | Note gap in test plan, ask user for waiver |
+| SDD not reviewed | Run sdd skill and get review approval first |
+| pom.xml not found | Verify project structure, ask user for build config |
+| Test framework not configured | Check pom.xml for JUnit/Mockito, ask user to configure |
+| Tests pass (already implemented) | This is NOT TDD — report to user, ask whether to skip TDD or delete implementation |
+| RED fails for wrong reason | Adjust test, max 3 attempts, then escalate |
+| Build takes too long | Use `-pl {module}` to build only relevant module, use `-q` for quiet |
+| Existing tests break | Check if new tests affect shared state, isolate tests |
+| Test discovery fails | Check class name ends with `Test`, check @Test annotations |
 
 ## Output Artifacts
 
-- `docs/operations/{JIRA_KEY}/04-test-cases/test-plan.md` — Test plan + traceability
-- Test files in `src/test/java/.../`
-- `docs/operations/{JIRA_KEY}/04-test-cases/red-test-output.txt` — RED phase output
+- `src/test/java/.../*Test.java` — New test files (RED)
+- `docs/operations/{JIRA_KEY}/04-test-cases/tdd-progress.md` — TDD progress tracking
+- `docs/operations/{JIRA_KEY}/04-test-cases/test-summary.md` — Test summary
+- `docs/operations/{JIRA_KEY}/04-test-cases/slices/slice-{N}-red-report.md` — Per-slice RED reports
+- `docs/operations/{JIRA_KEY}/04-test-cases/slices/slice-{N}-red-output.txt` — Per-slice test output
+- `docs/operations/{JIRA_KEY}/04-test-cases/all-red-output.txt` — Combined RED output
 - `docs/operations/{JIRA_KEY}/04-test-cases/verify-report.md` — Verify report
 - `docs/operations/{JIRA_KEY}/04-test-cases/operation-log.md` — Operation log
 
 ---
 
-*Test Cases Skill v1.0.0 — 2026-08-21*
+*Test Cases Skill v2.0.0 — 2026-08-24*
+*Optimized with: Sub-agent isolation pattern, progress persistence, interactive checkpoints per slice, Runtime+Compile-time RED validation, CRITICAL rules, precise allowed-tools*

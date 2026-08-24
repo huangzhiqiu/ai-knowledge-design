@@ -1,257 +1,384 @@
 ---
 name: code-generation
-description: Generate implementation code from SDD + failing tests using TDD GREEN phase. Writes minimal code to make tests pass, verifies all tests pass, checks coverage >= 80%/70%, validates code meets SDD requirements. Do NOT modify tests from Stage 4. Use after test-cases skill, or when you need to implement code to pass failing tests.
-version: 1.0.0
-author: CBOL Self-Development
-tags: [tdd, code-generation, green-phase, implementation, coverage, poc]
-triggers:
-  - "implement code"
-  - "TDD green"
-  - "make tests pass"
-  - "generate implementation"
-arguments:
-  - name: jira_key
-    description: Jira ticket key (e.g., CBOL-123)
-    required: true
+description: TDD GREEN phase — write minimal implementation code to make RED tests pass. Reads failing tests, writes ONLY the code needed to pass, runs tests to verify GREEN, then optionally refactors while keeping tests green. NEVER modifies tests. Use after test-cases (RED) is verified, or when you need to implement code to pass tests.
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Bash(mvn:*)
+  - Bash(java:*)
+  - Bash(grep:*)
+  - Bash(find:*)
+  - Bash(cat:*)
+  - Bash(git:*)
 ---
 
 # Code Generation Skill (TDD GREEN Phase)
 
-Generate implementation code to make failing tests pass. Do NOT modify tests.
+Write minimal code to pass tests. Verify GREEN. Refactor while green.
+
+## CRITICAL RULES
+
+1. **NEVER MODIFY TESTS**: Do NOT edit, delete, or modify any test file. Tests are the specification. If a test seems wrong, stop and report — do NOT "fix" the test.
+2. **MINIMAL CODE**: Write ONLY the code needed to make tests pass. No speculative features, no premature optimization, no "nice to have" methods. YAGNI.
+3. **RED MUST EXIST FIRST**: Before writing any implementation, verify that tests exist and are RED. If no RED tests, this is NOT TDD — stop and run test-cases skill first.
+4. **ONE SLICE AT A TIME**: Implement one slice, verify GREEN, then next slice. Do NOT implement all slices at once.
+5. **RUN TESTS AFTER EVERY CHANGE**: After each code change, run tests. If tests fail, revert immediately or fix. Do NOT accumulate changes.
+6. **REFACTOR ONLY WHEN GREEN**: Refactoring happens ONLY after tests pass. Never refactor while tests are RED.
+7. **FOLLOW CODING GUIDELINES**: Must follow `04-Coding-Guidelines/` (all). Code that passes tests but violates guidelines is NOT acceptable.
+8. **TRACE TO SDD**: Implementation must match SDD design. Deviations require justification.
+9. **NO SECRETS**: Never hardcode credentials, tokens, or sensitive data.
 
 ## References
 
-- [genkovich/sdd](https://github.com/genkovich/sdd) — implement TDD engine (SELECT→RED→GREEN→REFACTOR→GATE→COMMIT)
-- [Upsolve-Labs/upstack](https://github.com/Upsolve-Labs/upstack) — /execute GREEN: implement, atomic commits
+- [or-ituran/claude-tdd-skill](https://github.com/or-ituran/claude-tdd-skill) — tdd-implementer, tdd-failure-analyzer, tdd-refactorer sub-agents
+- [genkovich/sdd](https://github.com/genkovich/sdd) — Implement engine, minimal code principle
+- [aliev/strict-tdd](https://github.com/aliev/strict-tdd) — Strict TDD, no test modification
+- [hugo-bluecorn/claude-code-tdd-workflow](https://github.com/hugo-bluecorn/claude-code-tdd-workflow) — auto-run-tests.sh hook, validate-tdd-order.sh
 - [POC Stage 5 Doc](../../stages/05-code-generation.md) — Stage documentation
 - [POC Verify Checklist](../../verify-checklist.md) — Gate 5 criteria
+- [KB Integration](../../knowledge-integration.md) — KB read/write protocol
 
 ## Prerequisites
 
-1. Stage 4 (test-cases) completed — failing tests exist
-2. RED output confirms tests fail for right reason
-3. SDD exists: `docs/operations/{JIRA_KEY}/03-sdd/sdd.md`
-4. Knowledge base directories exist
+1. Stage 4 (test-cases) completed — RED tests exist and verified
+2. `docs/operations/{JIRA_KEY}/04-test-cases/tdd-progress.md` shows all slices RED_VERIFIED
+3. Test files exist in `src/test/java/`
+4. Java project with Maven build
 5. Operation directory exists: `docs/operations/{JIRA_KEY}/05-code-generation/`
-
-## TDD GREEN Rules (STRICT)
-
-1. ✅ Write MINIMAL code to make tests pass
-2. ✅ Do NOT modify tests from Stage 4
-3. ✅ All tests MUST pass
-4. ✅ Coverage >= 80% line, >= 70% branch
-5. ✅ Follow `04-Coding-Guidelines/` (ALL relevant)
-6. ✅ Follow `03-Design-Guidelines/` (architecture decisions)
-7. ❌ NO code outside SDD scope
-8. ❌ NO cheating (modifying tests, skipping tests, @Disabled)
-9. ✅ After GREEN, REFACTOR for quality (keep tests green)
-10. ✅ Conventional commit format
 
 ## Execution Steps
 
-### Step 1: Read SDD + Tests
+### Step 1: Verify RED State
 
 ```bash
-cat "docs/operations/{JIRA_KEY}/03-sdd/sdd.md"
-cat "docs/operations/{JIRA_KEY}/04-test-cases/test-plan.md"
+# Read TDD progress
+cat "docs/operations/{JIRA_KEY}/04-test-cases/tdd-progress.md"
+
+# Run all new tests to confirm they are still RED
+mvn test -Dtest={TestClass1},{TestClass2} -pl {module} -q 2>&1 | tail -20
+
+echo "Exit code: $?"
 ```
 
-Extract: implementation plan tasks, component design, data model, API design.
+**Verify**:
+- All slices show RED_VERIFIED in progress
+- Running tests produces failures (exit code != 0 or test failures)
+- No test files modified since RED verification (`git status` shows test files as new/modified)
+
+If RED state not confirmed → stop, run test-cases skill first.
 
 ### Step 2: Inject Knowledge Base
 
 **Mandatory reads**:
-- `04-Coding-Guidelines/` (ALL relevant: Java, Spring, WebSocket, DB, cache, queue)
-- `03-Design-Guidelines/` (ALL: architecture, API, data, security, reliability)
-- `01-CBOL-Domain-Knowledge/` (domain logic patterns)
-- `02-Chat-Domain-Knowledge/` (IM implementation references)
+- `04-Coding-Guidelines/` — All coding guidelines
+- `03-Design-Guidelines/` — Design patterns
+- SDD from Stage 3
 
-**Analyze existing code patterns**:
+**Existing code patterns**:
 ```bash
-# Find existing service implementations
-find src/main/java -name "*ServiceImpl.java" | head -10
+# Find similar implementation patterns
+grep -rl "{keyword}" src/main/java/ --include="*.java" | head -10
 
-# Check existing WebSocket config
-find src/main/java -name "*WebSocket*Config*" -o -name "*Netty*"
-
-# Check existing state machine
-find src/main/java -name "*StateMachine*" -o -name "*State*"
+# Read existing service/controller patterns
+find src/main/java -name "*Service.java" | head -5
 ```
 
-### Step 3: Implement Code (GREEN)
+### Step 3: Initialize Implementation Progress
 
-For each task in SDD implementation plan:
+Write `implementation-progress.md`:
+```markdown
+# Implementation Progress — {JIRA_KEY}
 
-1. Read the failing test for this task
-2. Write MINIMAL implementation code to make it pass
-3. Follow coding guidelines:
-   - Java 17+ features (records, sealed classes, pattern matching)
-   - Spring Boot 3.x conventions
-   - Dependency injection (constructor injection preferred)
-   - Immutable objects where possible
-   - Proper exception handling
-   - Logging (SLF4J)
-4. For WebSocket: follow `02-Chat-Domain-Knowledge/websocket/` patterns
-5. For state machine: follow `01-CBOL-Domain-Knowledge/state-machine/` patterns
-6. For database: follow `03-Design-Guidelines/03-data-design/` patterns
-7. Run tests after each task:
-   ```bash
-   mvn test -Dtest="*{ComponentName}Test"
-   ```
+**Status**: IN_PROGRESS
+**Started**: {timestamp}
 
-**IMPORTANT**: Do NOT modify any test files from Stage 4. If a test seems wrong, note it but do NOT change it — escalate to human.
+## Slices
+| # | Slice | FR | Status | Implementation Files | GREEN Verified |
+|---|-------|-----|--------|---------------------|---------------|
+| 1 | {slice} | FR-001 | pending | — | — |
 
-### Step 4: Run All Tests (GREEN)
-
-```bash
-mvn test 2>&1 | tee "docs/operations/{JIRA_KEY}/05-code-generation/green-test-output.txt"
+## Current Slice
+{slice number} — {slice name}
 ```
 
-**Expected**: ALL tests pass (exit code 0).
+### Step 4: For Each Slice — GREEN Phase
 
-If tests fail:
-1. Analyze failure
-2. Fix implementation code (NOT tests)
-3. Re-run
-4. Max 3 fix cycles, then escalate
-
-### Step 5: Check Coverage
+#### 4.1: Read Failing Tests for Slice
 
 ```bash
-mvn jacoco:report
-# Check coverage in target/site/jacoco/index.html
-# Or parse CSV
-cat target/site/jacoco/jacoco.csv | grep "{package}"
+# Read test file for current slice
+cat src/test/java/.../{TestClass}.java
+
+# Read RED output for this slice
+cat "docs/operations/{JIRA_KEY}/04-test-cases/slices/slice-{N}-red-output.txt"
 ```
 
-**Requirements**:
-- Line coverage >= 80%
-- Branch coverage >= 70%
+Understand:
+- What classes/methods the tests expect
+- What behavior is being tested
+- What the failure messages say
 
-If below target:
-1. Identify uncovered code
-2. Add more tests (but wait — this stage is GREEN, tests were written in RED)
-3. If tests from Stage 4 are insufficient, note gap and ask user if more tests needed
-4. Do NOT add tests in this stage without user approval
+#### 4.2: Write Minimal Implementation
 
-### Step 6: Refactor (Keep Tests Green)
-
-If all tests pass and coverage is met:
-1. Review code for quality:
-   - Remove duplication
-   - Improve naming
-   - Extract methods if too long (> 50 lines)
-   - Apply design patterns if appropriate
-2. Run tests after each refactor:
-   ```bash
-   mvn test
-   ```
-3. Stop when tests still pass and code quality is acceptable
-
-### Step 7: Verify Requirements Met
-
-Check code meets all SDD requirements:
-- [ ] All FRs implemented
-- [ ] All ACs satisfied
-- [ ] Data model matches SDD
-- [ ] API endpoints match SDD
-- [ ] State machine transitions match SDD
-- [ ] No code outside SDD scope
-
-### Step 8: Write Implementation Summary
-
-Write `docs/operations/{JIRA_KEY}/05-code-generation/implementation-summary.md`:
-- Tasks completed table
-- Test results
-- Coverage report
-- Files changed (`git diff --stat`)
-- KB references
-- KB updates (if any)
-
-### Step 9: Identify New Coding Patterns
-
-If implementation reveals new patterns not in KB:
-```bash
-# Search KB for existing pattern
-grep -r "{pattern}" 04-Coding-Guidelines/ --include="*.md" -l
+Create/modify implementation files:
+```
+src/main/java/com/selfdevelopment/ai/messaging/{module}/{ClassName}.java
 ```
 
-If new, draft KB doc in appropriate `04-Coding-Guidelines/` subdirectory.
+**Principles**:
+- Write ONLY what tests require
+- Use existing patterns from codebase
+- Follow coding guidelines
+- No TODO comments, no placeholder code
+- No logging beyond what guidelines require
 
-### Step 10: Commit
+**Interactive checkpoint** (before writing):
+> Slice {N}: "{slice name}". Tests expect: {classes/methods}.
+> Implementation plan: {brief description}.
+> Options: [Write implementation] [Adjust plan] [View tests] [Stop]
+
+#### 4.3: Run Tests — Verify GREEN
 
 ```bash
-git add src/main/
-git commit -m "feat({scope}): {description} ({JIRA_KEY})"
+mvn test -Dtest={TestClass} -pl {module} -q 2>&1 | tee "docs/operations/{JIRA_KEY}/05-code-generation/slices/slice-{N}-green-output.txt"
+
+echo "Exit code: $?"
 ```
 
-### Step 11: Verify Report + State Update
+**GREEN validation**:
+- All tests in slice pass ✅
+- No compilation errors ✅
+- Exit code 0 (or BUILD SUCCESS) ✅
+- No existing tests broken ✅
+
+#### 4.4: If Tests Still Fail
+
+**Invoke failure analysis** (like tdd-failure-analyzer sub-agent):
+
+1. Read failure messages
+2. Determine root cause:
+   - Missing method → add method
+   - Wrong return value → fix logic
+   - Wrong exception → fix exception handling
+   - Missing dependency → add dependency injection
+   - Test expects different behavior → STOP — do NOT modify test, report discrepancy
+
+3. Apply minimal fix
+4. Re-run tests
+5. Max 3 fix attempts per slice, then escalate
+
+**IMPORTANT**: If failure is because test expects behavior different from SDD, STOP. Do NOT modify test. Report:
+- Test expects: {behavior}
+- SDD says: {behavior}
+- Discrepancy: {description}
+Ask user to resolve.
+
+#### 4.5: REFACTOR Phase (Optional, Only When GREEN)
+
+If code quality could be improved AND tests are GREEN:
+
+1. Identify code smells:
+   - Long methods (>20 lines)
+   - Duplicate code
+   - Magic numbers
+   - Deep nesting
+   - Unclear names
+
+2. Apply ONE refactoring at a time
+3. Run tests after each refactoring
+4. If tests fail → revert immediately
+5. Record refactoring in progress
+
+```bash
+# After each refactoring
+mvn test -Dtest={TestClass} -pl {module} -q
+echo "Exit code: $?"
+# If 0 → continue. If != 0 → git revert the change
+```
+
+**Interactive checkpoint**:
+> Slice {N} GREEN ✅. Code quality: {assessment}.
+> Options: [Refactor] [Next slice] [View implementation] [View test output] [Stop]
+
+#### 4.6: Record GREEN Verification
+
+Update `implementation-progress.md`:
+```markdown
+| 1 | {slice} | FR-001 | GREEN_VERIFIED | {files} | ✅ |
+```
+
+Write `slice-{N}-green-report.md`:
+```markdown
+# GREEN Report — Slice {N}: {name}
+
+**Implementation files**: {files}
+**Test file**: {file}
+**Run command**: `mvn test -Dtest=...`
+**Exit code**: {code}
+**GREEN verified**: ✅
+
+## Tests Passed
+1. {test name}
+2. ...
+
+## Refactoring Applied
+- {refactoring 1} — {before → after}
+- None
+
+## Code Quality
+- Lines of code: {N}
+- Methods: {N}
+- Code smells: {N}
+
+## Evidence
+- Output: `slice-{N}-green-output.txt`
+```
+
+#### 4.7: Repeat for All Slices
+
+Continue until all slices GREEN_VERIFIED.
+
+### Step 5: Run Full Test Suite
+
+After all slices:
+```bash
+# Run full module test suite
+mvn test -pl {module} -q 2>&1 | tee "docs/operations/{JIRA_KEY}/05-code-generation/full-test-output.txt"
+
+echo "Exit code: $?"
+```
+
+**Verify**:
+- All tests pass (including existing tests)
+- No regressions
+- Coverage meets threshold (>= 80% line, >= 70% branch)
+
+### Step 6: Code Quality Checks
+
+```bash
+# Check for coding guideline violations
+# (If SonarQube configured)
+mvn sonar:sonar -pl {module} -q 2>&1 | tail -10
+
+# Check compile warnings
+mvn compile -pl {module} -q 2>&1 | grep -i "warning" | head -10
+
+# Check for TODO/FIXME
+grep -rn "TODO\|FIXME\|HACK" src/main/java/{module}/ | head -10
+```
+
+### Step 7: Generate Implementation Summary
+
+Write `implementation-summary.md`:
+```markdown
+# Implementation Summary — {JIRA_KEY}
+
+**Total slices**: {N}
+**Total tests passing**: {M}
+**Implementation files**: {N}
+**Lines of code**: {N}
+**Refactoring applied**: {N}
+
+## Files Created/Modified
+| File | Type | Lines | Slice |
+|------|------|-------|-------|
+
+## FR Traceability
+| FR | Implementation | Tests |
+|----|---------------|-------|
+
+## Code Quality
+- Sonar issues: {N} (critical: {N}, major: {N})
+- Compile warnings: {N}
+- TODO/FIXME: {N}
+- Coverage: {N}% line, {N}% branch
+
+## Deviations from SDD
+- {deviation} — {justification}
+- None
+
+## KB Updates Needed
+- {pattern} → {KB location}
+```
+
+### Step 8: Commit Code (If Pipeline Allows)
+
+```bash
+git add src/main/java/{module}/ src/test/java/{module}/
+git commit -m "feat({module}): implement {JIRA_KEY} — {summary}
+
+- {slice 1 description}
+- {slice 2 description}
+- Tests: {N} passing, coverage {N}%
+
+Refs: {JIRA_KEY}"
+```
 
 ## Verify Gate (Automated)
 
 | Criteria | Method | Evidence |
 |----------|--------|----------|
-| All tests pass | `mvn test` exit code 0 | green-test-output.txt |
-| No test modifications | `git diff --name-only` shows no test file changes from Stage 4 | Git diff |
-| Line coverage >= 80% | JaCoCo report | coverage-report.xml |
-| Branch coverage >= 70% | JaCoCo report | coverage-report.xml |
-| Code follows coding guidelines | Lint/format check | verify-report.md |
-| Code follows design guidelines | Architecture review | verify-report.md |
-| All SDD requirements met | Traceability check | implementation-summary.md |
-| No code outside SDD scope | Diff scope check | Git diff analysis |
-| No methods > 50 lines | Code analysis | verify-report.md |
-| No classes > 500 lines | Code analysis | verify-report.md |
-| No hardcoded secrets | Secret scan | verify-report.md |
-| Input validation present | Code review | verify-report.md |
-| Conventional commit format | Commit message check | Git log |
-| KB docs injected | KB injection log | operation-log.md |
+| RED state confirmed before implementation | Test output | Step 1 output |
+| All slices GREEN verified | GREEN reports | slice-{N}-green-report.md |
+| No test files modified | Git diff | `git diff --name-only src/test/` = only new files from Stage 4 |
+| Minimal code (no speculative features) | Code review | implementation-summary.md |
+| All tests pass (full suite) | Test output | full-test-output.txt |
+| No existing tests broken | Test output | full-test-output.txt |
+| Coverage >= 80% line, >= 70% branch | Coverage report | JaCoCo report |
+| Follows coding guidelines | Quality checks | verify-report.md |
+| Follows design guidelines | SDD traceability | implementation-summary.md |
+| No secrets hardcoded | Grep check | `grep -rn "password\|secret\|token" src/main/` |
+| No TODO/FIXME in production code | Grep check | `grep -rn "TODO\|FIXME" src/main/` |
+| Sonar no critical/blocker | Sonar report | Sonar output |
+| Implementation summary generated | File exists | implementation-summary.md |
+| Code committed (if allowed) | Git log | `git log --oneline -3` |
 
-**PASS** → All tests pass + coverage met + requirements met → Proceed to Stage 6 (pr-review)
-**FAIL** → Fix code (NOT tests), re-run (max 3 retries, then escalate)
+**PASS** → All checks ✅ → Proceed to Stage 6 (PR review)
+**FAIL** → Fix issues, re-verify (max 3 retries, then escalate)
 
 ## KB Injection
 
 **Read**:
-- `04-Coding-Guidelines/` (ALL relevant)
-- `03-Design-Guidelines/` (ALL)
-- `01-CBOL-Domain-Knowledge/` (domain logic)
-- `02-Chat-Domain-Knowledge/` (IM patterns)
+- `04-Coding-Guidelines/` — All coding guidelines
+- `03-Design-Guidelines/` — Design patterns
+- `01-CBOL-Domain-Knowledge/` — Domain patterns
+- `02-Chat-Domain-Knowledge/` — IM patterns
+- SDD from Stage 3
 
 **Write**:
-- New coding patterns → `04-Coding-Guidelines/` (relevant subdirectory)
-
-## Implementation by Component Type
-
-| Component | Guidelines | KB Reference |
-|-----------|-----------|--------------|
-| Controller | @RestController, @RequestMapping, proper HTTP status | `03-Design-Guidelines/02-api-design/` |
-| Service | @Service, business logic, transaction management | `04-Coding-Guidelines/02-spring/` |
-| Repository | @Repository, Spring Data JPA, custom queries | `04-Coding-Guidelines/04-database/` |
-| WebSocket handler | Netty/Spring WebSocket, event handling | `02-Chat-Domain-Knowledge/websocket/` |
-| State machine | Custom lightweight state machine | `01-CBOL-Domain-Knowledge/state-machine/` |
-| Cache | Redis, cache annotations, eviction policies | `04-Coding-Guidelines/05-cache/` |
-| Message queue | Kafka/RabbitMQ, producers/consumers | `04-Coding-Guidelines/06-queue/` |
+- New implementation patterns → `04-Coding-Guidelines/`
+- New domain patterns → `01-CBOL-Domain-Knowledge/`
 
 ## Error Handling
 
 | Error | Resolution |
 |-------|-----------|
-| Tests don't pass | Fix implementation code (NOT tests), max 3 cycles |
-| Coverage below target | Note gap, ask user if more tests needed (Stage 4 should have covered) |
-| Test seems wrong | Do NOT modify — note in operation log, escalate to human |
-| Code conflicts with existing patterns | Follow existing patterns, note discrepancy |
-| SDD requirement unclear | Escalate to human, do NOT guess |
+| RED state not confirmed | Run test-cases skill first, do NOT proceed |
+| Tests expect behavior different from SDD | STOP, do NOT modify test, report discrepancy to user |
+| Tests fail after 3 fix attempts | Escalate, create escalation ticket with failure analysis |
+| Existing tests break | Analyze regression, fix implementation (not tests), max 3 attempts |
+| Coverage below threshold | Add more tests (but tests must be RED first — go back to Stage 4) |
+| Sonar critical issues | Fix code, re-run quality checks |
+| Build fails (compilation) | Fix compilation errors, do NOT modify tests |
+| Dependency injection issues | Check existing patterns, follow project conventions |
+| Refactoring breaks tests | Revert immediately (`git checkout {file}`), try different approach |
 
 ## Output Artifacts
 
-- Implementation code in `src/main/java/.../`
-- `docs/operations/{JIRA_KEY}/05-code-generation/green-test-output.txt` — GREEN phase output
-- `docs/operations/{JIRA_KEY}/05-code-generation/coverage-report.xml` — Coverage report
+- `src/main/java/.../*.java` — Implementation files
+- `docs/operations/{JIRA_KEY}/05-code-generation/implementation-progress.md` — Progress tracking
 - `docs/operations/{JIRA_KEY}/05-code-generation/implementation-summary.md` — Summary
+- `docs/operations/{JIRA_KEY}/05-code-generation/slices/slice-{N}-green-report.md` — Per-slice GREEN reports
+- `docs/operations/{JIRA_KEY}/05-code-generation/slices/slice-{N}-green-output.txt` — Per-slice test output
+- `docs/operations/{JIRA_KEY}/05-code-generation/full-test-output.txt` — Full test suite output
 - `docs/operations/{JIRA_KEY}/05-code-generation/verify-report.md` — Verify report
 - `docs/operations/{JIRA_KEY}/05-code-generation/operation-log.md` — Operation log
-- Potential KB updates: `04-Coding-Guidelines/`
+- Git commit with implementation code
 
 ---
 
-*Code Generation Skill v1.0.0 — 2026-08-21*
+*Code Generation Skill v2.0.0 — 2026-08-24*
+*Optimized with: Implementer/failure-analyzer/refactorer sub-agent pattern, per-slice interactive checkpoints, progress persistence, strict no-test-modification enforcement, CRITICAL rules, precise allowed-tools*
