@@ -1,0 +1,266 @@
+#!/usr/bin/env python3
+"""security-scan skill: SAST + secrets + (optional) container CVE scan.
+
+Runs Semgrep + Bandit (SAST) and gitleaks (secrets) in parallel, and
+optionally trivy (container CVE) when --scan-types includes "container"
+and --image-name is given.
+
+Findings are deduplicated by (file, line, rule_id) keeping the highest
+severity, and all messages pass through token-shape redaction so secret
+material can't leak through skill output.
+
+Usage:
+    python skills/security-scan/scripts/run.py [--repo-path PATH] \\
+        [--scan-types sast,secrets,container] [--image-name OWNER/NAME]
+    python skills/security-scan/scripts/run.py --repo-url URL [--ref REF] ...
+
+Repo resolution:
+    --repo-path PATH    local git checkout (default: $PWD)
+    --repo-url URL      shallow-clone this GitHub URL (overrides --repo-path)
+    --ref REF           branch/tag/sha when --repo-url is given (default: main)
+
+Output: single JSON object on stdout.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import os
+import shutil
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from _shared.redact import redact_tokens  # noqa: E402
+from _shared.repo_resolver import resolve_repo  # noqa: E402
+from _shared.subprocess_helper import hash_inputs, install_hint_for  # noqa: E402
+
+
+_SEV_RANK = {
+    "info": 0, "informational": 0,
+    "low": 1,
+    "medium": 2, "moderate": 2, "warning": 2,
+    "high": 3, "error": 3,
+    "critical": 4,
+}
+
+
+async def _run_async(cmd: list[str], cwd: str | None = None,
+                     timeout_s: float = 300.0) -> dict:
+    """Async subprocess runner; security-scan needs parallelism."""
+    import time
+    t0 = time.perf_counter()
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, cwd=cwd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=timeout_s,
+            )
+            timed_out = False
+        except asyncio.TimeoutError:
+            proc.kill()
+            stdout, stderr = b"", b"timeout"
+            timed_out = True
+    except FileNotFoundError as exc:
+        binary = exc.filename or (cmd[0] if cmd else "?")
+        return {
+            "exit_code": -1, "stdout": "",
+            "stderr": f"binary not found: {binary}",
+            "duration_ms": int((time.perf_counter() - t0) * 1000),
+            "timed_out": False,
+            "missing_binary": binary,
+            "install_hint": install_hint_for(binary),
+        }
+    return {
+        "exit_code": proc.returncode if not timed_out else -1,
+        "stdout": stdout.decode("utf-8", errors="replace"),
+        "stderr": stderr.decode("utf-8", errors="replace"),
+        "duration_ms": int((time.perf_counter() - t0) * 1000),
+        "timed_out": timed_out,
+    }
+
+
+async def _run_scanners(repo: Path, scan_types: set[str],
+                         image_name: str) -> tuple[list[dict], list[str], list[dict]]:
+    """Returns (findings, tools_run, missing_tools).
+
+    A scanner is "missing" when its scan_type is requested but the binary
+    is not on PATH. We surface these in the output so the user sees an
+    install hint instead of silently producing partial results.
+    """
+    tasks: list[tuple[str, asyncio.Task]] = []
+    missing_tools: list[dict] = []
+
+    def _add(scan_type: str, scanner: str, cmd: list[str], cwd: str | None = None):
+        if scan_type not in scan_types:
+            return
+        if shutil.which(scanner):
+            tasks.append((scanner, asyncio.create_task(_run_async(cmd, cwd=cwd))))
+        else:
+            missing_tools.append({
+                "tool": scanner,
+                "install_hint": install_hint_for(scanner),
+            })
+
+    _add("sast", "semgrep",
+         ["semgrep", "--config=auto", "--json", "--quiet"], cwd=str(repo))
+    _add("sast", "bandit",
+         ["bandit", "-r", str(repo), "-f", "json", "-q"])
+    _add("secrets", "gitleaks",
+         ["gitleaks", "detect", "--no-banner",
+          "--report-format=json", "--report-path=-"], cwd=str(repo))
+    if "container" in scan_types and image_name:
+        _add("container", "trivy",
+             ["trivy", "image", "--quiet", "--format=json", image_name])
+
+    findings: list[dict] = []
+    tools_run: list[str] = []
+    if not tasks:
+        return findings, tools_run, missing_tools
+
+    for tool, task in tasks:
+        res = await task
+        tools_run.append(tool)
+        if not res.get("stdout"):
+            continue
+        try:
+            data = json.loads(res["stdout"])
+        except json.JSONDecodeError:
+            continue
+
+        if tool == "semgrep":
+            for r in data.get("results", []):
+                findings.append({
+                    "tool": "semgrep",
+                    "rule_id": r.get("check_id"),
+                    "file": r.get("path"),
+                    "line": r.get("start", {}).get("line"),
+                    "severity": (r.get("extra", {}).get("severity") or "info").lower(),
+                    "message": r.get("extra", {}).get("message", ""),
+                })
+        elif tool == "bandit":
+            for r in data.get("results", []):
+                findings.append({
+                    "tool": "bandit",
+                    "rule_id": r.get("test_id"),
+                    "file": r.get("filename"),
+                    "line": r.get("line_number"),
+                    "severity": (r.get("issue_severity") or "low").lower(),
+                    "message": r.get("issue_text", ""),
+                })
+        elif tool == "gitleaks":
+            items = data if isinstance(data, list) else []
+            for r in items:
+                findings.append({
+                    "tool": "gitleaks",
+                    "rule_id": r.get("RuleID"),
+                    "file": r.get("File"),
+                    "line": r.get("StartLine"),
+                    "severity": "critical",
+                    "message": "secret leak: " + (r.get("Description") or "")[:80],
+                })
+        elif tool == "trivy":
+            for res_item in data.get("Results", []):
+                for v in res_item.get("Vulnerabilities") or []:
+                    findings.append({
+                        "tool": "trivy",
+                        "rule_id": v.get("VulnerabilityID"),
+                        "file": v.get("PkgName"),
+                        "line": None,
+                        "severity": (v.get("Severity") or "unknown").lower(),
+                        "message": (v.get("Title") or "")[:120],
+                    })
+
+    return findings, tools_run, missing_tools
+
+
+def _dedup(findings: list[dict]) -> list[dict]:
+    deduped: dict[tuple, dict] = {}
+    for f in findings:
+        key = (f.get("file"), f.get("line"), f.get("rule_id"))
+        existing = deduped.get(key)
+        if not existing or _SEV_RANK.get(f["severity"], 0) > _SEV_RANK.get(
+            existing["severity"], 0
+        ):
+            deduped[key] = f
+    return list(deduped.values())
+
+
+async def main_async() -> int:
+    ap = argparse.ArgumentParser(description="security-scan skill")
+    ap.add_argument("--repo-path", default=os.getcwd(),
+                    help="local git checkout (default: current directory)")
+    ap.add_argument("--repo-url", default="",
+                    help="GitHub URL to shallow-clone (overrides --repo-path)")
+    ap.add_argument("--ref", default="main",
+                    help="branch/tag/sha when --repo-url is given")
+    ap.add_argument(
+        "--scan-types", default="sast,secrets",
+        help="comma-separated subset of sast,secrets,container",
+    )
+    ap.add_argument("--image-name", default="")
+    args = ap.parse_args()
+
+    repo, cleanup = resolve_repo(args.repo_path, args.repo_url, args.ref)
+    try:
+        scan_types = {s.strip() for s in args.scan_types.split(",") if s.strip()}
+        findings, tools_run, missing_tools = await _run_scanners(
+            repo, scan_types, args.image_name,
+        )
+
+        if not tools_run:
+            warning = (
+                "no scan tools available; install semgrep / gitleaks / "
+                "bandit / trivy (or scan_types omits all available tools)"
+            )
+            out: dict = {
+                "ok": True, "findings": [], "by_severity": {},
+                "scan_types_run": [], "secrets_redacted_in_output": True,
+                "tokens_redacted_count": 0,
+                "warnings": [warning],
+                "cache_key": hash_inputs([*sorted(scan_types)]),
+            }
+            if missing_tools:
+                out["missing_tools"] = missing_tools
+            print(json.dumps(out, indent=2))
+            return 0
+
+        deduped = _dedup(findings)
+        redactions = 0
+        by_severity: dict[str, int] = {}
+        for f in deduped:
+            msg, n = redact_tokens(f.get("message", ""))
+            f["message"] = msg
+            redactions += n
+            sev = f["severity"]
+            by_severity[sev] = by_severity.get(sev, 0) + 1
+
+        output = {
+            "ok": True,
+            "findings": deduped[:200],
+            "by_severity": by_severity,
+            "scan_types_run": tools_run,
+            "secrets_redacted_in_output": True,
+            "tokens_redacted_count": redactions,
+            "cache_key": hash_inputs([*sorted(scan_types)]),
+        }
+        if missing_tools:
+            output["missing_tools"] = missing_tools
+        print(json.dumps(output, indent=2))
+        return 0
+    finally:
+        cleanup()
+
+
+def main() -> int:
+    return asyncio.run(main_async())
+
+
+if __name__ == "__main__":
+    sys.exit(main())
