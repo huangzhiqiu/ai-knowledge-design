@@ -34,12 +34,27 @@ Write minimal code to pass tests. Verify GREEN. Refactor while green.
 ## References
 
 - [or-ituran/claude-tdd-skill](https://github.com/or-ituran/claude-tdd-skill) — tdd-implementer, tdd-failure-analyzer, tdd-refactorer sub-agents
+- [excalibase/claude-toolkiit](https://github.com/excalibase/claude-toolkiit) — java-coding-standards, springboot-patterns, jpa-patterns, refactor-clean, self-check, self-review
 - [genkovich/sdd](https://github.com/genkovich/sdd) — Implement engine, minimal code principle
 - [aliev/strict-tdd](https://github.com/aliev/strict-tdd) — Strict TDD, no test modification
 - [hugo-bluecorn/claude-code-tdd-workflow](https://github.com/hugo-bluecorn/claude-code-tdd-workflow) — auto-run-tests.sh hook, validate-tdd-order.sh
 - [POC Stage 5 Doc](../../stages/05-code-generation.md) — Stage documentation
 - [POC Verify Checklist](../../verify-checklist.md) — Gate 5 criteria
 - [KB Integration](../../knowledge-integration.md) — KB read/write protocol
+
+## External Skill Synergy
+
+| External Skill | When to Use | How to Integrate |
+|---------------|-------------|-----------------|
+| `claude-tdd-skill` (or-ituran) | Full TDD GREEN phase with sub-agents | Delegate TDD implementation to claude-tdd-skill; use this skill for CBOL-specific code generation |
+| `excalibase-java-coding-standards` | Java code quality | Reference for Java coding standards, naming, formatting |
+| `excalibase-springboot-patterns` | Spring Boot implementation | Reference for Spring Boot patterns, DI, layered architecture |
+| `excalibase-jpa-patterns` | JPA/Hibernate implementation | Reference for JPA patterns, entity design, transactions |
+| `excalibase-refactor-clean` | Refactoring phase | Use after GREEN for refactoring while keeping tests green |
+| `excalibase-self-check` + `self-review` | Code self-review | Use before PR creation for self-review checklist |
+| `genkovich-sdd/implement` | Atomic implementation | Use for minimal implementation following SDD |
+
+**Delegation pattern**: For simple slices, use this skill directly. For complex TDD sessions needing failure analysis and refactoring sub-agents, delegate to `claude-tdd-skill`. Always reference `excalibase-java-coding-standards` and `springboot-patterns` for quality.
 
 ## Prerequisites
 
@@ -365,6 +380,21 @@ Refs: {JIRA_KEY}"
 | Build fails (compilation) | Fix compilation errors, do NOT modify tests |
 | Dependency injection issues | Check existing patterns, follow project conventions |
 | Refactoring breaks tests | Revert immediately (`git checkout {file}`), try different approach |
+
+## Common Mistakes
+
+| Mistake | Fix |
+|---------|-----|
+| Modifying tests to make them pass | NEVER modify tests. Tests are the specification. If test seems wrong, stop and report. |
+| Writing more code than needed | Minimal code only. Write ONLY what's needed to pass tests. YAGNI. |
+| Implementing without RED tests existing | Verify RED state first. No RED tests = not TDD. Run test-cases skill first. |
+| Refactoring while tests are RED | Refactor ONLY when GREEN. Never refactor while tests fail. |
+| Not running tests after every change | Run tests after each code change. If fail, revert or fix immediately. |
+| Implementing all slices at once | One slice at a time. Implement, verify GREEN, then next slice. |
+| Hardcoding secrets/credentials | Never hardcode secrets. Use environment variables or config. |
+| Ignoring coding guidelines | Code that passes tests but violates guidelines is NOT acceptable. |
+| Not tracing implementation to SDD | Implementation must match SDD. Deviations require justification. |
+| Premature optimization | Optimize only if NFR requires. Clarity and correctness first. |
 
 ## Output Artifacts
 

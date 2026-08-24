@@ -2,7 +2,7 @@
 
 > 7 independently executable OpenCode skills for the POC workflow. Each skill corresponds to one pipeline stage and can be run separately or orchestrated by the poc-pipeline skill.
 >
-> **v2.0.0** — Optimized with GitHub best practices: standardized frontmatter with `allowed-tools`, CRITICAL rules sections, interactive checkpoints, sub-agent isolation patterns, find-then-verify review pipeline, confidence scoring, dry-run-by-default deployment, and progress persistence.
+> **v2.1.0** — Enhanced with external skill ecosystem integration: each skill now includes `## External Skill Synergy` (delegation patterns to 91 external skills from 13 GitHub repos) and `## Common Mistakes` (anti-pattern checklists). poc-pipeline updated with full stage→skill mapping table.
 
 ## Skill Index
 
@@ -137,6 +137,7 @@ skill-name/
     │   └── allowed-tools (precise scoping, e.g. Bash(mvn:*))
     ├── CRITICAL RULES (non-negotiable, must-follow)
     ├── References (GitHub projects + POC docs)
+    ├── External Skill Synergy (delegation patterns to external skills)
     ├── Prerequisites
     ├── Execution Steps
     │   ├── Detailed steps with commands
@@ -145,6 +146,7 @@ skill-name/
     ├── Verify Gate (criteria table with method + evidence)
     ├── KB Injection (read/write mapping)
     ├── Error Handling (error → resolution table)
+    ├── Common Mistakes (anti-pattern checklist)
     └── Output Artifacts
 ```
 
@@ -236,11 +238,13 @@ Every skill passes this quality checklist:
 - [x] Error handling table (error → resolution)
 - [x] Output artifacts list
 - [x] References to GitHub projects + POC docs
+- [x] External Skill Synergy section (delegation patterns)
+- [x] Common Mistakes section (anti-pattern checklist)
 - [x] Follows project conventions (English, kebab-case)
 - [x] No secrets in skill content
 - [x] Human approval enforced where required (Stages 2, 3, 6, 7 production)
 
 ---
 
-*POC Workflow Skills v2.0.0 — 2026-08-24*
-*Optimized with GitHub best practices from 15+ reference projects*
+*POC Workflow Skills v2.1.0 — 2026-08-24*
+*Enhanced with external skill ecosystem integration (91 skills, 13 repos), delegation patterns, and common mistakes checklists*

@@ -34,6 +34,9 @@ Create PR + 5-axis automated review with confidence scoring + human approval.
 ## References
 
 - [gthimmes/code-reviewer](https://github.com/gthimmes/code-reviewer) — 5-axis review, find-then-verify pipeline, confidence scoring
+- [excalibase/claude-toolkiit](https://github.com/excalibase/claude-toolkiit) — code-review, security-review, architecture-review, quality-gate skills
+- [adamcaviness/agentic-toolkit](https://github.com/adamcaviness/agentic-toolkit) — code-review, pr, apply-review skills
+- [fancybread-com/sdlc-workflow-skills](https://github.com/fancybread-com/sdlc-workflow-skills) — complete-task with Constitutional Review gate (Tier 1/2/3)
 - [fanioz/claude-code-pr-automation](https://github.com/fanioz/claude-code-pr-automation) — 5-agent PR automation (creator, reviewer, security, performance, summary)
 - [anthropics/claude-code code-review plugin](https://github.com/anthropics/claude-code) — Confidence-based scoring (threshold 80), CLAUDE.md compliance, git blame context
 - [chanmuzi/git-claw](https://github.com/chanmuzi/git-claw) — /code-review multi-agent severity-based review
@@ -41,6 +44,19 @@ Create PR + 5-axis automated review with confidence scoring + human approval.
 - [POC Stage 6 Doc](../../stages/06-pr-review.md) — Stage documentation
 - [POC Verify Checklist](../../verify-checklist.md) — Gate 6 criteria
 - [KB Integration](../../knowledge-integration.md) — KB read/write protocol
+
+## External Skill Synergy
+
+| External Skill | When to Use | How to Integrate |
+|---------------|-------------|-----------------|
+| `gthimmes-code-reviewer` | Primary 5-axis review | Delegate core review to gthimmes; use this skill for PR creation + CBOL-specific checks |
+| `excalibase-security-review` | Security-focused review | Run after core review for deep security analysis |
+| `excalibase-architecture-review` | Architecture review | Run for significant architecture changes |
+| `excalibase-quality-gate` | Quality gate checks | Run for lint, type-check, format verification |
+| `agentic-toolkit/pr` + `apply-review` | PR creation and review application | Use for PR creation and applying review feedback |
+| `complete-task` (fancybread) | Full commit+PR+issue transition workflow | Use for end-to-end task completion with Constitutional Review |
+
+**Delegation pattern**: Use `gthimmes-code-reviewer` for the core 5-axis review (find-then-verify, confidence scoring). Use `excalibase-security-review` and `architecture-review` for deep dives. This skill orchestrates PR creation, CBOL-specific checks, and human approval enforcement.
 
 ## Prerequisites
 
@@ -368,6 +384,21 @@ Write `human-decision.md`:
 | Human rejects 2 times | Escalate to tech lead, create escalation ticket |
 | False positives high | Increase confidence threshold to 0.8, add more context reading |
 | API rate limited | Wait and retry, or use cached diff |
+
+## Common Mistakes
+
+| Mistake | Fix |
+|---------|-----|
+| Reporting findings without verification | Find-then-verify. Phase 1 scan, Phase 2 verify. Report ONLY verified findings. |
+| Reviewing code outside the diff | Focus on changed lines + necessary context. Don't review pre-existing issues. |
+| Low confidence findings reported | Only report findings with confidence >= 0.7. Lower confidence = note as suggestion. |
+| Reporting style nits/formatting | No nitpicks. Only substantive issues (bugs, security, design problems). |
+| Missing file path/line number in findings | Every finding MUST include file path + line number + code snippet. |
+| Not classifying severity | Every finding classified as CRITICAL/MAJOR/MINOR. CRITICAL blocks merge. |
+| Auto-merging PR | Human approval mandatory. Never auto-merge. Automated review is advisory only. |
+| Inventing new review axes | Exactly 5 axes: correctness, design, security, performance, tests. |
+| Large diff reviewed all at once | Review in chunks. Focus on most changed files first. |
+| Not linking findings to KB guidelines | Reference relevant KB guidelines in findings (coding standards, security, etc.). |
 
 ## Output Artifacts
 

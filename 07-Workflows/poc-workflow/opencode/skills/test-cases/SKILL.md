@@ -31,7 +31,9 @@ Write failing tests first. Verify RED. Stop before implementation.
 
 ## References
 
-- [or-ituran/claude-tdd-skill](https://github.com/or-ituran/claude-tdd-skill) — Sub-agent isolation, progress persistence, interactive checkpoints
+- [or-ituran/claude-tdd-skill](https://github.com/or-ituran/claude-tdd-skill) — Sub-agent isolation, progress persistence, interactive checkpoints, 10 sub-agents
+- [excalibase/claude-toolkiit](https://github.com/excalibase/claude-toolkiit) — tdd, springboot-tdd, integration-testing, ui-testing skills
+- [genkovich/sdd](https://github.com/genkovich/sdd) — plan-tests skill for test planning
 - [Upsolve-Labs/upstack](https://github.com/Upsolve-Labs/upstack) — /execute RED/GREEN strict TDD
 - [aliev/strict-tdd](https://github.com/aliev/strict-tdd) — Strict TDD enforcement
 - [hugo-bluecorn/claude-code-tdd-workflow](https://github.com/hugo-bluecorn/claude-code-tdd-workflow) — validate-tdd-order.sh hook, auto-run-tests.sh
@@ -39,6 +41,18 @@ Write failing tests first. Verify RED. Stop before implementation.
 - [POC Stage 4 Doc](../../stages/04-test-cases.md) — Stage documentation
 - [POC Verify Checklist](../../verify-checklist.md) — Gate 4 criteria
 - [KB Integration](../../knowledge-integration.md) — KB read/write protocol
+
+## External Skill Synergy
+
+| External Skill | When to Use | How to Integrate |
+|---------------|-------------|-----------------|
+| `claude-tdd-skill` (or-ituran) | Full interactive TDD with sub-agents | Delegate TDD orchestration to claude-tdd-skill; use this skill for CBOL-specific test generation |
+| `excalibase-springboot-tdd` | Spring Boot specific TDD patterns | Use for Spring Boot test templates, MockMvc, @WebMvcTest patterns |
+| `excalibase-integration-testing` | Integration/E2E tests | Use for API/server integration tests with Testcontainers |
+| `genkovich-sdd/plan-tests` | Test planning before writing tests | Use for test plan generation; then implement via this skill |
+| `excalibase-ui-testing` | UI/browser E2E tests | Use for Playwright-based UI testing (if applicable) |
+
+**Delegation pattern**: For simple unit tests, use this skill directly. For complex TDD sessions needing sub-agents and progress persistence, delegate to `claude-tdd-skill`. For Spring Boot specific patterns, reference `excalibase-springboot-tdd`.
 
 ## Prerequisites
 
@@ -309,6 +323,20 @@ Confirm: all new tests fail, no existing tests broken.
 | Build takes too long | Use `-pl {module}` to build only relevant module, use `-q` for quiet |
 | Existing tests break | Check if new tests affect shared state, isolate tests |
 | Test discovery fails | Check class name ends with `Test`, check @Test annotations |
+
+## Common Mistakes
+
+| Mistake | Fix |
+|---------|-----|
+| Writing implementation before tests | TDD RED first. Tests must exist and fail before any implementation. |
+| RED fails for syntax error (not assertion) | Fix test syntax. Valid RED = assertion failure or missing class, NOT syntax error. |
+| Writing all tests at once | One slice at a time. Write tests for one slice, verify RED, then next slice. |
+| Modifying existing passing tests to make them fail | Never modify existing tests. Only create new test files/methods. |
+| Not tracing tests to SDD/FR | Every test must trace to an SDD section and FR/AC. |
+| Ignoring test guidelines | Must follow unit-testing-guidelines.md (FIRST, AAA, naming conventions). |
+| Not verifying RED before stopping | Always run tests and confirm they fail. Never assume. |
+| Testing implementation details, not behavior | Test behavior and contracts, not internal implementation details. |
+| Missing edge cases and error scenarios | Include happy path, edge cases, error scenarios, and boundary conditions. |
 
 ## Output Artifacts
 

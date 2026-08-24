@@ -26,10 +26,24 @@ Fetch and validate a Jira ticket. MCP-first with REST fallback.
 ## References
 
 - [illarion/claude-jira-skill](https://github.com/illarion/claude-jira-skill) — Multi-instance, ADF handling, transitions
+- [Lumyk/jira-planner-skill](https://github.com/Lumyk/jira-planner-skill) — MCP-default/acli-opportunistic, config-driven, tenant-data hygiene, new-task 13-step flow, multi-language detection
+- [adamcaviness/agentic-toolkit](https://github.com/adamcaviness/agentic-toolkit) — create-ticket, next-ticket skills
 - [rui-branco/jira-mcp](https://github.com/rui-branco/jira-mcp) — MCP server pattern (jira_get_ticket)
-- [Lumyk/jira-planner-skill](https://github.com/Lumyk/jira-planner-skill) — MCP + acli dual-path
 - [POC Jira Ticket Spec](../../jira-ticket-spec.md) — Validation specification
 - [POC Stage 1 Doc](../../stages/01-ticket-intake.md) — Stage documentation
+
+## External Skill Synergy
+
+This skill can delegate to or complement these external skills:
+
+| External Skill | When to Use | How to Integrate |
+|---------------|-------------|-----------------|
+| `jira-planner` (Lumyk) | Complex Jira ops (transitions, links, comments, multi-instance) | Delegate to jira-planner for non-fetch ops; use this skill for fetch+validate |
+| `claude-jira-skill` (illarion) | Full Jira lifecycle with ADF formatting | Use for ticket creation with rich ADF content |
+| `create-ticket` (agentic-toolkit) | Creating new tickets from requirements | After requirements stage, use create-ticket to spawn subtasks |
+| `next-ticket` (agentic-toolkit) | Finding next ticket to work on | Use at pipeline start to select ticket automatically |
+
+**Delegation pattern**: If user asks for Jira operations beyond fetch/validate (e.g., transition status, add comment, link tickets), delegate to `jira-planner` or `claude-jira-skill` instead of extending this skill.
 
 ## Prerequisites
 
@@ -271,6 +285,19 @@ Write `operation-log.md` with:
 | Missing mandatory fields | Report to user, ask to update ticket in Jira |
 | No domain label | Warn user, suggest adding appropriate label from spec |
 | ADF description parsing failed | Fall back to raw description text, note in verify report |
+
+## Common Mistakes
+
+| Mistake | Fix |
+|---------|-----|
+| Defaulting to REST API for every op | MCP-first. Use REST only as fallback when MCP unavailable. |
+| Skipping post-fetch verification | Always validate JSON structure and field presence before normalization. |
+| Hardcoding project keys or custom field IDs | All tenant-specific values come from config or live MCP calls. Never from memory. |
+| Fabricating ticket details | Facts only. "Unknown" is valid. Never guess missing fields. |
+| ADF description treated as plain text | Jira API v3 returns ADF objects. Convert to markdown before extracting FRs/ACs. |
+| Ignoring ticket type-specific validation | Story needs FR+AC; Bug needs repro steps; Spike needs research question. |
+| Overwriting raw ticket data | Always save raw response first. Normalization writes to separate file. |
+| Skipping domain label check | At least one domain label is mandatory per ticket spec. Warn if missing. |
 
 ## Output Artifacts
 

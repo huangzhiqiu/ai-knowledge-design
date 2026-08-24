@@ -36,6 +36,9 @@ Deploy with staging → production flow, health checks, smoke tests, automatic r
 ## References
 
 - [Kevinweisl/claude-skills-cicd](https://github.com/Kevinweisl/claude-skills-cicd) — build-and-release (dry-run default), dependency-audit, disable-model-invocation safety
+- [excalibase/claude-toolkiit](https://github.com/excalibase/claude-toolkiit) — deployment-patterns, docker-patterns, database-migrations
+- [fancybread-com/sdlc-workflow-skills](https://github.com/fancybread-com/sdlc-workflow-skills) — complete-task with CI/CD monitoring, issue transition
+- [adamcaviness/agentic-toolkit](https://github.com/adamcaviness/agentic-toolkit) — ship skill for deployment
 - [Streamlinity/claude-skills-deploy](https://github.com/Streamlinity/claude-skills-deploy) — Staging → production flow, Doppler secrets, smoke tests
 - [claudecode-lab CI/CD setup](https://claudecode-lab.com/en/blog/claude-code-ci-cd-setup/) — GitHub Actions safe deploy, rollback workflow, Environment approval
 - [Jackela/claude-ci-skills](https://github.com/Jackela/claude-ci-skills) — ci-deploy-pipeline, ci-quality-gates, ci-security-scan
@@ -43,6 +46,21 @@ Deploy with staging → production flow, health checks, smoke tests, automatic r
 - [POC Stage 7 Doc](../../stages/07-deployment.md) — Stage documentation
 - [POC Verify Checklist](../../verify-checklist.md) — Gate 7 criteria
 - [KB Integration](../../knowledge-integration.md) — KB read/write protocol
+
+## External Skill Synergy
+
+| External Skill | When to Use | How to Integrate |
+|---------------|-------------|-----------------|
+| `build-and-release` (Kevinweisl) | Build and release pipeline | Delegate build/release to build-and-release (dry-run default); use this skill for staging→production flow |
+| `excalibase-deployment-patterns` | Deployment strategy reference | Reference for blue-green, canary, rolling deployment patterns |
+| `excalibase-docker-patterns` | Docker/container deployment | Reference for Dockerfile, docker-compose, container best practices |
+| `excalibase-database-migrations` | Database migrations | Use for schema migration planning and execution |
+| `dependency-audit` (Kevinweisl) | CVE/dependency scanning | Run before deployment for security audit |
+| `security-scan` (Kevinweisl) | Security scanning | Run before deployment for SAST/DAST |
+| `ship` (agentic-toolkit) | Quick ship/deploy | Use for simple deployments; use this skill for complex staging→production |
+| `complete-task` (fancybread) | Full task completion workflow | Use for end-to-end commit+PR+deploy+issue transition |
+
+**Delegation pattern**: For simple deployments, use `ship` or `build-and-release`. For complex staging→production with health checks, smoke tests, and rollback, use this skill. Always run `dependency-audit` and `security-scan` before production deployment.
 
 ## Prerequisites
 
@@ -428,6 +446,22 @@ Mark all stages complete in `pipeline-state.json`.
 | Production health check fails | Automatic rollback, escalate, check monitoring |
 | Monitoring detects anomalies | Report to user, consider rollback if severe |
 | Jira transition fails | Note in report, ask user to manually update ticket |
+
+## Common Mistakes
+
+| Mistake | Fix |
+|---------|-----|
+| Deploying without dry-run | Dry-run by default. Never deploy without explicit --no-dry-run or user confirmation. |
+| Deploying to production directly | Staging first. Production ONLY after staging health+smoke pass AND human approval. |
+| Skipping health checks after deploy | Health check mandatory. If fails, automatic rollback. |
+| Skipping smoke tests | Smoke test mandatory after health checks. If fails, automatic rollback. |
+| No rollback path verified | Before deploying, verify rollback path exists. Keep previous version available. |
+| Hardcoding secrets in scripts | Use environment variables or secret management. Never hardcode. |
+| Auto-deploying to production | Production requires explicit human approval. Never auto-deploy. |
+| Not monitoring after deploy | Monitor 5-10 min after production deploy (error rate, latency, resources). Report anomalies. |
+| No evidence for deployment steps | Every step needs command + output + exit code. No "it worked" claims. |
+| Skipping security scan before production | Run security-scan + dependency-audit before production deployment. |
+| Not updating Jira ticket status | After deployment, transition ticket to Done/Resolved. |
 
 ## Output Artifacts
 

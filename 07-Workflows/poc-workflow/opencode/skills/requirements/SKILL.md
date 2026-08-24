@@ -27,10 +27,25 @@ Generate requirements document. Socratic questioning + KB injection + human appr
 ## References
 
 - [genkovich/sdd](https://github.com/genkovich/sdd) — Socratic specify skill, depth dial (easy/medium/hard)
+- [Synafast/prd-taskmaster](https://github.com/Synafast/prd-taskmaster) — 12-step PRD workflow, 13 validation checks, 4 autonomous execution modes, TaskMaster integration
+- [jamesrochabrun/skills](https://github.com/jamesrochabrun/skills) — prd-generator: 13-section template, AARRR/HEART/OKR metrics, 4 usage patterns
+- [SpillwaveSolutions/sdd-skill](https://github.com/SpillwaveSolutions/sdd-skill) — Spec-Driven Development, greenfield/brownfield, 10-point summaries, feature status tracking
 - [codemachine0121/sdd-skill](https://github.com/codemachine0121/sdd-skill) — Domain-driven design, ubiquitous language
 - [POC Stage 2 Doc](../../stages/02-requirements.md) — Stage documentation
 - [POC Verify Checklist](../../verify-checklist.md) — Gate 2 criteria
 - [KB Integration](../../knowledge-integration.md) — KB read/write protocol
+
+## External Skill Synergy
+
+| External Skill | When to Use | How to Integrate |
+|---------------|-------------|-----------------|
+| `prd-taskmaster` (Synafast) | Complex features needing comprehensive PRD with task breakdown | Delegate full PRD generation to prd-taskmaster; use this skill for KB-injected, CBOL-specific requirements |
+| `prd-generator` (jamesrochabrun) | Standard PRD with metrics frameworks | Use for PRD structure reference; inject CBOL domain knowledge via this skill |
+| `genkovich-sdd/specify` + `clarify` | Atomic requirements elicitation | Use specify for initial spec, clarify for ambiguity resolution |
+| `sdd-spec-driven` (SpillwaveSolutions) | Spec-driven development with executable specs | For greenfield features, use SDD methodology; for brownfield, use distill mode |
+| `spec-mutator` (kborovik) | Maintaining SPEC.md across iterations | Use BACKPROP mode for bug-driven requirement updates, AMEND for targeted changes |
+
+**Delegation pattern**: For simple tickets, use this skill directly (KB-injected, CBOL-specific). For complex features or new products, delegate PRD structure to `prd-taskmaster` or `prd-generator`, then inject CBOL domain knowledge and trace to ticket.
 
 ## Prerequisites
 
@@ -273,6 +288,20 @@ git commit -m "docs(kb): add new domain terms from {JIRA_KEY} requirements"
 | Human rejects 2 times | Escalate to tech lead, create escalation ticket |
 | New term conflicts with existing KB | Ask user to resolve conflict, document decision |
 | User adds requirements not in ticket | Confirm with user, note as "user clarification" in source field |
+
+## Common Mistakes
+
+| Mistake | Fix |
+|---------|-----|
+| Generating requirements without reading KB | Mandatory: read ≥3 KB docs before generating. Domain knowledge informs requirements. |
+| Adding requirements not in ticket | Every FR must trace to ticket. If user adds new reqs, note source as "user clarification". |
+| Skipping Socratic questioning for ambiguous tickets | If ticket is vague, ask clarifying questions ONE at a time. Never guess. |
+| Vague acceptance criteria | AC must be testable: Given/When/Then format with specific conditions. |
+| Ignoring non-functional requirements | Always include at least 1 NFR (performance, security, scalability). |
+| Scope creep | Respect ticket's "out of scope". Don't expand beyond ticket scope without user confirmation. |
+| Not identifying new domain terms | If requirements introduce new terms, check KB glossary and draft entries for new terms. |
+| Auto-approving requirements | Human approval is mandatory. Never proceed to SDD without explicit approval. |
+| Batching Socratic questions | Ask ONE question at a time. Wait for answer before next. Never batch. |
 
 ## Output Artifacts
 

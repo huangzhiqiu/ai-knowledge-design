@@ -348,6 +348,58 @@ Every stage writes `operation-log.md`:
 - [Reference Workflows](../../reference-workflows.md)
 - [Best Practices](../../best-practices.md)
 
+## External Skill Ecosystem
+
+This pipeline orchestrates 7 custom POC skills and can delegate to 91 external skills from 13 GitHub repositories.
+
+### Stage → Skill Mapping
+
+| Pipeline Stage | Custom POC Skill | Recommended External Skills |
+|---------------|-----------------|---------------------------|
+| Stage 1: Ticket Intake | `ticket-intake` | `jira-planner`, `claude-jira-skill`, `create-ticket`, `next-ticket` |
+| Stage 2: Requirements | `requirements` | `prd-taskmaster`, `prd-generator`, `genkovich-sdd/specify`, `genkovich-sdd/clarify`, `sdd-spec-driven` |
+| Stage 3: SDD | `sdd` | `genkovich-sdd/design`, `genkovich-sdd/data-model`, `genkovich-sdd/sequences`, `spec-mutator`, `genkovich-sdd/decide-adr`, `excalibase-api-design` |
+| Stage 4: Test Cases (TDD RED) | `test-cases` | `claude-tdd-skill`, `excalibase-tdd`, `excalibase-springboot-tdd`, `genkovich-sdd/plan-tests`, `excalibase-integration-testing` |
+| Stage 5: Code Generation (TDD GREEN) | `code-generation` | `genkovich-sdd/implement`, `excalibase-java-coding-standards`, `excalibase-springboot-patterns`, `excalibase-jpa-patterns`, `excalibase-refactor-clean`, `excalibase-self-check` |
+| Stage 6: PR Review | `pr-review` | `gthimmes-code-reviewer`, `excalibase-code-review`, `excalibase-security-review`, `excalibase-architecture-review`, `excalibase-quality-gate`, `agentic-toolkit/pr`, `agentic-toolkit/apply-review`, `complete-task` |
+| Stage 7: Deployment | `deployment` | `build-and-release`, `dependency-audit`, `lint-and-test`, `security-scan`, `excalibase-deployment-patterns`, `excalibase-docker-patterns`, `excalibase-database-migrations`, `agentic-toolkit/ship`, `complete-task` |
+
+### Delegation Strategy
+
+- **Simple tickets**: Use custom POC skills directly (KB-injected, CBOL-specific)
+- **Complex features**: Delegate to external skills for specialized sub-tasks
+- **Full TDD sessions**: Delegate to `claude-tdd-skill` for sub-agent orchestration
+- **End-to-end completion**: Use `complete-task` for commit+PR+issue transition
+- **PRD generation**: Use `prd-taskmaster` for comprehensive PRDs with task breakdown
+- **SDD maintenance**: Use `spec-mutator` for SPEC.md lifecycle management
+
+### External Skills Location
+
+All external skills are in `06-Skills/05-external-skills/` with 7 categories:
+- `01-jira/` (2 skills)
+- `02-requirements-sdd/` (26 skills)
+- `03-coding/` (22 skills)
+- `04-testing-tdd/` (5 skills)
+- `05-devops-cicd/` (8 skills)
+- `06-code-review/` (5 skills)
+- `07-productivity/` (23 skills)
+
+## Common Mistakes
+
+| Mistake | Fix |
+|---------|-----|
+| Skipping KB injection at each stage | Every stage MUST read relevant KB docs before acting. Knowledge is mandatory, not optional. |
+| Not verifying before proceeding | Every stage has a verify gate. Never proceed without all checks passing. |
+| Auto-approving human gates | Stages 2, 3, 6 require explicit human approval. Never auto-approve. |
+| Breaking TDD order | RED (Stage 4) before GREEN (Stage 5). Never write implementation before failing tests. |
+| Not persisting state | Every stage writes to pipeline-state.json. Always update state after completion. |
+| Retrying without analysis | On failure, analyze root cause before retry. Don't blindly retry same approach. |
+| Exceeding 3-strike limit | After 3 failures, escalate to human. Don't continue retrying. |
+| Not reading pipeline spec | Always read workflow-spec.md, jira-ticket-spec.md, verify-checklist.md before starting. |
+| Delegating to external skills without context | When delegating, provide CBOL-specific context (KB docs, ticket info, project conventions). |
+| Not updating KB with new knowledge | If pipeline discovers new patterns/terms, propose KB updates for user approval. |
+
 ---
 
-*POC Pipeline Skill v1.0.0 — 2026-08-21*
+*POC Pipeline Skill v1.1.0 — 2026-08-24*
+*Updated with: External skill ecosystem mapping (91 skills, 13 repos), delegation strategy, common mistakes*

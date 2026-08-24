@@ -29,12 +29,26 @@ Generate Software Design Document. Research + design + human review.
 
 ## References
 
-- [genkovich/sdd](https://github.com/genkovich/sdd) — Research → Specify → Design → Implement engine
+- [genkovich/sdd](https://github.com/genkovich/sdd) — Research → Specify → Design → Implement engine, atomic design/data-model/sequences skills
+- [SpillwaveSolutions/sdd-skill](https://github.com/SpillwaveSolutions/sdd-skill) — Spec-Driven Development v2.1.0, GitHub Spec-Kit, greenfield/brownfield, 10-point summaries, feature status tracking
+- [kborovik/opencode-skills](https://github.com/kborovik/opencode-skills) — spec mutator: NEW/DISTILL/BACKPROP/AMEND/FOLD-IN modes, audit gates, write-time prune, monotonic IDs
 - [gotalab/cc-sdd](https://github.com/gotalab/cc-sdd) — Contextual SDD with ADRs
 - [codemachine0121/sdd-skill](https://github.com/codemachine0121/sdd-skill) — DDD, ubiquitous language, bounded contexts
 - [POC Stage 3 Doc](../../stages/03-sdd.md) — Stage documentation
 - [POC Verify Checklist](../../verify-checklist.md) — Gate 3 criteria
 - [KB Integration](../../knowledge-integration.md) — KB read/write protocol
+
+## External Skill Synergy
+
+| External Skill | When to Use | How to Integrate |
+|---------------|-------------|-----------------|
+| `genkovich-sdd/design` + `data-model` + `sequences` | Atomic design tasks | Delegate specific design sub-tasks (data model, sequence diagrams) to atomic skills |
+| `sdd-spec-driven` (SpillwaveSolutions) | Greenfield/brownfield SDD methodology | Use for SDD process guidance; inject CBOL KB via this skill |
+| `spec-mutator` (kborovik) | Maintaining SPEC.md across iterations | Use DISTILL for brownfield, NEW for greenfield, BACKPROP for bug-driven design updates |
+| `genkovich-sdd/decide-adr` | Architecture decision records | Use for ADR generation when design introduces new patterns |
+| `excalibase-api-design` | API design sub-task | Delegate API design to external skill; integrate into SDD |
+
+**Delegation pattern**: For complex architecture, use `genkovich-sdd/design` for structure, `data-model` for entities, `sequences` for flows. For SPEC.md maintenance, use `spec-mutator` with appropriate mode. This skill orchestrates and injects CBOL domain knowledge.
 
 ## Prerequisites
 
@@ -352,6 +366,20 @@ git commit -m "docs(kb): add new design patterns from {JIRA_KEY} SDD"
 | Human rejects 2 times | Escalate to architect, create escalation ticket |
 | New pattern conflicts with KB | Ask user to resolve, document decision |
 | Missing diagram tool | Use Mermaid syntax (text-based, no tool needed) |
+
+## Common Mistakes
+
+| Mistake | Fix |
+|---------|-----|
+| Designing without researching codebase/KB | Mandatory: read codebase + KB + similar implementations before design. |
+| Design decisions not traced to requirements | Every design decision must trace to at least one FR/NFR. No unrequested features. |
+| Missing mandatory diagrams | SDD must include: class diagram, sequence diagram, state machine (if applicable), API spec. |
+| Premature optimization | Design for clarity and correctness first. Performance optimizations only if NFR requires. |
+| Ignoring existing architecture patterns | Check KB for established patterns. Deviations require explicit justification. |
+| Not documenting ADRs | For significant architecture decisions, generate ADRs. Use genkovich-sdd/decide-adr. |
+| Auto-approving SDD | Human review is mandatory. Never proceed to test cases without explicit review. |
+| Over-engineering | Minimal architecture. Avoid unnecessary abstractions, layers, or patterns. |
+| Not considering error handling | Design must include error handling, edge cases, and failure scenarios. |
 
 ## Output Artifacts
 
