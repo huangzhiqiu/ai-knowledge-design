@@ -471,20 +471,167 @@ Located in `06-Skills/05-external-skills/`, downloaded from 7 GitHub repositorie
 | Code Review | 5 | gthimmes-code-reviewer, code-review, security-review, architecture-review, quality-gate |
 | Productivity | 23 | api-design, ADR, frontend-patterns, mongodb/mysql/postgres-patterns, triage-* |
 
-### How to Install Skills
+### How to Use External Skills
+
+All 85 external skills in `06-Skills/05-external-skills/` are ready-to-use OpenCode/Claude Code skills with `SKILL.md` files. Here's how to install, invoke, and get the most out of them.
+
+#### Step 1: Install Skills
+
+Choose one of three installation methods:
+
+**Method A: Symlink (recommended — auto-updates when repo updates)**
 
 ```bash
-# Option 1: Symlink to OpenCode global skills directory
-ln -s /path/to/06-Skills/05-external-skills/01-jira/claude-jira-skill \
+# Linux/macOS — symlink individual skill
+ln -s /path/to/ai-knowledge-design/06-Skills/05-external-skills/01-jira/claude-jira-skill \
       ~/.config/opencode/skills/claude-jira-skill
 
-# Option 2: Copy to project-level .opencode/skills/
-cp -r 06-Skills/05-external-skills/04-testing-tdd/claude-tdd-skill .opencode/skills/
+# Linux/macOS — symlink all skills in a category
+for d in /path/to/ai-knowledge-design/06-Skills/05-external-skills/04-testing-tdd/*/; do
+  ln -s "$d" ~/.config/opencode/skills/$(basename "$d")
+done
 
-# Option 3: Reference in AGENTS.md (AI agent reads the SKILL.md directly)
+# Windows PowerShell (Admin required for symlinks)
+New-Item -ItemType SymbolicLink `
+  -Path "$env:USERPROFILE\.config\opencode\skills\claude-jira-skill" `
+  -Target "C:\path\to\ai-knowledge-design\06-Skills\05-external-skills\01-jira\claude-jira-skill"
 ```
 
-See `06-Skills/05-external-skills/README.md` for complete installation and usage instructions.
+**Method B: Copy (project-local, no global pollution)**
+
+```bash
+# Copy specific skill to project .opencode/skills/
+mkdir -p .opencode/skills
+cp -r 06-Skills/05-external-skills/04-testing-tdd/claude-tdd-skill .opencode/skills/
+cp -r 06-Skills/05-external-skills/06-code-review/gthimmes-code-reviewer .opencode/skills/
+
+# Windows PowerShell
+Copy-Item -Recurse "06-Skills\05-external-skills\04-testing-tdd\claude-tdd-skill" ".opencode\skills\"
+```
+
+**Method C: Reference in AGENTS.md (no installation — AI reads directly)**
+
+Add to project `AGENTS.md`:
+```markdown
+## Available External Skills
+When user asks for Jira operations, read:
+`06-Skills/05-external-skills/01-jira/claude-jira-skill/SKILL.md`
+
+When user asks for TDD, read:
+`06-Skills/05-external-skills/04-testing-tdd/claude-tdd-skill/SKILL.md`
+
+When user asks for code review, read:
+`06-Skills/05-external-skills/06-code-review/gthimmes-code-reviewer/SKILL.md`
+```
+
+#### Step 2: Invoke Skills in OpenCode
+
+After installation (Method A or B), skills are auto-discovered by OpenCode. Invoke them by name:
+
+```bash
+# Start OpenCode
+opencode
+
+# In the OpenCode chat, invoke by skill name:
+"Use the claude-jira-skill to fetch ticket CBOL-123"
+"Run tdd on the message-forwarding module"
+"Use gthimmes-code-reviewer to review this PR"
+
+# Or use slash commands if configured:
+/skill claude-jira-skill fetch CBOL-123
+/skill claude-tdd-skill start
+/skill gthimmes-code-reviewer review
+```
+
+> **Note**: Skill invocation syntax may vary by OpenCode version. Check `.opencode/opencode.json` for your configured skill loading path.
+
+#### Step 3: Quick Reference by Use Case
+
+| I want to... | Recommended Skill(s) | Category |
+|--------------|---------------------|----------|
+| Fetch a Jira ticket | `claude-jira-skill` | 01-jira |
+| Create a Jira ticket | `agentic-toolkit/create-ticket` | 07-productivity |
+| Get next ticket to work on | `agentic-toolkit/next-ticket` | 07-productivity |
+| Clarify requirements | `genkovich-sdd/clarify`, `genkovich-sdd/interview` | 02-requirements-sdd |
+| Write a spec document | `genkovich-sdd/specify` | 02-requirements-sdd |
+| Design architecture | `genkovich-sdd/design`, `genkovich-sdd/sequences` | 02-requirements-sdd |
+| Design data model | `genkovich-sdd/data-model` | 02-requirements-sdd |
+| Write an ADR | `genkovich-sdd/decide-adr`, `excalibase-architecture-decision-records` | 02/07 |
+| Plan tests | `genkovich-sdd/plan-tests` | 02-requirements-sdd |
+| Do TDD (full interactive) | `claude-tdd-skill` | 04-testing-tdd |
+| TDD for Spring Boot | `excalibase-springboot-tdd` | 04-testing-tdd |
+| Write integration tests | `excalibase-integration-testing` | 04-testing-tdd |
+| Implement code | `genkovich-sdd/implement` | 02-requirements-sdd |
+| Follow Java standards | `excalibase-java-coding-standards` | 03-coding |
+| Follow Spring Boot patterns | `excalibase-springboot-patterns` | 03-coding |
+| JPA/Hibernate patterns | `excalibase-jpa-patterns` | 03-coding |
+| Refactor & clean code | `excalibase-refactor-clean` | 03-coding |
+| Fix build errors | `excalibase-build-fix` | 03-coding |
+| Self-check my work | `excalibase-self-check`, `excalibase-self-review` | 03-coding |
+| Deep research a topic | `excalibase-deep-research`, `excalibase-search-first` | 03-coding |
+| Onboard to a codebase | `excalibase-codebase-onboarding` | 03-coding |
+| 5-axis code review | `gthimmes-code-reviewer` | 06-code-review |
+| Security review | `excalibase-security-review` | 06-code-review |
+| Architecture review | `excalibase-architecture-review` | 06-code-review |
+| Quality gate (lint/type/format) | `excalibase-quality-gate` | 06-code-review |
+| Lint and test | `lint-and-test` | 05-devops-cicd |
+| Security scan | `security-scan` | 05-devops-cicd |
+| Dependency audit (CVE) | `dependency-audit` | 05-devops-cicd |
+| Build and release | `build-and-release` | 05-devops-cicd |
+| Docker patterns | `excalibase-docker-patterns` | 05-devops-cicd |
+| Database migrations | `excalibase-database-migrations` | 05-devops-cicd |
+| Create a PR | `agentic-toolkit/pr` | 07-productivity |
+| Apply review feedback | `agentic-toolkit/apply-review` | 07-productivity |
+| Ship (deploy) | `agentic-toolkit/ship` | 07-productivity |
+| Triage bugs | `agentic-toolkit/triage-bugs` | 07-productivity |
+| Triage architecture issues | `agentic-toolkit/triage-architecture` | 07-productivity |
+| Update dependencies | `agentic-toolkit/update-deps` | 07-productivity |
+| Design API | `excalibase-api-design` | 07-productivity |
+| MongoDB patterns | `excalibase-mongodb-patterns` | 07-productivity |
+| MySQL patterns | `excalibase-mysql-patterns` | 07-productivity |
+| PostgreSQL patterns | `excalibase-postgres-patterns` | 07-productivity |
+
+#### Step 4: Combine with Custom POC Skills
+
+The external skills complement the 8 custom POC skills in `07-Workflows/poc-workflow/opencode/skills/`. Use them together:
+
+```
+POC Skill (orchestrates)  →  External Skill (executes)
+─────────────────────────────────────────────────────────
+ticket-intake          →  claude-jira-skill (fetch), agentic-toolkit/create-ticket
+requirements           →  genkovich-sdd/specify, genkovich-sdd/clarify, genkovich-sdd/interview
+sdd                    →  genkovich-sdd/design, genkovich-sdd/data-model, genkovich-sdd/sequences
+test-cases             →  claude-tdd-skill, excalibase-springboot-tdd, genkovich-sdd/plan-tests
+code-generation        →  genkovich-sdd/implement, excalibase-java-coding-standards, excalibase-springboot-patterns
+pr-review              →  gthimmes-code-reviewer, excalibase-security-review, agentic-toolkit/pr
+deployment             →  build-and-release, excalibase-docker-patterns, agentic-toolkit/ship
+```
+
+#### Step 5: Verify Installation
+
+```bash
+# List installed skills
+ls ~/.config/opencode/skills/
+
+# Or in OpenCode:
+"List all available skills"
+"What skills do you have?"
+
+# Test a skill
+"Use claude-jira-skill to show me how to fetch a ticket"
+```
+
+#### Important Notes
+
+- **Prerequisites**: Some skills require additional setup:
+  - `claude-jira-skill`: Requires Jira API token (`JIRA_API_TOKEN`) or MCP server
+  - `claude-tdd-skill`: Requires `setup.sh`/`setup.ps1` to initialize TDD folder structure
+  - `build-and-release`, `lint-and-test`, etc.: Require project build tools (Maven/Gradle)
+  - `security-scan`, `dependency-audit`: May require SAST tools (Semgrep, Snyk, etc.)
+- **Sub-agents**: `claude-tdd-skill` includes 10 sub-agent definition files in its `agents/` directory — these are auto-loaded when the skill is active
+- **Shared resources**: `genkovich-sdd` skills share a `_shared/` directory with common templates and references — keep it alongside the skill directories
+- **Licenses**: Each external skill retains its original license. See individual `SKILL.md` files for details
+- **Full documentation**: See `06-Skills/05-external-skills/README.md` for complete category index and CBOL workflow stage mapping
 
 ---
 
