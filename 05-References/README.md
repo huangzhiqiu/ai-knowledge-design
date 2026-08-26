@@ -9,6 +9,7 @@
 | [open-source-projects.md](./open-source-projects.md) | 开源 IM 项目详细参考（GitHub 源码、star 数、架构、源码目录） |
 | [ai-driven-development.md](./ai-driven-development.md) | AI 驱动开发参考项目（Forge/Jira-Flow/ai-coding-workflow/Devin），含设计模式对比和最佳实践总结 |
 | [state-machine-projects.md](./state-machine-projects.md) | 状态机框架与设计模式参考（Java 生态、XState、Saga、IM 通话状态机、反模式） |
+| [state-machine-deep-dive.md](./state-machine-deep-dive.md) | 状态机深度源码分析（COLA/XState/squirrel/Hypercell 核心源码解读、架构对比、CBOL 推荐架构与路线图） |
 
 ## 开源 IM 项目速览
 
