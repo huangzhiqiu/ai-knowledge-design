@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -102,26 +103,26 @@ class SimpleStateMachineTest {
 
     @Test
     void shouldRespectGuardCondition() {
-        record Context(boolean allowed) {}
-
-        StateMachine<LightState, LightEvent, Context> machine =
-                StateMachineBuilder.<LightState, LightEvent, Context>builder("guard-test")
+        StateMachine<LightState, LightEvent, GuardContext> machine =
+                StateMachineBuilder.<LightState, LightEvent, GuardContext>builder("guard-test")
                     .transition()
                         .from(LightState.RED)
                         .on(LightEvent.TIMER)
                         .to(LightState.GREEN)
-                        .when(Context::allowed)
+                        .when(GuardContext::allowed)
                     .and()
                     .build();
 
         // Condition satisfied
         assertEquals(LightState.GREEN,
-                machine.fireEvent(LightState.RED, LightEvent.TIMER, new Context(true)));
+                machine.fireEvent(LightState.RED, LightEvent.TIMER, new GuardContext(true)));
 
         // Condition not satisfied -> exception
         assertThrows(StateMachineException.class,
-                () -> machine.fireEvent(LightState.RED, LightEvent.TIMER, new Context(false)));
+                () -> machine.fireEvent(LightState.RED, LightEvent.TIMER, new GuardContext(false)));
     }
+
+    private record GuardContext(boolean allowed) {}
 
     @Test
     void shouldSupportMultipleTransitionsFromSameStateWithDifferentEvents() {
@@ -154,15 +155,14 @@ class SimpleStateMachineTest {
         int threadCount = 10;
         int iterations = 1000;
         Thread[] threads = new Thread[threadCount];
-        volatile int successCount = 0;
+        AtomicInteger successCount = new AtomicInteger(0);
 
         for (int i = 0; i < threadCount; i++) {
             threads[i] = new Thread(() -> {
                 for (int j = 0; j < iterations; j++) {
                     LightState result = trafficLight.fireEvent(LightState.RED, LightEvent.TIMER, null);
                     if (result == LightState.GREEN) {
-                        //noinspection NonAtomicOperationOnVolatileField
-                        successCount++;
+                        successCount.incrementAndGet();
                     }
                 }
             });
@@ -171,6 +171,6 @@ class SimpleStateMachineTest {
         for (Thread t : threads) t.start();
         for (Thread t : threads) t.join();
 
-        assertEquals(threadCount * iterations, successCount);
+        assertEquals(threadCount * iterations, successCount.get());
     }
 }

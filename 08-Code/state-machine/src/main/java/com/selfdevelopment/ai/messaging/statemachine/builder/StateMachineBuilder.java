@@ -42,6 +42,13 @@ public final class StateMachineBuilder<S, E, C> {
     private final String machineId;
     private final List<Transition<S, E, C>> transitions = new ArrayList<>();
 
+    // Current transition being built
+    private S currentSource;
+    private E currentEvent;
+    private S currentTarget;
+    private Condition<C> currentCondition;
+    private Action<C> currentAction;
+
     private StateMachineBuilder(String machineId) {
         this.machineId = machineId;
     }
@@ -63,106 +70,110 @@ public final class StateMachineBuilder<S, E, C> {
     /**
      * Starts defining a new transition.
      *
-     * @return a transition builder step
+     * @return this builder (for fluent chaining)
      */
-    public TransitionFromStep transition() {
-        return new TransitionFromStep();
+    public StateMachineBuilder<S, E, C> transition() {
+        resetCurrent();
+        return this;
+    }
+
+    /**
+     * Sets the source state of the current transition.
+     *
+     * @param sourceState the source state
+     * @return this builder
+     */
+    public StateMachineBuilder<S, E, C> from(S sourceState) {
+        this.currentSource = Objects.requireNonNull(sourceState, "sourceState must not be null");
+        return this;
+    }
+
+    /**
+     * Sets the triggering event of the current transition.
+     *
+     * @param event the event
+     * @return this builder
+     */
+    public StateMachineBuilder<S, E, C> on(E event) {
+        this.currentEvent = Objects.requireNonNull(event, "event must not be null");
+        return this;
+    }
+
+    /**
+     * Sets the target state of the current transition.
+     *
+     * @param targetState the target state
+     * @return this builder
+     */
+    public StateMachineBuilder<S, E, C> to(S targetState) {
+        this.currentTarget = Objects.requireNonNull(targetState, "targetState must not be null");
+        return this;
+    }
+
+    /**
+     * Sets an optional guard condition for the current transition.
+     *
+     * @param condition the guard condition
+     * @return this builder
+     */
+    public StateMachineBuilder<S, E, C> when(Condition<C> condition) {
+        this.currentCondition = Objects.requireNonNull(condition, "condition must not be null");
+        return this;
+    }
+
+    /**
+     * Sets an optional action to execute on the current transition.
+     *
+     * @param action the action
+     * @return this builder
+     */
+    public StateMachineBuilder<S, E, C> perform(Action<C> action) {
+        this.currentAction = Objects.requireNonNull(action, "action must not be null");
+        return this;
+    }
+
+    /**
+     * Completes the current transition and adds it to the state machine.
+     *
+     * @return this builder (to chain another transition)
+     * @throws StateMachineException if the current transition is incomplete
+     */
+    public StateMachineBuilder<S, E, C> and() {
+        if (currentSource == null || currentEvent == null || currentTarget == null) {
+            throw new StateMachineException(
+                    "Incomplete transition: from(), on(), and to() must all be called before and()");
+        }
+        transitions.add(new Transition<>(currentSource, currentEvent, currentTarget, currentCondition, currentAction));
+        resetCurrent();
+        return this;
     }
 
     /**
      * Builds the state machine from all defined transitions.
+     * <p>
+     * If a transition was started but not completed with {@link #and()},
+     * it will be completed automatically.
      *
      * @return a new, immutable {@link StateMachine} instance
      * @throws StateMachineException if no transitions were defined
      */
     public StateMachine<S, E, C> build() {
+        // Auto-complete any in-progress transition
+        if (currentSource != null && currentEvent != null && currentTarget != null) {
+            transitions.add(new Transition<>(currentSource, currentEvent, currentTarget, currentCondition, currentAction));
+            resetCurrent();
+        }
         if (transitions.isEmpty()) {
             throw new StateMachineException("At least one transition must be defined");
         }
         return new SimpleStateMachine<>(machineId, new ArrayList<>(transitions));
     }
 
-    // --- Inner builder steps (fluent API) ---
-
-    /**
-     * Step: define the source state.
-     */
-    public final class TransitionFromStep {
-        private S sourceState;
-
-        public TransitionOnStep from(S sourceState) {
-            this.sourceState = Objects.requireNonNull(sourceState, "sourceState must not be null");
-            return new TransitionOnStep();
-        }
-    }
-
-    /**
-     * Step: define the triggering event.
-     */
-    public final class TransitionOnStep {
-        private E event;
-
-        public TransitionToStep on(E event) {
-            this.event = Objects.requireNonNull(event, "event must not be null");
-            return new TransitionToStep();
-        }
-    }
-
-    /**
-     * Step: define the target state.
-     */
-    public final class TransitionToStep {
-        private S targetState;
-        private Condition<C> condition;
-        private Action<C> action;
-
-        public TransitionConditionStep to(S targetState) {
-            this.targetState = Objects.requireNonNull(targetState, "targetState must not be null");
-            return new TransitionConditionStep();
-        }
-
-        void register() {
-            transitions.add(new Transition<>(
-                    TransitionFromStep.this.sourceState,
-                    TransitionOnStep.this.event,
-                    targetState,
-                    condition,
-                    action));
-        }
-    }
-
-    /**
-     * Step: optionally define a guard condition.
-     */
-    public final class TransitionConditionStep {
-        public TransitionActionStep when(Condition<C> condition) {
-            TransitionToStep.this.condition = Objects.requireNonNull(condition, "condition must not be null");
-            return new TransitionActionStep();
-        }
-
-        public TransitionActionStep perform(Action<C> action) {
-            TransitionToStep.this.action = Objects.requireNonNull(action, "action must not be null");
-            return new TransitionActionStep();
-        }
-
-        public StateMachineBuilder<S, E, C> and() {
-            TransitionToStep.this.register();
-            return StateMachineBuilder.this;
-        }
-    }
-
-    /**
-     * Step: optionally define an action.
-     */
-    public final class TransitionActionStep {
-        public TransitionActionStep perform(Action<C> action) {
-            TransitionToStep.this.action = Objects.requireNonNull(action, "action must not be null");
-            return this;
-        }
-
-        public StateMachineBuilder<S, E, C> and() {
-            TransitionToStep.this.register();
-            return StateMachineBuilder.this;
-        }
+    private void resetCurrent() {
+        currentSource = null;
+        currentEvent = null;
+        currentTarget = null;
+        currentCondition = null;
+        currentAction = null;
     }
 }
