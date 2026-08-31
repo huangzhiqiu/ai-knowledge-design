@@ -1,17 +1,26 @@
 package com.selfdevelopment.ai.messaging.statemachine.builder;
 
+import com.selfdevelopment.ai.messaging.statemachine.config.DefaultStateConfigurer;
+import com.selfdevelopment.ai.messaging.statemachine.config.DefaultTransitionConfigurer;
+import com.selfdevelopment.ai.messaging.statemachine.config.StateConfigurer;
+import com.selfdevelopment.ai.messaging.statemachine.config.StateMachineConfigurerAdapter;
+import com.selfdevelopment.ai.messaging.statemachine.config.TransitionConfigurer;
 import com.selfdevelopment.ai.messaging.statemachine.core.Action;
 import com.selfdevelopment.ai.messaging.statemachine.core.Guard;
 import com.selfdevelopment.ai.messaging.statemachine.core.SimpleStateMachine;
+import com.selfdevelopment.ai.messaging.statemachine.core.StateDef;
 import com.selfdevelopment.ai.messaging.statemachine.core.StateMachine;
 import com.selfdevelopment.ai.messaging.statemachine.core.Transition;
 import com.selfdevelopment.ai.messaging.statemachine.core.TransitionKind;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Fluent builder for constructing {@link StateMachine} instances.
@@ -47,6 +56,7 @@ public final class StateMachineBuilder<S, E, C> {
 
     private final String machineId;
     private final List<Transition<S, E, C>> transitions = new ArrayList<>();
+    private final Map<S, StateDef<S, E, C>> stateDefs = new LinkedHashMap<>();
     private S initialState;
     private final Set<S> endStates = new HashSet<>();
 
@@ -69,6 +79,89 @@ public final class StateMachineBuilder<S, E, C> {
      */
     public static <S, E, C> StateMachineBuilder<S, E, C> builder(String machineId) {
         return new StateMachineBuilder<>(machineId);
+    }
+
+    /**
+     * Builds a state machine from a {@link StateMachineConfigurerAdapter}.
+     * <p>
+     * This is the Spring-style configuration approach: extend the adapter, override
+     * {@code configure(StateConfigurer)} and {@code configure(TransitionConfigurer)},
+     * then pass an instance to this method.
+     *
+     * @param machineId  the machine identifier
+     * @param configurer the configurer adapter instance
+     * @param <S>        the state type
+     * @param <E>        the event type
+     * @param <C>        the context type
+     * @return the constructed state machine
+     * @throws RuntimeException if configuration fails (wraps checked exceptions)
+     */
+    public static <S, E, C> StateMachine<S, E, C> fromConfigurer(
+            String machineId, StateMachineConfigurerAdapter<S, E, C> configurer) {
+        Objects.requireNonNull(configurer, "configurer must not be null");
+        DefaultStateConfigurer<S, E, C> stateConfig = new DefaultStateConfigurer<>();
+        DefaultTransitionConfigurer<S, E, C> transitionConfig = new DefaultTransitionConfigurer<>();
+        try {
+            configurer.configure((StateConfigurer<S, E, C>) stateConfig);
+            configurer.configure((TransitionConfigurer<S, E, C>) transitionConfig);
+        } catch (Exception e) {
+            throw new RuntimeException("State machine configuration failed: " + e.getMessage(), e);
+        }
+
+        Map<S, StateDef<S, E, C>> states = stateConfig.getStates();
+        Set<S> ends = states.values().stream()
+                .filter(StateDef::isEnd)
+                .map(StateDef::getId)
+                .collect(Collectors.toSet());
+
+        return new SimpleStateMachine<>(
+                machineId,
+                transitionConfig.getTransitions(),
+                stateConfig.getInitialState(),
+                ends,
+                states);
+    }
+
+    // ===== State definition methods (Spring-style) =====
+
+    /**
+     * Adds a state with entry and exit actions.
+     *
+     * @param id          the state identifier
+     * @param entryAction the entry action (may be null)
+     * @param exitAction  the exit action (may be null)
+     * @return this builder
+     */
+    public StateMachineBuilder<S, E, C> state(S id, Action<S, E, C> entryAction, Action<S, E, C> exitAction) {
+        stateDefs.put(id, StateDef.<S, E, C>builder(id)
+                .entryAction(entryAction)
+                .exitAction(exitAction)
+                .build());
+        return this;
+    }
+
+    /**
+     * Adds a state with only an entry action.
+     */
+    public StateMachineBuilder<S, E, C> stateWithEntry(S id, Action<S, E, C> entryAction) {
+        stateDefs.put(id, StateDef.<S, E, C>builder(id).entryAction(entryAction).build());
+        return this;
+    }
+
+    /**
+     * Adds a state with only an exit action.
+     */
+    public StateMachineBuilder<S, E, C> stateWithExit(S id, Action<S, E, C> exitAction) {
+        stateDefs.put(id, StateDef.<S, E, C>builder(id).exitAction(exitAction).build());
+        return this;
+    }
+
+    /**
+     * Adds a simple state with no entry/exit actions.
+     */
+    public StateMachineBuilder<S, E, C> state(S id) {
+        stateDefs.putIfAbsent(id, StateDef.<S, E, C>builder(id).build());
+        return this;
     }
 
     /**
@@ -208,7 +301,7 @@ public final class StateMachineBuilder<S, E, C> {
                     currentGuard, currentAction, currentKind));
             resetCurrent();
         }
-        return new SimpleStateMachine<>(machineId, transitions, initialState, endStates);
+        return new SimpleStateMachine<>(machineId, transitions, initialState, endStates, stateDefs);
     }
 
     private void resetCurrent() {

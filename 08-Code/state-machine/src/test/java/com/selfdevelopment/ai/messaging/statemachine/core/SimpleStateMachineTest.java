@@ -1,6 +1,9 @@
 package com.selfdevelopment.ai.messaging.statemachine.core;
 
 import com.selfdevelopment.ai.messaging.statemachine.builder.StateMachineBuilder;
+import com.selfdevelopment.ai.messaging.statemachine.config.StateConfigurer;
+import com.selfdevelopment.ai.messaging.statemachine.config.StateMachineConfigurerAdapter;
+import com.selfdevelopment.ai.messaging.statemachine.config.TransitionConfigurer;
 import com.selfdevelopment.ai.messaging.statemachine.exception.StateMachineException;
 import com.selfdevelopment.ai.messaging.statemachine.listener.StateMachineListener;
 import org.junit.jupiter.api.BeforeEach;
@@ -284,5 +287,102 @@ class SimpleStateMachineTest {
         for (Thread t : threads) t.join();
 
         assertEquals(threadCount * iterations, successCount.get());
+    }
+
+    // ===== Spring-style configuration tests =====
+
+    @Test
+    void shouldExecuteEntryAndExitActions() {
+        List<String> log = new ArrayList<>();
+        StateMachine<LightState, LightEvent, Void> machine =
+                StateMachineBuilder.<LightState, LightEvent, Void>builder("entry-exit-test")
+                    .stateWithExit(LightState.RED, ctx -> log.add("exit:RED"))
+                    .stateWithEntry(LightState.GREEN, ctx -> log.add("entry:GREEN"))
+                    .transition()
+                        .from(LightState.RED).on(LightEvent.TIMER).to(LightState.GREEN)
+                        .perform(ctx -> log.add("transition:RED->GREEN"))
+                    .and()
+                    .build();
+
+        machine.fireEvent(LightState.RED, LightEvent.TIMER, null);
+        assertEquals(3, log.size());
+        assertEquals("exit:RED", log.get(0));
+        assertEquals("transition:RED->GREEN", log.get(1));
+        assertEquals("entry:GREEN", log.get(2));
+    }
+
+    @Test
+    void shouldNotExecuteEntryExitForInternalTransition() {
+        List<String> log = new ArrayList<>();
+        StateMachine<LightState, LightEvent, Void> machine =
+                StateMachineBuilder.<LightState, LightEvent, Void>builder("internal-entry-exit-test")
+                    .stateWithExit(LightState.GREEN, ctx -> log.add("exit:GREEN"))
+                    .stateWithEntry(LightState.GREEN, ctx -> log.add("entry:GREEN"))
+                    .transition()
+                        .from(LightState.GREEN).on(LightEvent.BLINK).to(LightState.GREEN)
+                        .internal()
+                        .perform(ctx -> log.add("internal:action"))
+                    .and()
+                    .build();
+
+        machine.fireEvent(LightState.GREEN, LightEvent.BLINK, null);
+        assertEquals(1, log.size());
+        assertEquals("internal:action", log.get(0));
+    }
+
+    @Test
+    void shouldBuildFromConfigurerAdapter() {
+        StateMachineConfigurerAdapter<LightState, LightEvent, Void> config =
+                new StateMachineConfigurerAdapter<>() {
+                    @Override
+                    public void configure(StateConfigurer<LightState, LightEvent, Void> states) {
+                        states.withStates()
+                              .initial(LightState.RED)
+                              .state(LightState.RED, null, ctx -> {})
+                              .stateWithEntry(LightState.GREEN, ctx -> {})
+                              .end(LightState.YELLOW);
+                    }
+
+                    @Override
+                    public void configure(TransitionConfigurer<LightState, LightEvent, Void> transitions) {
+                        transitions.withExternal()
+                                   .source(LightState.RED).target(LightState.GREEN).event(LightEvent.TIMER)
+                               .and().withExternal()
+                                   .source(LightState.GREEN).target(LightState.YELLOW).event(LightEvent.TIMER);
+                    }
+                };
+
+        StateMachine<LightState, LightEvent, Void> machine =
+                StateMachineBuilder.fromConfigurer("configurer-test", config);
+
+        assertEquals(LightState.RED, machine.getInitialState());
+        assertTrue(machine.getEndStates().contains(LightState.YELLOW));
+        assertEquals(2, machine.getTransitionCount());
+        assertEquals(LightState.GREEN,
+                machine.fireEvent(LightState.RED, LightEvent.TIMER, null).getTargetState());
+    }
+
+    @Test
+    void shouldSupportWithExternalAndWithInternalInConfigurer() {
+        StateMachineConfigurerAdapter<LightState, LightEvent, Void> config =
+                new StateMachineConfigurerAdapter<>() {
+                    @Override
+                    public void configure(TransitionConfigurer<LightState, LightEvent, Void> transitions) {
+                        transitions.withExternal()
+                                   .source(LightState.RED).target(LightState.GREEN).event(LightEvent.TIMER)
+                               .and().withInternal()
+                                   .source(LightState.GREEN).target(LightState.GREEN).event(LightEvent.BLINK);
+                    }
+                };
+
+        StateMachine<LightState, LightEvent, Void> machine =
+                StateMachineBuilder.fromConfigurer("kind-test", config);
+
+        // External: state changes
+        assertEquals(LightState.GREEN,
+                machine.fireEvent(LightState.RED, LightEvent.TIMER, null).getTargetState());
+        // Internal: state stays
+        assertEquals(LightState.GREEN,
+                machine.fireEvent(LightState.GREEN, LightEvent.BLINK, null).getTargetState());
     }
 }

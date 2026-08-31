@@ -38,6 +38,7 @@ public final class SimpleStateMachine<S, E, C> implements StateMachine<S, E, C> 
     }
 
     private final Map<TransitionKey<S, E>, List<Transition<S, E, C>>> transitions;
+    private final Map<S, StateDef<S, E, C>> stateDefs;
     private final List<StateMachineListener<S, E, C>> listeners = new CopyOnWriteArrayList<>();
     private final String machineId;
     private final S initialState;
@@ -48,7 +49,7 @@ public final class SimpleStateMachine<S, E, C> implements StateMachine<S, E, C> 
      * Creates a state machine from a list of transitions.
      */
     public SimpleStateMachine(String machineId, List<Transition<S, E, C>> transitions) {
-        this(machineId, transitions, null, Collections.emptySet());
+        this(machineId, transitions, null, Collections.emptySet(), Collections.emptyMap());
     }
 
     /**
@@ -56,10 +57,20 @@ public final class SimpleStateMachine<S, E, C> implements StateMachine<S, E, C> 
      */
     public SimpleStateMachine(String machineId, List<Transition<S, E, C>> transitions,
                               S initialState, Set<S> endStates) {
+        this(machineId, transitions, initialState, endStates, Collections.emptyMap());
+    }
+
+    /**
+     * Creates a state machine with state definitions (entry/exit actions).
+     */
+    public SimpleStateMachine(String machineId, List<Transition<S, E, C>> transitions,
+                              S initialState, Set<S> endStates,
+                              Map<S, StateDef<S, E, C>> stateDefs) {
         this.machineId = Objects.requireNonNull(machineId, "machineId must not be null");
         Objects.requireNonNull(transitions, "transitions must not be null");
         this.initialState = initialState;
         this.endStates = endStates != null ? Set.copyOf(endStates) : Collections.emptySet();
+        this.stateDefs = stateDefs != null ? Map.copyOf(stateDefs) : Collections.emptyMap();
 
         Map<TransitionKey<S, E>, List<Transition<S, E, C>>> map = new ConcurrentHashMap<>();
         for (Transition<S, E, C> t : transitions) {
@@ -137,7 +148,24 @@ public final class SimpleStateMachine<S, E, C> implements StateMachine<S, E, C> 
             }
 
             try {
+                // Execute exit action of source state (only for external transitions)
+                if (!t.isInternal()) {
+                    StateDef<S, E, C> sourceDef = stateDefs.get(sourceState);
+                    if (sourceDef != null && sourceDef.hasExitAction()) {
+                        sourceDef.exit(preCtx);
+                    }
+                }
+
+                // Execute transition action
                 t.executeAction(preCtx);
+
+                // Execute entry action of target state (only for external transitions)
+                if (!t.isInternal()) {
+                    StateDef<S, E, C> targetDef = stateDefs.get(t.getTargetState());
+                    if (targetDef != null && targetDef.hasEntryAction()) {
+                        targetDef.enter(preCtx);
+                    }
+                }
             } catch (Exception ex) {
                 StateContext<S, E, C> errorCtx = StateContext.<S, E, C>builder()
                         .sourceState(sourceState)

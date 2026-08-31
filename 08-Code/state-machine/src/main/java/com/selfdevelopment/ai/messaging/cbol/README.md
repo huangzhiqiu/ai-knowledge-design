@@ -46,12 +46,14 @@ com.selfdevelopment.ai.messaging
 
 ## Usage
 
-### Building a state machine
+### Building a state machine (Builder DSL)
 ```java
 StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
     StateMachineBuilder.<ConversationState, ConversationFact, CbolStateContext>builder("conversation")
         .initialState(ConversationState.INITIATED)
         .endStates(ConversationState.CLOSED)
+        .stateWithEntry(ConversationState.ACTIVE, ctx -> log.info("Entering ACTIVE"))
+        .stateWithExit(ConversationState.ACTIVE, ctx -> log.info("Leaving ACTIVE"))
         .transition()
             .from(ConversationState.INITIATED)
             .on(ConversationFact.CUSTOMER_CONNECT)
@@ -68,6 +70,53 @@ StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
         .and()
         .build();
 ```
+
+### Building a state machine (Spring-style ConfigurerAdapter)
+```java
+public class ConversationStateMachineConfig
+        extends StateMachineConfigurerAdapter<ConversationState, ConversationFact, CbolStateContext> {
+
+    @Override
+    public void configure(StateConfigurer<ConversationState, ConversationFact, CbolStateContext> states) {
+        states.withStates()
+              .initial(ConversationState.INITIATED)
+              .state(ConversationState.INITIATED, null, ctx -> log.info("exit INITIATED"))
+              .stateWithEntry(ConversationState.ACTIVE, ctx -> log.info("enter ACTIVE"))
+              .stateWithExit(ConversationState.TRANSFERRED, ctx -> log.info("exit TRANSFERRED"))
+              .end(ConversationState.CLOSED);
+    }
+
+    @Override
+    public void configure(TransitionConfigurer<ConversationState, ConversationFact, CbolStateContext> transitions) {
+        transitions.withExternal()
+                   .source(ConversationState.INITIATED)
+                   .target(ConversationState.ACTIVE)
+                   .event(ConversationFact.CUSTOMER_CONNECT)
+                   .guard(ctx -> ctx.getBusinessContext().marketConfig().transferEnabled())
+                   .action(ctx -> notifyCustomerConnected())
+               .and().withExternal()
+                   .source(ConversationState.ACTIVE)
+                   .target(ConversationState.TRANSFERRED)
+                   .event(ConversationFact.TRANSFER_REQUEST)
+               .and().withInternal()
+                   .source(ConversationState.ACTIVE)
+                   .target(ConversationState.ACTIVE)
+                   .event(ConversationFact.SYS_CUSTOMER_IDLE)
+                   .action(ctx -> ctx.getExtendedState().set("idleNotified", true));
+    }
+}
+
+// Build from configurer
+StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+    StateMachineBuilder.fromConfigurer("conversation", new ConversationStateMachineConfig());
+```
+
+**Entry/Exit action execution order** (for external transitions):
+1. Exit action of source state
+2. Transition action
+3. Entry action of target state
+
+Internal transitions do NOT execute entry/exit actions.
 
 ### Firing an event
 ```java
