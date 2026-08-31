@@ -1,0 +1,20 @@
+package com.selfdevelopment.ai.messaging.cbol.enums;
+
+public enum ConversationFact {
+    // LIFECYCLE
+    CUSTOMER_CONNECT,
+    AGENT_ATTACHED,
+    // TRANSFER
+    TRANSFER_REQUEST,
+    TRANSFER_CONNECTED,
+    TRANSFER_FAILED,
+    TRANSFER_TIMEOUT,
+    // ENDING
+    CUSTOMER_CLOSE,
+    AGENT_CLOSE,
+    SURVEY_COMPLETE,
+    // SYSTEM
+    SYS_CUSTOMER_IDLE,
+    SYS_TRANSFER_TIMEOUT,
+    SYS_ENDING_GRACE_TIMEOUT
+}
