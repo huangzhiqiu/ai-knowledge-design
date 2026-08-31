@@ -6,7 +6,9 @@ import java.util.Objects;
  * Represents a single state transition rule.
  * <p>
  * A transition defines: source state → event → target state, with an optional
- * guard condition and an optional action to execute on success.
+ * guard condition, an optional action, and a transition kind.
+ * <p>
+ * Inspired by Spring StateMachine's {@code Transition}.
  *
  * @param <S> the state type
  * @param <E> the event type
@@ -17,33 +19,41 @@ public final class Transition<S, E, C> {
     private final S sourceState;
     private final E event;
     private final S targetState;
-    private final Condition<C> condition;
-    private final Action<C> action;
+    private final Guard<S, E, C> guard;
+    private final Action<S, E, C> action;
+    private final TransitionKind kind;
 
     /**
-     * Creates a new transition.
+     * Creates a new transition with default EXTERNAL kind.
+     */
+    public Transition(S sourceState, E event, S targetState,
+                      Guard<S, E, C> guard, Action<S, E, C> action) {
+        this(sourceState, event, targetState, guard, action, TransitionKind.EXTERNAL);
+    }
+
+    /**
+     * Creates a new transition with explicit kind.
      *
      * @param sourceState the state before the transition
      * @param event       the event that triggers the transition
-     * @param targetState the state after the transition
-     * @param condition   the guard condition (may be {@code null}, meaning always allowed)
-     * @param action      the action to execute on success (may be {@code null})
+     * @param targetState the state after the transition (for INTERNAL, should equal sourceState)
+     * @param guard       the guard condition (may be null, meaning always allowed)
+     * @param action      the action to execute on success (may be null)
+     * @param kind        the transition kind (EXTERNAL or INTERNAL)
      */
     public Transition(S sourceState, E event, S targetState,
-                      Condition<C> condition, Action<C> action) {
+                      Guard<S, E, C> guard, Action<S, E, C> action,
+                      TransitionKind kind) {
         this.sourceState = Objects.requireNonNull(sourceState, "sourceState must not be null");
         this.event = Objects.requireNonNull(event, "event must not be null");
         this.targetState = Objects.requireNonNull(targetState, "targetState must not be null");
-        this.condition = condition;
+        this.guard = guard;
         this.action = action;
+        this.kind = kind != null ? kind : TransitionKind.EXTERNAL;
     }
 
     /**
      * Checks whether this transition is applicable for the given source state and event.
-     *
-     * @param sourceState the current state
-     * @param event       the triggered event
-     * @return {@code true} if this transition matches the source state and event
      */
     public boolean matches(S sourceState, E event) {
         return this.sourceState.equals(sourceState) && this.event.equals(event);
@@ -52,42 +62,36 @@ public final class Transition<S, E, C> {
     /**
      * Evaluates the guard condition.
      *
-     * @param context the current business context
-     * @return {@code true} if the condition is satisfied (or no condition exists)
+     * @param context the current state context
+     * @return true if the guard is satisfied (or no guard exists)
      */
-    public boolean isConditionSatisfied(C context) {
-        return condition == null || condition.isSatisfied(context);
+    public boolean isGuardSatisfied(StateContext<S, E, C> context) {
+        return guard == null || guard.evaluate(context);
     }
 
     /**
      * Executes the transition action, if any.
      *
-     * @param context the current business context
+     * @param context the current state context
      */
-    public void executeAction(C context) {
+    public void executeAction(StateContext<S, E, C> context) {
         if (action != null) {
             action.execute(context);
         }
     }
 
-    public S getSourceState() {
-        return sourceState;
-    }
+    public S getSourceState() { return sourceState; }
+    public E getEvent() { return event; }
+    public S getTargetState() { return targetState; }
+    public Guard<S, E, C> getGuard() { return guard; }
+    public Action<S, E, C> getAction() { return action; }
+    public TransitionKind getKind() { return kind; }
 
-    public E getEvent() {
-        return event;
-    }
-
-    public S getTargetState() {
-        return targetState;
-    }
-
-    public Condition<C> getCondition() {
-        return condition;
-    }
-
-    public Action<C> getAction() {
-        return action;
+    /**
+     * Returns true if this is an internal transition (state does not change).
+     */
+    public boolean isInternal() {
+        return kind == TransitionKind.INTERNAL;
     }
 
     @Override
@@ -96,16 +100,17 @@ public final class Transition<S, E, C> {
         if (!(o instanceof Transition<?, ?, ?> that)) return false;
         return sourceState.equals(that.sourceState)
                 && event.equals(that.event)
-                && targetState.equals(that.targetState);
+                && targetState.equals(that.targetState)
+                && kind == that.kind;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(sourceState, event, targetState);
+        return Objects.hash(sourceState, event, targetState, kind);
     }
 
     @Override
     public String toString() {
-        return sourceState + " --[" + event + "]--> " + targetState;
+        return sourceState + " --[" + event + ", " + kind + "]--> " + targetState;
     }
 }

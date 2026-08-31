@@ -1,5 +1,6 @@
 package com.selfdevelopment.ai.messaging.cbol.statemachine;
 
+import com.selfdevelopment.ai.messaging.statemachine.core.StateContext;
 import com.selfdevelopment.ai.messaging.statemachine.core.StateMachine;
 import com.selfdevelopment.ai.messaging.cbol.context.CbolStateContext;
 import com.selfdevelopment.ai.messaging.cbol.context.TraceMdcHelper;
@@ -17,27 +18,36 @@ public class CbolStateMachineService {
         convSm = CbolStateMachineRegistry.get(ConversationStateMachineFactory.MACHINE_ID);
     }
 
-    public ConversationState fire(CbolStateContext ctx, ConversationFact fact) {
+    public StateContext<ConversationState, ConversationFact, CbolStateContext> fire(
+            CbolStateContext ctx, ConversationFact fact) {
         TraceMdcHelper.set(ctx.traceContext());
         long start = System.currentTimeMillis();
         try {
             ConversationState from = ctx.conversation().state();
-            ConversationState to = convSm.fireEvent(from, fact, ctx);
+            StateContext<ConversationState, ConversationFact, CbolStateContext> result =
+                    convSm.fireEvent(from, fact, ctx);
 
             StateTransitionRecord record = StateTransitionRecord.builder()
                     .businessId(ctx.conversation().conversationId())
                     .fromState(from.name())
-                    .toState(to.name())
+                    .toState(result.getTargetState().name())
                     .fact(fact.name())
-                    .guardResult(true)
+                    .guardResult(result.isTransitionAccepted())
                     .timestampMs(System.currentTimeMillis())
                     .traceId(ctx.traceContext().traceId())
                     .durationMs(System.currentTimeMillis() - start)
                     .build();
             log.info("StateTransitionRecord: {}", record);
-            return to;
+            return result;
         } finally {
             TraceMdcHelper.clear();
         }
+    }
+
+    /**
+     * Convenience method that returns only the target state.
+     */
+    public ConversationState fireAndGetState(CbolStateContext ctx, ConversationFact fact) {
+        return fire(ctx, fact).getTargetState();
     }
 }

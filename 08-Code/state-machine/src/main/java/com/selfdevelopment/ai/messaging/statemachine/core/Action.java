@@ -1,21 +1,23 @@
 package com.selfdevelopment.ai.messaging.statemachine.core;
 
 /**
- * Action executed on a successful state transition.
+ * Action to execute during a state transition.
  * <p>
- * Actions are side-effecting operations (e.g., sending notifications,
- * persisting data). The state machine engine itself does not perform
- * any I/O; actions encapsulate all side effects.
+ * Inspired by Spring StateMachine's {@code Action}. Receives the full
+ * {@link StateContext}, giving access to source/target state, event,
+ * business context, extended state, and event headers.
  *
- * @param <C> the context type carrying business data
+ * @param <S> the state type
+ * @param <E> the event type
+ * @param <C> the business context type
  */
 @FunctionalInterface
-public interface Action<C> {
+public interface Action<S, E, C> {
 
     /**
-     * Executes the action with the given context.
+     * Executes the action.
      *
-     * @param context the current business context
+     * @param context the current state context
      */
-    void execute(C context);
+    void execute(StateContext<S, E, C> context);
 }

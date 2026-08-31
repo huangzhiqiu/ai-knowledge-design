@@ -75,6 +75,7 @@ class StateMachineRegistryTest {
     void shouldRetrieveMachineWithCorrectGenericTypes() {
         registry.register(machine);
         StateMachine<TestState, TestEvent, Void> retrieved = registry.get("test-machine");
-        assertEquals(TestState.B, retrieved.fireEvent(TestState.A, TestEvent.GO, null));
+        assertEquals(TestState.B,
+                retrieved.fireEvent(TestState.A, TestEvent.GO, null).getTargetState());
     }
 }

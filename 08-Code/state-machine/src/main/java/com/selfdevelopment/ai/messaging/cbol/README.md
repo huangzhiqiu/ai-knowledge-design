@@ -3,16 +3,38 @@
 ## Package Structure
 ```
 com.selfdevelopment.ai.messaging
-鈹溾攢 statemachine/        # Generic stateless table-driven state machine core
-鈹斺攢 cbol/                # AI-Messaging-Hub business layer
-    鈹溾攢 config           # Market config snapshot + provider
-    鈹溾攢 context          # TraceContext, MDC helper, CbolStateContext
-    鈹溾攢 enums            # Conversation/Interaction states, facts, reasons
-    鈹溾攢 model            # ConversationInstance, InteractionInstance, audit record
-    鈹溾攢 statemachine     # Factories + CbolStateMachineService facade
-    鈹溾攢 action           # CbolAction + ActionWorker (async + MDC propagation)
-    鈹斺攢 monitor          # CustomerIdle / Transfer / EndingGrace monitors
+├─ statemachine/        # Generic lightweight state machine core (Spring-inspired)
+│   ├─ core/            # StateMachine, SimpleStateMachine, Transition, StateContext
+│   │                   # ExtendedState, Guard, Action, TransitionKind
+│   ├─ builder/         # StateMachineBuilder (fluent DSL)
+│   ├─ listener/        # StateMachineListener (lifecycle hooks)
+│   ├─ registry/        # StateMachineRegistry (named machine lookup)
+│   └─ exception/       # StateMachineException
+└─ cbol/                # AI-Messaging-Hub business layer
+    ├─ config           # Market config snapshot + provider
+    ├─ context          # TraceContext, MDC helper, CbolStateContext
+    ├─ enums            # Conversation/Interaction states, facts, reasons
+    ├─ model            # ConversationInstance, InteractionInstance, audit record
+    ├─ statemachine     # Factories + CbolStateMachineService facade + Registry
+    ├─ action           # CbolAction + ActionWorker (async + MDC propagation)
+    └─ monitor          # CustomerIdle / Transfer / EndingGrace monitors
 ```
+
+## Core Engine Features (Spring StateMachine-inspired)
+
+| Feature | Description |
+|---------|-------------|
+| **Stateless** | Current state injected per `fireEvent()` call; safe for concurrent use |
+| **Table-driven** | Transitions in `ConcurrentHashMap`, O(1) lookup |
+| **StateContext** | Rich context: source/target state, event, business context, extended state, event headers |
+| **ExtendedState** | Key-value variables shared across transitions within an interaction |
+| **Guard** | Guard condition receiving full `StateContext` (replaces simple Condition) |
+| **Action** | Transition action receiving full `StateContext` |
+| **TransitionKind** | `EXTERNAL` (state changes) and `INTERNAL` (action only, state stays) |
+| **Listener** | `StateMachineListener`: stateChanged, transitionStarted/Ended/Denied, error, lifecycle |
+| **Lifecycle** | `start()` / `stop()` / `isStarted()` |
+| **Initial/End states** | Configured via builder for documentation and validation |
+| **Zero dependencies** | Only JDK standard library for the core |
 
 ## Core Constraints (from design doc v6)
 1. Dual-layer state machine: Conversation (business) + Interaction (channel)
@@ -23,6 +45,31 @@ com.selfdevelopment.ai.messaging
 6. Monitors are external components, drive state via System Fact events
 
 ## Usage
+
+### Building a state machine
+```java
+StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+    StateMachineBuilder.<ConversationState, ConversationFact, CbolStateContext>builder("conversation")
+        .initialState(ConversationState.INITIATED)
+        .endStates(ConversationState.CLOSED)
+        .transition()
+            .from(ConversationState.INITIATED)
+            .on(ConversationFact.CUSTOMER_CONNECT)
+            .to(ConversationState.ACTIVE)
+            .guard(ctx -> ctx.getBusinessContext().marketConfig().transferEnabled())
+            .perform(ctx -> log.info("Customer connected: {}", ctx.getSourceState()))
+        .and()
+        .transition()
+            .from(ConversationState.ACTIVE)
+            .on(ConversationFact.SYS_CUSTOMER_IDLE)
+            .to(ConversationState.ACTIVE)
+            .internal()
+            .perform(ctx -> ctx.getExtendedState().set("idleNotified", true))
+        .and()
+        .build();
+```
+
+### Firing an event
 ```java
 StateMachineMarketConfig config = marketConfigProvider.getConfig("SG");
 TraceContext trace = TraceContext.generate();
@@ -32,6 +79,34 @@ CbolStateContext ctx = CbolStateContext.builder()
         .marketConfig(config)
         .traceContext(trace)
         .build();
+
 CbolStateMachineService service = new CbolStateMachineService();
-ConversationState next = service.fire(ctx, ConversationFact.CUSTOMER_CONNECT);
+
+// Full StateContext (contains target state, extended state, acceptance flag)
+StateContext<ConversationState, ConversationFact, CbolStateContext> result =
+        service.fire(ctx, ConversationFact.CUSTOMER_CONNECT);
+
+// Or convenience: just the target state
+ConversationState next = service.fireAndGetState(ctx, ConversationFact.CUSTOMER_CONNECT);
+```
+
+### Adding a listener (for auditing/monitoring)
+```java
+sm.addListener(new StateMachineListener<>() {
+    @Override
+    public void stateChanged(StateContext<S, E, C> ctx) {
+        auditLog.info("{} -> {} via {}", ctx.getSourceState(), ctx.getTargetState(), ctx.getEvent());
+    }
+    @Override
+    public void transitionDenied(StateContext<S, E, C> ctx, String reason) {
+        log.warn("Transition denied: {} {} - {}", ctx.getSourceState(), ctx.getEvent(), reason);
+    }
+});
+```
+
+### Using ExtendedState (shared across transitions)
+```java
+ExtendedState ext = new ExtendedState();
+sm.fireEvent(State.A, Event.E1, ctx, ext);
+sm.fireEvent(State.B, Event.E2, ctx, ext); // ext persists across both transitions
 ```

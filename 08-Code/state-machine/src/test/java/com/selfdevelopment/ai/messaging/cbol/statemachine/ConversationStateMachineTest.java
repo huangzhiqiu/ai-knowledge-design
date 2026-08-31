@@ -7,6 +7,7 @@ import com.selfdevelopment.ai.messaging.cbol.enums.ConversationFact;
 import com.selfdevelopment.ai.messaging.cbol.enums.ConversationState;
 import com.selfdevelopment.ai.messaging.cbol.model.ConversationInstance;
 import com.selfdevelopment.ai.messaging.cbol.model.InteractionInstance;
+import com.selfdevelopment.ai.messaging.statemachine.core.StateContext;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -46,31 +47,45 @@ class ConversationStateMachineTest {
 
     @Test
     void testInitToActive() {
-        assertEquals(ConversationState.ACTIVE,
-                service.fire(buildCtx(ConversationState.INITIATED), ConversationFact.CUSTOMER_CONNECT));
+        StateContext<ConversationState, ConversationFact, CbolStateContext> result =
+                service.fire(buildCtx(ConversationState.INITIATED), ConversationFact.CUSTOMER_CONNECT);
+        assertEquals(ConversationState.ACTIVE, result.getTargetState());
+        assertTrue(result.isTransitionAccepted());
     }
 
     @Test
     void testActiveToTransferred() {
         assertEquals(ConversationState.TRANSFERRED,
-                service.fire(buildCtx(ConversationState.ACTIVE), ConversationFact.TRANSFER_REQUEST));
+                service.fireAndGetState(buildCtx(ConversationState.ACTIVE), ConversationFact.TRANSFER_REQUEST));
     }
 
     @Test
     void testTransferredFailedToInitiated() {
         assertEquals(ConversationState.INITIATED,
-                service.fire(buildCtx(ConversationState.TRANSFERRED), ConversationFact.TRANSFER_FAILED));
+                service.fireAndGetState(buildCtx(ConversationState.TRANSFERRED), ConversationFact.TRANSFER_FAILED));
     }
 
     @Test
     void testTransferredTimeoutToInitiated() {
         assertEquals(ConversationState.INITIATED,
-                service.fire(buildCtx(ConversationState.TRANSFERRED), ConversationFact.TRANSFER_TIMEOUT));
+                service.fireAndGetState(buildCtx(ConversationState.TRANSFERRED), ConversationFact.TRANSFER_TIMEOUT));
     }
 
     @Test
     void testActiveToEnding() {
         assertEquals(ConversationState.ENDING,
-                service.fire(buildCtx(ConversationState.ACTIVE), ConversationFact.CUSTOMER_CLOSE));
+                service.fireAndGetState(buildCtx(ConversationState.ACTIVE), ConversationFact.CUSTOMER_CLOSE));
+    }
+
+    @Test
+    void testCustomerIdleToEnding() {
+        assertEquals(ConversationState.ENDING,
+                service.fireAndGetState(buildCtx(ConversationState.ACTIVE), ConversationFact.SYS_CUSTOMER_IDLE));
+    }
+
+    @Test
+    void testEndingGraceTimeoutToClosed() {
+        assertEquals(ConversationState.CLOSED,
+                service.fireAndGetState(buildCtx(ConversationState.ENDING), ConversationFact.SYS_ENDING_GRACE_TIMEOUT));
     }
 }
