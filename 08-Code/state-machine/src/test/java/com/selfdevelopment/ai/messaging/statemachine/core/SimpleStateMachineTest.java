@@ -385,4 +385,244 @@ class SimpleStateMachineTest {
         assertEquals(LightState.GREEN,
                 machine.fireEvent(LightState.GREEN, LightEvent.BLINK, null).getTargetState());
     }
+
+    // ===== Edge case and error path tests =====
+
+    @Test
+    void shouldThrowWhenActionExecutionFails() {
+        StateMachine<LightState, LightEvent, Void> machine =
+                StateMachineBuilder.<LightState, LightEvent, Void>builder("action-error-test")
+                    .transition()
+                        .from(LightState.RED).on(LightEvent.TIMER).to(LightState.GREEN)
+                        .perform(ctx -> { throw new RuntimeException("action failed"); })
+                    .and()
+                    .build();
+
+        StateMachineException ex = assertThrows(StateMachineException.class,
+                () -> machine.fireEvent(LightState.RED, LightEvent.TIMER, null));
+        assertTrue(ex.getMessage().contains("Action execution failed"));
+        assertNotNull(ex.getCause());
+        assertEquals("action failed", ex.getCause().getMessage());
+    }
+
+    @Test
+    void shouldNotifyListenerOnActionError() {
+        List<String> errors = new ArrayList<>();
+        StateMachine<LightState, LightEvent, Void> machine =
+                StateMachineBuilder.<LightState, LightEvent, Void>builder("listener-error-test")
+                    .transition()
+                        .from(LightState.RED).on(LightEvent.TIMER).to(LightState.GREEN)
+                        .perform(ctx -> { throw new RuntimeException("boom"); })
+                    .and()
+                    .build();
+
+        machine.addListener(new StateMachineListener<>() {
+            @Override
+            public void transitionError(StateContext<LightState, LightEvent, Void> ctx) {
+                errors.add("error:" + ctx.getException().getMessage());
+            }
+        });
+
+        assertThrows(StateMachineException.class,
+                () -> machine.fireEvent(LightState.RED, LightEvent.TIMER, null));
+        assertEquals(1, errors.size());
+        assertTrue(errors.get(0).contains("boom"));
+    }
+
+    @Test
+    void shouldTryMultipleCandidatesAndPickFirstPassingGuard() {
+        StateMachine<LightState, LightEvent, GuardContext> machine =
+                StateMachineBuilder.<LightState, LightEvent, GuardContext>builder("multi-guard-test")
+                    .transition()
+                        .from(LightState.RED).on(LightEvent.TIMER).to(LightState.GREEN)
+                        .guard(ctx -> ctx.getBusinessContext().allowed())
+                    .and()
+                    .transition()
+                        .from(LightState.RED).on(LightEvent.TIMER).to(LightState.YELLOW)
+                        .guard(ctx -> !ctx.getBusinessContext().allowed())
+                    .and()
+                    .build();
+
+        // First candidate passes -> GREEN
+        assertEquals(LightState.GREEN,
+                machine.fireEvent(LightState.RED, LightEvent.TIMER, new GuardContext(true)).getTargetState());
+        // First candidate fails, second passes -> YELLOW
+        assertEquals(LightState.YELLOW,
+                machine.fireEvent(LightState.RED, LightEvent.TIMER, new GuardContext(false)).getTargetState());
+    }
+
+    @Test
+    void shouldThrowWhenAllCandidatesFailGuard() {
+        StateMachine<LightState, LightEvent, GuardContext> machine =
+                StateMachineBuilder.<LightState, LightEvent, GuardContext>builder("all-guard-fail-test")
+                    .transition()
+                        .from(LightState.RED).on(LightEvent.TIMER).to(LightState.GREEN)
+                        .guard(ctx -> false)
+                    .and()
+                    .transition()
+                        .from(LightState.RED).on(LightEvent.TIMER).to(LightState.YELLOW)
+                        .guard(ctx -> false)
+                    .and()
+                    .build();
+
+        assertThrows(StateMachineException.class,
+                () -> machine.fireEvent(LightState.RED, LightEvent.TIMER, new GuardContext(true)));
+    }
+
+    @Test
+    void shouldNotifyDeniedWhenAllGuardsFail() {
+        List<String> denied = new ArrayList<>();
+        StateMachine<LightState, LightEvent, GuardContext> machine =
+                StateMachineBuilder.<LightState, LightEvent, GuardContext>builder("denied-all-test")
+                    .transition()
+                        .from(LightState.RED).on(LightEvent.TIMER).to(LightState.GREEN)
+                        .guard(ctx -> false)
+                    .and()
+                    .build();
+
+        machine.addListener(new StateMachineListener<>() {
+            @Override
+            public void transitionDenied(StateContext<LightState, LightEvent, GuardContext> ctx, String reason) {
+                denied.add(reason);
+            }
+        });
+
+        assertThrows(StateMachineException.class,
+                () -> machine.fireEvent(LightState.RED, LightEvent.TIMER, new GuardContext(true)));
+        assertEquals(1, denied.size());
+        assertEquals("All guard conditions failed", denied.get(0));
+    }
+
+    @Test
+    void shouldNotifyDeniedWhenNoTransitionFound() {
+        List<String> denied = new ArrayList<>();
+        StateMachine<LightState, LightEvent, Void> machine =
+                StateMachineBuilder.<LightState, LightEvent, Void>builder("no-transition-test")
+                    .transition()
+                        .from(LightState.RED).on(LightEvent.TIMER).to(LightState.GREEN)
+                    .and()
+                    .build();
+
+        machine.addListener(new StateMachineListener<>() {
+            @Override
+            public void transitionDenied(StateContext<LightState, LightEvent, Void> ctx, String reason) {
+                denied.add(reason);
+            }
+        });
+
+        assertThrows(StateMachineException.class,
+                () -> machine.fireEvent(LightState.RED, LightEvent.PEDESTRIAN_BUTTON, null));
+        assertEquals(1, denied.size());
+        assertEquals("No transition found", denied.get(0));
+    }
+
+    @Test
+    void shouldSupportAddAndRemoveListener() {
+        StateMachine<LightState, LightEvent, Void> machine =
+                StateMachineBuilder.<LightState, LightEvent, Void>builder("listener-lifecycle-test")
+                    .transition()
+                        .from(LightState.RED).on(LightEvent.TIMER).to(LightState.GREEN)
+                    .and()
+                    .build();
+
+        List<String> events = new ArrayList<>();
+        StateMachineListener<LightState, LightEvent, Void> listener = new StateMachineListener<>() {
+            @Override
+            public void stateChanged(StateContext<LightState, LightEvent, Void> ctx) {
+                events.add("changed");
+            }
+        };
+
+        machine.addListener(listener);
+        machine.fireEvent(LightState.RED, LightEvent.TIMER, null);
+        assertEquals(1, events.size());
+
+        machine.removeListener(listener);
+        machine.fireEvent(LightState.RED, LightEvent.TIMER, null);
+        assertEquals(1, events.size()); // no new events
+    }
+
+    @Test
+    void shouldNotifyLifecycleListeners() {
+        List<String> lifecycle = new ArrayList<>();
+        StateMachine<LightState, LightEvent, Void> machine =
+                StateMachineBuilder.<LightState, LightEvent, Void>builder("lifecycle-test")
+                    .transition()
+                        .from(LightState.RED).on(LightEvent.TIMER).to(LightState.GREEN)
+                    .and()
+                    .build();
+
+        machine.addListener(new StateMachineListener<>() {
+            @Override
+            public void stateMachineStarted() { lifecycle.add("started"); }
+            @Override
+            public void stateMachineStopped() { lifecycle.add("stopped"); }
+        });
+
+        assertFalse(machine.isStarted());
+        machine.start();
+        assertTrue(machine.isStarted());
+        machine.stop();
+        assertFalse(machine.isStarted());
+
+        assertEquals(2, lifecycle.size());
+        assertEquals("started", lifecycle.get(0));
+        assertEquals("stopped", lifecycle.get(1));
+    }
+
+    @Test
+    void shouldNotDoubleNotifyOnRepeatedStartStop() {
+        List<String> lifecycle = new ArrayList<>();
+        StateMachine<LightState, LightEvent, Void> machine =
+                StateMachineBuilder.<LightState, LightEvent, Void>builder("lifecycle-dedup-test")
+                    .transition()
+                        .from(LightState.RED).on(LightEvent.TIMER).to(LightState.GREEN)
+                    .and()
+                    .build();
+
+        machine.addListener(new StateMachineListener<>() {
+            @Override
+            public void stateMachineStarted() { lifecycle.add("started"); }
+            @Override
+            public void stateMachineStopped() { lifecycle.add("stopped"); }
+        });
+
+        machine.start();
+        machine.start(); // duplicate, should not notify again
+        machine.stop();
+        machine.stop(); // duplicate, should not notify again
+
+        assertEquals(2, lifecycle.size());
+    }
+
+    @Test
+    void shouldReturnMachineIdAndTransitionCount() {
+        StateMachine<LightState, LightEvent, Void> machine =
+                StateMachineBuilder.<LightState, LightEvent, Void>builder("id-test")
+                    .transition()
+                        .from(LightState.RED).on(LightEvent.TIMER).to(LightState.GREEN)
+                    .and()
+                    .build();
+
+        assertEquals("id-test", machine.getMachineId());
+        assertEquals(1, machine.getTransitionCount());
+    }
+
+    @Test
+    void shouldHandleNullSourceInHasTransition() {
+        assertFalse(trafficLight.hasTransition(null, LightEvent.TIMER));
+        assertFalse(trafficLight.hasTransition(LightState.RED, null));
+    }
+
+    @Test
+    void shouldHandleNullInCanFire() {
+        assertFalse(trafficLight.canFire(null, LightEvent.TIMER, null));
+    }
+
+    @Test
+    void shouldToStringBeReadable() {
+        String str = trafficLight.toString();
+        assertTrue(str.contains("traffic-light"));
+        assertTrue(str.contains("transitions=3"));
+    }
 }
