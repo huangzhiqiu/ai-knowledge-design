@@ -1,9 +1,8 @@
-# AI Messaging Hub: 状态机管理与事件驱动编排详细设计
+﻿# AI Messaging Hub: 状态机管理与事件驱动编排详细设计（简化版·整篇最终稿）
 
 > 本稿已按最新口径更新：**Transfer 失败后不执行 rollback，Conversation 直接回到 INITIATED**。
-> 本稿新增：**Multi-Market 配置支持** 与 **TraceId 全链路追踪**。
 >
-> **版本**: version5
+> **版本**: version4（最终稿）
 > **最后更新**: 2026-08-31
 
 ---
@@ -27,24 +26,6 @@
 
 - **Interaction（通道/连接层）**: 连接建立、心跳、降级、重连、关闭；以及跨渠道转接时的 source detach 标记（TRANSFERRED）。
 - **Conversation（业务会话层）**: 会话生命周期、跨渠道转接编排、Customer Idle 治理、ENDING/CLOSED 收敛、Survey（字段化）。
-
-### 1.1 Multi-Market 支持
-
-项目将部署到多个 market（如 CN、US、EU、APAC 等），状态机需支持 market 级别的差异化配置：
-
-- **超时时间**：customerIdleSeconds、transferDeadlineSeconds、endingDeadlineSeconds 可按 market 配置
-- **功能开关**：surveyEnabled、transferEnabled、genesysEnabled 等可按 market 开关
-- **转接策略**：兜底路由、目标渠道选择可按 market 配置
-- **配置热更新**：运行时可动态刷新 market 配置，无需重启
-
-### 1.2 TraceId 全链路追踪
-
-状态机的每次执行都必须携带 traceId，确保：
-
-- **可追溯**：每次状态迁移、事件消费、Action 执行都可通过 traceId 串联
-- **可审计**：完整记录状态机执行轨迹，支持事后审计和问题排查
-- **分布式追踪**：与上游（网关/接入层）和下游（Action Worker/外部系统）的 traceId 贯通
-- **MDC 集成**：traceId 写入日志 MDC，所有相关日志自动携带
 
 ---
 
@@ -166,15 +147,6 @@ stateDiagram-v2
 
 ### 3.3 Conversation 关键字段（字段化复杂流程）
 
-#### 3.3.0 标识与追踪字段
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `conversationId` | string | 会话唯一标识（UUID） |
-| `market` | string | 市场标识（如 CN/US/EU/APAC），决定配置加载来源 |
-| `traceId` | string | 全链路追踪 ID，会话创建时生成，贯穿整个生命周期 |
-| `tenantId` | string | 租户标识（多租户场景，可选） |
-
 #### 3.3.1 结束治理字段
 
 | 字段 | 类型 | 说明 |
@@ -257,212 +229,6 @@ public enum ConversationFactEvent {
     DOWNSTREAM_UNAVAILABLE
 }
 ```
-
----
-
-## 4.5 Market 配置管理（Multi-Market Support）
-
-### 4.5.1 设计目标
-
-- 同一套状态机代码部署到多个 market，通过配置实现差异化行为
-- 配置变更支持热更新，无需重启服务
-- 配置加载失败时使用默认值，保证可用性
-- 每个 Conversation 绑定一个 market，生命周期内不变
-
-### 4.5.2 Market 配置数据模型
-
-```java
-public record StateMachineMarketConfig(
-    String market,                          // 市场标识，如 "CN", "US", "EU"
-    int version,                            // 配置版本号，用于乐观锁和审计
-    long customerIdleSeconds,               // Customer Idle 超时时间（秒）
-    long transferDeadlineSeconds,           // 跨渠道转接最大执行窗口（秒）
-    long endingDeadlineSeconds,             // ENDING 强制收敛时间（秒）
-    boolean surveyEnabled,                  // 是否启用 Survey
-    boolean transferEnabled,                // 是否启用跨渠道转接
-    boolean genesysEnabled,                 // 是否启用 Genesys 集成
-    String fallbackRoutingStrategy,         // 转接失败兜底策略（如 "REASSIGN", "BOT_FALLBACK"）
-    Map<String, String> customProperties    // market 自定义扩展属性
-) {}
-```
-
-### 4.5.3 配置项清单与默认值
-
-| 配置项 | 类型 | 默认值 | 说明 |
-|--------|------|--------|------|
-| `customerIdleSeconds` | long | 300 | Customer Idle 超时（5 分钟） |
-| `transferDeadlineSeconds` | long | 180 | 跨渠道转接最大窗口（3 分钟） |
-| `endingDeadlineSeconds` | long | 120 | ENDING 强制收敛（2 分钟） |
-| `surveyEnabled` | bool | true | 是否发送满意度调查 |
-| `transferEnabled` | bool | true | 是否允许跨渠道转接 |
-| `genesysEnabled` | bool | false | 是否启用 Genesys 坐席集成 |
-| `fallbackRoutingStrategy` | string | REASSIGN | 转接失败后策略 |
-| `welcomeMessageEnabled` | bool | true | 是否发送欢迎消息 |
-| `maxReconnectAttempts` | int | 3 | Interaction 最大重连次数 |
-| `heartbeatIntervalSeconds` | int | 30 | 心跳间隔（秒） |
-
-### 4.5.4 配置加载与缓存机制
-
-```mermaid
-flowchart TD
-    A[Conversation 创建] --> B{从请求头/上下文提取 market}
-    B --> C[MarketConfigService.getConfig(market)]
-    C --> D{本地缓存是否存在且未过期?}
-    D -->|是| E[返回缓存配置]
-    D -->|否| F[从配置中心/DB 加载]
-    F --> G{加载成功?}
-    G -->|是| H[更新本地缓存 + 发布配置变更事件]
-    H --> E
-    G -->|否| I[返回默认配置 + 记录告警]
-    I --> E
-    E --> J[配置绑定到 ConversationContext]
-```
-
-### 4.5.5 配置热更新
-
-- **配置中心推送**：通过配置中心（如 Apollo/Nacos）的 Webhook 或长轮询接收变更通知
-- **缓存失效**：收到变更后主动失效对应 market 的缓存，下次请求时重新加载
-- **灰度发布**：支持按比例灰度新配置（如 10% 流量使用新配置）
-- **回滚机制**：配置版本化，异常时可快速回滚到上一版本
-- **运行中会话**：已创建的 Conversation 继续使用创建时的配置快照，新会话使用新配置
-
-### 4.5.6 配置在状态机中的使用
-
-所有需要 market 差异化的逻辑，都通过 `ConversationContext.getMarketConfig()` 获取配置：
-
-```java
-// CustomerIdleMonitor 使用 market 级别的超时配置
-long idleThreshold = context.getMarketConfig().customerIdleSeconds();
-if (now - lastInboundAt > idleThreshold) {
-    // trigger CUSTOMER_IDLE_TIMEOUT
-}
-
-// TransferMonitor 使用 market 级别的转接超时
-long transferDeadline = context.getMarketConfig().transferDeadlineSeconds();
-
-// Survey 发送前检查 market 开关
-if (context.getMarketConfig().surveyEnabled()) {
-    // send survey
-}
-```
-
----
-
-## 4.6 TraceId 与全链路追踪
-
-### 4.6.1 设计目标
-
-- 每次状态机执行都有唯一 traceId，贯穿整个 Conversation 生命周期
-- 事件、状态迁移、Action 执行、外部调用全部携带 traceId
-- 与上游（接入层/网关）和下游（Action Worker/外部系统）的 traceId 贯通
-- 日志 MDC 自动注入 traceId，便于 ELK 检索
-
-### 4.6.2 TraceId 生成与传递
-
-```mermaid
-sequenceDiagram
-    participant Client as 客户端/接入层
-    participant Gateway as API Gateway
-    participant SM as 状态机引擎
-    participant AW as Action Worker
-    participant Ext as 外部系统
-
-    Client->>Gateway: 请求（携带或不携带 traceId）
-    Gateway->>Gateway: 若无 traceId 则生成（UUID v4）
-    Gateway->>SM: SESSION_STARTED（traceId, market）
-    Note over SM: traceId 绑定到 ConversationContext<br/>写入 MDC
-    SM->>SM: 状态迁移（记录 trace 日志）
-    SM->>AW: 下发 Action（携带 traceId）
-    AW->>Ext: 调用外部系统（traceId 透传）
-    Ext-->>AW: 响应
-    AW-->>SM: Action 结果 Fact（携带 traceId）
-    SM->>SM: 继续状态迁移
-    Note over SM: Conversation 结束时 traceId 归档
-```
-
-### 4.6.3 TraceContext 数据模型
-
-```java
-public record TraceContext(
-    String traceId,           // 全链路追踪 ID（UUID v4）
-    String conversationId,    // 会话 ID
-    String market,            // 市场标识
-    String spanId,            // 当前操作跨度 ID（每次状态迁移生成新 span）
-    String parentSpanId,      // 父 span ID
-    long startTime,           // 当前操作开始时间（epoch millis）
-    Map<String, String> tags  // 自定义标签（如 eventType, fromState, toState）
-) {}
-```
-
-### 4.6.4 状态机执行的 Trace 记录
-
-每次 `fireEvent` 调用都生成一个 span，记录以下信息：
-
-| 字段 | 说明 |
-|------|------|
-| `traceId` | 全链路追踪 ID |
-| `spanId` | 当前状态迁移的 span ID |
-| `parentSpanId` | 触发本次迁移的上游 span ID |
-| `conversationId` | 会话 ID |
-| `market` | 市场标识 |
-| `eventType` | 触发的 Fact 类型 |
-| `fromState` | 迁移前状态 |
-| `toState` | 迁移后状态 |
-| `guardResult` | 守卫条件结果（PASS/FAIL/SKIP） |
-| `actionsExecuted` | 执行的 Action 列表 |
-| `durationMs` | 本次迁移耗时 |
-| `success` | 是否成功 |
-| `errorMessage` | 失败时的错误信息 |
-
-### 4.6.5 日志 MDC 集成
-
-```java
-public class StateMachineTraceInterceptor {
-
-    public <S, E, C> S fireEventWithTrace(
-            StateMachine<S, E, C> machine,
-            S sourceState, E event, C context,
-            TraceContext trace) {
-
-        // 写入 MDC，所有后续日志自动携带
-        MDC.put("traceId", trace.traceId());
-        MDC.put("spanId", trace.spanId());
-        MDC.put("conversationId", trace.conversationId());
-        MDC.put("market", trace.market());
-        MDC.put("eventType", event.toString());
-        MDC.put("fromState", sourceState.toString());
-
-        try {
-            S targetState = machine.fireEvent(sourceState, event, context);
-            MDC.put("toState", targetState.toString());
-            log.info("State transition completed: {} -> {} on {}",
-                    sourceState, targetState, event);
-            return targetState;
-        } catch (Exception e) {
-            MDC.put("error", e.getMessage());
-            log.error("State transition failed: {} on {}", sourceState, event, e);
-            throw e;
-        } finally {
-            // 清理 MDC，避免线程复用时的 traceId 泄漏
-            MDC.clear();
-        }
-    }
-}
-```
-
-### 4.6.6 Action 执行的 Trace 透传
-
-- Action Worker 从队列消费 Action 时，提取 traceId 并写入 MDC
-- Action 执行过程中调用外部系统时，通过 HTTP Header（`X-Trace-Id`）或消息属性透传 traceId
-- Action 执行完成后产出的 Fact 必须携带原始 traceId
-- Action 执行失败重试时，保持同一 traceId，增加 `retryCount` 标签
-
-### 4.6.7 Trace 数据的存储与查询
-
-- **实时日志**：通过 ELK/Loki 按 traceId 检索完整执行链路
-- **审计存储**：关键状态迁移（如 ENDING 进入、CLOSED 收敛）持久化到审计表
-- **采样策略**：正常流量按比例采样（如 10%），异常流量全量记录
-- **保留周期**：trace 日志保留 30 天，审计记录保留 1 年
 
 ---
 
@@ -641,33 +407,25 @@ flowchart TD
 
 ## 9. Monitor / Timer（确保理想规则可落地）
 
-> 所有超时阈值均从 `ConversationContext.getMarketConfig()` 获取，支持 market 级别差异化配置。
-
 ### 9.1 CustomerIdleMonitor
 
 - 覆盖状态: `INITIATED / ACTIVE / IN_PROGRESS / TRANSFERRED`
-- 超时阈值: `marketConfig.customerIdleSeconds()`（默认 300s，可按 market 配置）
 - 条件:
   - 有 inbound: `now - lastInboundAt > customerIdleSeconds`
   - 无 inbound: `now - activeAt > customerIdleSeconds`（若尚未 ACTIVE，可用 sessionStartedAt）
 - 触发 Fact: `CUSTOMER_IDLE_TIMEOUT`
-- Trace: 触发时记录 `idleDuration`, `idleStartAt`, `marketConfigVersion`
 
-### 9.2 TransferMonitor（TRANSFERRED 超时）
+### 9.2 TransferMonitor（TRANSFERRED 180s）
 
 - 状态: TRANSFERRED
-- 超时阈值: `marketConfig.transferDeadlineSeconds()`（默认 180s，可按 market 配置）
 - 条件: `now >= transferDeadlineAt` 且仍 `transferInFlight=true`
 - 触发 Fact: `TRANSFER_TIMEOUT`（Conversation 直接回 INITIATED）
-- 注意: 若 `marketConfig.transferEnabled() == false`，则不进入 TRANSFERRED 状态
 
-### 9.3 EndingMonitor（ENDING 超时）
+### 9.3 EndingMonitor（ENDING 120s）
 
 - 状态: ENDING
-- 超时阈值: `marketConfig.endingDeadlineSeconds()`（默认 120s，可按 market 配置）
 - 条件: `now >= endingDeadlineAt`
 - 触发 Fact: `ENDING_TIMEOUT`（强制 CLOSED）
-- Trace: 强制关闭时记录 `endingDuration`, `pendingActions`, `interactionsClosed`
 
 ---
 
@@ -678,34 +436,7 @@ flowchart TD
 - **Conversation Engine**: 消费 Facts → 更新状态/字段 → 写 Actions → ACK
 - **Action Worker**: 执行 Actions（重试/熔断/幂等），并在必要时产出 Facts（如 ENDING_ACTIONS_COMPLETED）
 
-### 10.2 Action 数据模型（含 TraceId）
-
-```java
-public record StateMachineAction(
-    String actionId,           // Action 唯一标识（UUID）
-    String actionType,         // Action 类型（如 NOTIFY, CLOSE_INTERACTIONS, SEND_SURVEY）
-    String conversationId,     // 会话 ID
-    String market,             // 市场标识
-    String traceId,            // 全链路追踪 ID（从触发事件透传）
-    String parentSpanId,       // 触发此 Action 的状态迁移 span ID
-    Map<String, Object> payload, // Action 执行参数
-    long createdAt,            // 创建时间
-    int maxRetries,            // 最大重试次数
-    int retryCount             // 当前重试次数
-) {}
-```
-
-### 10.3 Action 执行的 Trace 透传
-
-1. **Engine 下发 Action**：从当前 TraceContext 提取 traceId，写入 Action 记录
-2. **Worker 消费 Action**：从 Action 记录提取 traceId，写入 MDC
-3. **Worker 执行 Action**：
-   - 调用外部系统时，通过 HTTP Header `X-Trace-Id` 或消息属性透传 traceId
-   - 执行日志自动携带 traceId（MDC）
-4. **Worker 产出 Fact**：Action 执行结果 Fact 必须携带原始 traceId
-5. **重试保持 traceId**：Action 重试时保持同一 traceId，增加 `retryCount` 标签
-
-### 10.4 ENDING 必选 Actions（强制）
+### 10.2 ENDING 必选 Actions（强制）
 
 - **Notify**（必选）
 - **CloseInteractions**（必选；可延迟）
@@ -738,64 +469,12 @@ public record StateMachineAction(
 
 ENDING 内 `SURVEY_TIMEOUT`: `surveyStatus=TIMEOUT` 且 `endReason=CUSTOMER_IDLE`
 
-### 11.7 Multi-Market 差异化配置验证
-
-**场景**: CN market 配置 customerIdle=180s，US market 配置 customerIdle=300s
-
-```
-CN Conversation: NEW→INITIATED→ACTIVE→(180s 无消息)→CUSTOMER_IDLE_TIMEOUT→ENDING→CLOSED
-US Conversation: NEW→INITIATED→ACTIVE→(180s 无消息，未超时)→(300s 无消息)→CUSTOMER_IDLE_TIMEOUT→ENDING→CLOSED
-```
-
-验证点：
-- 两个 market 的 Conversation 使用同一套状态机代码
-- 超时时间由各自的 marketConfig 决定
-- 配置热更新后，新创建的 Conversation 使用新配置
-
-### 11.8 TraceId 全链路追踪验证
-
-**场景**: 从用户发送消息到 Conversation 关闭，验证 traceId 贯穿全链路
-
-```
-用户请求(traceId=abc-123)
-  → SESSION_STARTED Fact(traceId=abc-123)
-    → Conversation Engine 状态迁移(spanId=span-001, traceId=abc-123)
-      → Action: SendWelcomeMessage(traceId=abc-123)
-        → 外部消息系统调用(Header X-Trace-Id=abc-123)
-  → INBOUND_MESSAGE_RECEIVED Fact(traceId=abc-123)
-    → 状态迁移(spanId=span-002, parentSpanId=span-001)
-  → ...
-  → ENDING_STARTED Fact(traceId=abc-123)
-    → Action: Notify(traceId=abc-123)
-    → Action: CloseInteractions(traceId=abc-123)
-  → CLOSED (traceId=abc-123 归档)
-```
-
-验证点：
-- 所有日志可通过 `traceId=abc-123` 检索完整链路
-- 每次状态迁移有独立 spanId，且 parentSpanId 正确关联
-- Action 执行和外部调用都携带同一 traceId
-- Conversation 关闭后 traceId 可用于审计查询
-
 ---
 
-## 附录：版本变更记录
+## 附录：关键设计决策总结（version4 vs version3 变更）
 
-### version5 vs version4 变更
-
-| 决策点 | version4 | version5 | 变更理由 |
-|--------|----------|----------|----------|
-| Multi-Market 支持 | 无 | 新增 Market 配置管理，支持 market 级别差异化配置 | 项目部署到多个 market，需差异化超时时间、功能开关、转接策略 |
-| TraceId 追踪 | 无 | 新增全链路 TraceId，贯穿事件、状态迁移、Action、外部调用 | 可追溯、可审计、分布式追踪、问题排查 |
-| Conversation 字段 | 无标识字段 | 新增 conversationId、market、traceId、tenantId | 支持多 market 和追踪 |
-| Monitor 超时配置 | 硬编码默认值 | 从 marketConfig 动态获取，支持热更新 | 不同 market 需不同超时阈值 |
-| Action 数据模型 | 无 traceId | 新增 traceId、parentSpanId、market 字段 | Action 执行需透传追踪信息 |
-| 配置热更新 | 无 | 支持配置中心推送、缓存失效、灰度发布、版本回滚 | 运行时动态调整配置无需重启 |
-
-### version4 vs version3 变更
-
-| 决策点 | version3 | version4 | 变更理由 |
-|--------|----------|----------|----------|
+| 决策点 | version3 | version4（最终稿） | 变更理由 |
+|--------|----------|-------------------|----------|
 | Transfer 失败处理 | 执行 RollbackToSourceCmd，回 ACTIVE | 直接回 INITIATED（重新分配/兜底） | 简化流程，避免回滚复杂度 |
 | transferOutcome | NONE/CONNECTED/CONNECT_FAILED/ROLLBACK_OK/ROLLBACK_FAILED/TIMEOUT | NONE/CONNECTED/FAILED/TIMEOUT | 移除回滚相关状态 |
 | endReason | CUSTOMER_ENDED/AGENT_ENDED/BOT_ENDED/SYSTEM_ERROR/CUSTOMER_IDLE | CUSTOMER_IDLE/CUSTOMER_ENDED/AGENT_ENDED/BOT_ENDED/SYSTEM_ERROR | 统一 CUSTOMER_IDLE 为首选 |
@@ -804,4 +483,4 @@ US Conversation: NEW→INITIATED→ACTIVE→(180s 无消息，未超时)→(300s
 
 ---
 
-*AI Messaging Hub 状态机管理与事件驱动编排详细设计 — version5 — 2026-08-31*
+*AI Messaging Hub 状态机管理与事件驱动编排详细设计 — version4（简化版·整篇最终稿）— 2026-08-31*
