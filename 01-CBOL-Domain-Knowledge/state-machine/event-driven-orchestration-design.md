@@ -1,164 +1,167 @@
-# AI Messaging Hub: 状态机管理与事件驱动编排详细设计
+# AI Messaging Hub: 状态机管理与事件驱动编排详细设计（简化版·整篇最终稿）
 
-> 本文档定义 AI Messaging Hub 的核心状态机管理架构与事件驱动编排机制。系统采用双层状态机模型，通过标准事件语义、字段驱动编排、强治理规则和可观测审计，确保会话生命周期的可靠管理。
+> 本稿已按最新口径更新：**Transfer 失败后不执行 rollback，Conversation 直接回到 INITIATED**。
 >
-> **版本**: version3
+> **版本**: version4（最终稿）
 > **最后更新**: 2026-08-31
+
+---
+
+## 简化原则
+
+1. **Conversation 主状态仅保留**: `NEW / INITIATED / ACTIVE / IN_PROGRESS / TRANSFERRED / ENDING / CLOSED`
+2. **移除 END_CHAT / SURVEY 主状态**: Survey 改为 `surveyStatus` 字段在 ENDING 内等待
+3. **Interaction 保留 TRANSFERRED 状态**（跨渠道转接 source detach 标记），CONNECTED 即 ready
+4. **Customer Idle 理想逻辑**: 所有可等待客户输入的状态超时 → `ENDING`，`endReason=CUSTOMER_IDLE`；`SURVEY_TIMEOUT` endReason 也统一为 `CUSTOMER_IDLE`
+5. **TRANSFERRED 阶段 customer idle**: 进入 ENDING **但不取消转接**，刷新 ENDING deadline，等转接结果后再执行 CloseInteractions
+6. **TRANSFERRED 最大执行窗口默认 180 秒**: 一直无结果则触发 transfer timeout，并同样直接回 INITIATED
+7. **ENDING 不可逆**: 默认 120 秒强制收敛到 CLOSED；Action 失败/超时也必须最终关闭
+8. **ENDING 必选 Action**: Notify、CloseInteractions（允许 deferred）
 
 ---
 
 ## 1. Overview
 
-### 1.1 双层状态机模型
+本文档定义 AI Messaging Hub 的核心状态机管理架构与事件驱动编排机制。系统采用双层状态机模型：
 
-系统采用两层独立但协同的状态机：
-
-| 层级 | 名称 | 职责 |
-|------|------|------|
-| **通道/连接层** | Interaction | 连接建立、心跳、降级、重连、通道关闭；以及跨渠道转接时 source 的 detach 标记与回滚恢复 |
-| **业务会话层** | Conversation | 会话生命周期、跨渠道转接编排、Customer Idle 治理、统一 ending/close 收敛、Survey（作为字段） |
-
-```mermaid
-flowchart TB
-    subgraph Interaction["Interaction State Machine (通道/连接层)"]
-        I1[INITIATED] --> I2[CONNECTED]
-        I2 --> I3[IN_PROGRESS]
-        I3 --> I4[DEGRADED]
-        I4 --> I5[RECONNECTING]
-        I5 --> I2
-        I3 --> I6[TRANSFERRED]
-        I6 --> I3
-        I2 --> I7[CLOSED]
-        I3 --> I7
-    end
-
-    subgraph Conversation["Conversation State Machine (业务会话层)"]
-        C1[NEW] --> C2[INITIATED]
-        C2 --> C3[ACTIVE]
-        C3 --> C4[IN_PROGRESS]
-        C4 --> C5[TRANSFERRED]
-        C5 --> C3
-        C4 --> C6[ENDING]
-        C5 --> C6
-        C6 --> C7[CLOSED]
-    end
-
-    Interaction -.->|emit Facts| Conversation
-
-    style Interaction fill:#e3f2fd
-    style Conversation fill:#f3e5f5
-```
-
-### 1.2 设计目标（评审版）
-
-| 目标 | 说明 |
-|------|------|
-| **关注点分离** | Conversation 不承载过多"流程子状态"，保持主状态少且稳定；复杂流程用字段 + Facts + Actions 编排表达 |
-| **标准事件模型** | 事件分层为 Request / Command / Fact / Result；状态机只消费 Fact |
-| **可靠异步动作** | 统一用 Action（替代 Outbox 命名）解耦慢调用，Action 具备幂等键 |
-| **强治理** | Customer Idle、Transfer Deadline、ENDING 不可逆且最终必达 CLOSED |
-| **可观测可审计** | Conversation state + event log 为 source of truth |
-
-### 1.3 强治理规则
-
-- **Customer Idle**: 任何可等待输入的状态都能进入 ENDING（endReason=CUSTOMER_IDLE）
-- **Transfer Deadline**: TRANSFERRED 180s 强制失败并回滚
-- **ENDING 不可逆**: 且最终必达 CLOSED（默认 120s 强制收敛）
+- **Interaction（通道/连接层）**: 连接建立、心跳、降级、重连、关闭；以及跨渠道转接时的 source detach 标记（TRANSFERRED）。
+- **Conversation（业务会话层）**: 会话生命周期、跨渠道转接编排、Customer Idle 治理、ENDING/CLOSED 收敛、Survey（字段化）。
 
 ---
 
-## 2. 标准事件模型（Event Semantics）
+## 2. 标准事件模型（Request / Command / Fact / Result）
 
-事件分为四层，状态机只消费 Fact 层事件：
-
-| 层级 | 名称 | 定义 | 示例 |
-|------|------|------|------|
-| **Request** | 请求 | 用户/坐席/Bot 的请求（不保证成功） | `ESCALATE_REQUESTED` |
-| **Command** | 命令 | 编排器下发给执行器的指令（通过 Action Worker 执行） | `CONNECT_TARGET_INTERACTION_CMD` |
-| **Fact** | 事实 | 已发生且可审计的事实（Conversation/Interaction 状态机唯一输入） | `TARGET_INTERACTION_CONNECTED` |
-| **Result** | 结果 | Command 的执行结果，可事实化为 Fact | `CONNECT_TARGET_FAILED` |
-
-```mermaid
-flowchart LR
-    R[Request<br/>用户/坐席/Bot] --> C[Command<br/>编排器下发]
-    C --> W[Action Worker<br/>执行]
-    W --> Res[Result<br/>执行结果]
-    Res -->|事实化| F[Fact<br/>已发生事实]
-    F --> SM[State Machine<br/>唯一输入]
-
-    style F fill:#c8e6c9
-    style SM fill:#bbdefb
-```
+| 层级 | 名称 | 定义 |
+|------|------|------|
+| **Request** | 请求 | 用户/坐席/Bot 的请求（不保证成功） |
+| **Command** | 命令 | 编排器下发给执行器的指令（通过 Action 执行） |
+| **Fact** | 事实 | 已发生且可审计的事实（状态机唯一输入） |
+| **Result** | 结果 | Command 执行结果，可事实化为 Fact |
 
 ---
 
 ## 3. 状态模型（主状态 + 字段）
 
-### 3.1 ConversationState
+### 3.1 ConversationState（主状态）
 
 ```java
 public enum ConversationState {
     NEW,
     INITIATED,      // 会话已创建，等待 interaction ready（或下游分配）
-    ACTIVE,         // 当前绑定 interaction ready（对应 InteractionState=CONNECTED）
+    ACTIVE,         // 当前绑定 interaction ready（InteractionState=CONNECTED）
     IN_PROGRESS,    // 已收到客户入站消息（INBOUND），业务进行中
-    TRANSFERRED,    // CBOL 跨渠道转接阶段（in-flight，等待 target 结果或回滚）
+    TRANSFERRED,    // CBOL 跨渠道转接阶段（in-flight，等待 target 结果或超时）
     ENDING,         // 不可逆：关闭前收尾编排（保证最终 CLOSED）
     CLOSED          // 最终收敛态
 }
 ```
 
+#### 3.1.1 Conversation 状态机图（Mermaid）
+
 ```mermaid
 stateDiagram-v2
+    direction LR
+
     [*] --> NEW
+
     NEW --> INITIATED : SESSION_STARTED
     INITIATED --> ACTIVE : INTERACTION_BECAME_ACTIVE
     ACTIVE --> IN_PROGRESS : INBOUND_MESSAGE_RECEIVED
+
     IN_PROGRESS --> TRANSFERRED : SOURCE_INTERACTION_TRANSFERRED
-    TRANSFERRED --> ACTIVE : TARGET_INTERACTION_CONNECTED / ROLLBACK_TO_SOURCE_SUCCEEDED
-    TRANSFERRED --> INITIATED : ROLLBACK_TO_SOURCE_FAILED
-    INITIATED --> ENDING : ENDING_STARTED / CUSTOMER_IDLE_TIMEOUT / SYSTEM_ERROR
-    ACTIVE --> ENDING : ENDING_STARTED / CUSTOMER_IDLE_TIMEOUT / SYSTEM_ERROR
-    IN_PROGRESS --> ENDING : ENDING_STARTED / CUSTOMER_IDLE_TIMEOUT / SYSTEM_ERROR
-    TRANSFERRED --> ENDING : ENDING_STARTED / CUSTOMER_IDLE_TIMEOUT / SYSTEM_ERROR
-    ENDING --> CLOSED : ENDING_ACTIONS_COMPLETED + ALL_INTERACTIONS_ENDED / ENDING_TIMEOUT
-    CLOSED --> [*]
+    TRANSFERRED --> TRANSFERRED : TARGET_INTERACTION_INITIATED
+    TRANSFERRED --> ACTIVE : TARGET_INTERACTION_CONNECTED
+    TRANSFERRED --> INITIATED : TARGET_INTERACTION_CONNECT_FAILED
+    TRANSFERRED --> INITIATED : TRANSFER_TIMEOUT (>=180s)
+
+    %% Customer idle (ideal rule)
+    INITIATED --> ENDING : CUSTOMER_IDLE_TIMEOUT\nendReason=CUSTOMER_IDLE
+    ACTIVE --> ENDING : CUSTOMER_IDLE_TIMEOUT\nendReason=CUSTOMER_IDLE
+    IN_PROGRESS --> ENDING : CUSTOMER_IDLE_TIMEOUT\nendReason=CUSTOMER_IDLE
+    TRANSFERRED --> ENDING : CUSTOMER_IDLE_TIMEOUT\nendReason=CUSTOMER_IDLE\n(defer CloseInteractions,\nrefresh endingDeadlineAt)
+
+    %% Unified ending entry
+    INITIATED --> ENDING : ENDING_STARTED(endReason=*)
+    ACTIVE --> ENDING : ENDING_STARTED(endReason=*)
+    IN_PROGRESS --> ENDING : ENDING_STARTED(endReason=*)
+    TRANSFERRED --> ENDING : ENDING_STARTED(endReason=*)
+    NEW --> ENDING : SYSTEM_ERROR
+    INITIATED --> ENDING : SYSTEM_ERROR
+    ACTIVE --> ENDING : SYSTEM_ERROR
+    IN_PROGRESS --> ENDING : SYSTEM_ERROR
+    TRANSFERRED --> ENDING : SYSTEM_ERROR
+
+    %% ENDING convergence
+    ENDING --> CLOSED : (endingActionsDone && interactionsClosed)
+    ENDING --> CLOSED : ENDING_TIMEOUT (>=120s)
+
+    CLOSED --> CLOSED : any
 ```
 
-### 3.2 InteractionState
+### 3.2 InteractionState（保留 TRANSFERRED）
 
 ```java
 public enum InteractionState {
     INITIATED,
-    CONNECTED,       // ready to respond（不再需要 ACTIVE）
-    IN_PROGRESS,     // 已收到客户 INBOUND
+    CONNECTED,
+    IN_PROGRESS,
     DEGRADED,
     RECONNECTING,
-    CONSULT_TRANSFER, // GENESYS ONLY (manager consult in-progress)
-    TRANSFERRED,     // cross-channel source detached/completed marker
+    CONSULT_TRANSFER, // GENESYS ONLY
+    TRANSFERRED,      // cross-channel source detached marker
     CLOSED
 }
 ```
 
-### 3.3 Conversation 关键字段
+#### 3.2.1 Interaction 状态机图（Mermaid）
 
-这些字段必须持久化（Redis/DB）以保证恢复与对账。
+```mermaid
+stateDiagram-v2
+    direction LR
+
+    [*] --> INITIATED
+
+    INITIATED --> CONNECTED : CONNECTION_SUCCESS
+    INITIATED --> CLOSED : CONNECTION_FAIL
+
+    CONNECTED --> IN_PROGRESS : FIRST_INBOUND_MESSAGE_RECEIVED
+    CONNECTED --> DEGRADED : HEARTBEAT_MISS
+    IN_PROGRESS --> DEGRADED : HEARTBEAT_MISS
+
+    DEGRADED --> RECONNECTING : RECONNECT_ATTEMPT (restore)
+    RECONNECTING --> CONNECTED : RECONNECT_SUCCESS (restore)
+    RECONNECTING --> IN_PROGRESS : RECONNECT_SUCCESS (restore)
+    RECONNECTING --> CLOSED : RECONNECT_FAIL(max)
+
+    IN_PROGRESS --> CONSULT_TRANSFER : CONSULT_TRANSFER_STARTED\n(GENESYS only)
+    CONSULT_TRANSFER --> IN_PROGRESS : CONSULT_TRANSFER_ENDED\n(GENESYS only)
+
+    IN_PROGRESS --> TRANSFERRED : TRANSFER_SUCCESS\n(cross-channel detach marker)
+
+    CONNECTED --> CLOSED : END_REQUESTED
+    IN_PROGRESS --> CLOSED : END_REQUESTED
+    DEGRADED --> CLOSED : END_REQUESTED
+    RECONNECTING --> CLOSED : END_REQUESTED
+    TRANSFERRED --> CLOSED : END_REQUESTED
+```
+
+### 3.3 Conversation 关键字段（字段化复杂流程）
 
 #### 3.3.1 结束治理字段
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `endReason` | enum | 结束原因（见 3.3.5） |
-| `endingDeadlineAt` | timestamp | ENDING 强制收敛时间（默认 now+120s，可被刷新） |
+| `endReason` | enum | `CUSTOMER_IDLE / CUSTOMER_ENDED / AGENT_ENDED / BOT_ENDED / SYSTEM_ERROR` |
+| `endingDeadlineAt` | timestamp | ENDING 强制收敛时间（默认 now+120s，可刷新） |
 | `endingActionsDone` | bool | 收尾动作集合是否完成 |
 | `interactionsClosed` | bool | 是否已收到 ALL_INTERACTIONS_ENDED |
-| `closeInteractionsDeferred` | bool | 是否延迟 CloseInteractions |
+| `closeInteractionsDeferred` | bool | 在 TRANSFERRED idle 进入 ENDING 时使用 |
 
 #### 3.3.2 Customer Idle 字段
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `lastInboundAt` | timestamp | 最后一条客户入站消息时间（没有则为 null） |
+| `lastInboundAt` | timestamp | 最后一条客户入站消息时间 |
 | `activeAt` | timestamp | 进入 ACTIVE 的时间（无 inbound 时 idle 以此为起点） |
 
 #### 3.3.3 Transfer 字段
@@ -166,35 +169,21 @@ public enum InteractionState {
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `transferInFlight` | bool | 在 TRANSFERRED 为 true |
-| `transferDeadlineAt` | timestamp | TRANSFERRED 超时时间（now+180s） |
-| `transferOutcome` | enum | NONE / CONNECTED / CONNECT_FAILED / ROLLBACK_OK / ROLLBACK_FAILED / TIMEOUT |
+| `transferDeadlineAt` | timestamp | now+180s |
+| `transferOutcome` | enum | `NONE / CONNECTED / FAILED / TIMEOUT` |
 
-#### 3.3.4 Survey 字段
+#### 3.3.4 Survey 字段（不再是主状态）
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `surveyEligible` | bool | 进入 ENDING 时评估 |
-| `surveyStatus` | enum | NONE / SENT / SUBMITTED / TIMEOUT / SKIPPED |
-
-#### 3.3.5 EndReason
-
-```java
-public enum EndReason {
-    CUSTOMER_ENDED,
-    AGENT_ENDED,
-    BOT_ENDED,
-    SYSTEM_ERROR,
-    CUSTOMER_IDLE  // 统一 idle（包括 SURVEY_TIMEOUT）
-}
-```
+| `surveyEligible` | bool | 是否符合发 survey 条件 |
+| `surveyStatus` | enum | `NONE / SENT / SUBMITTED / TIMEOUT / SKIPPED` |
 
 ---
 
-## 4. Facts（状态机输入事件）最小集合
+## 4. Facts（状态机输入事件）
 
-为了降低复杂度，建议把"同义事件"在 Normalizer 层归一到以下集合。
-
-### 4.1 ConversationFactEvent（建议最终集合）
+> Normalizer 将外部事件归一为 Facts，Conversation/Interaction 状态机仅消费 Facts。
 
 ```java
 public enum ConversationFactEvent {
@@ -209,24 +198,22 @@ public enum ConversationFactEvent {
     // ending
     ENDING_STARTED,              // payload: endReason
     ENDING_ACTIONS_COMPLETED,
-    ENDING_TIMEOUT,
+    ENDING_TIMEOUT,              // force close at ending deadline
 
     // customer idle (ideal rule)
-    CUSTOMER_IDLE_TIMEOUT,       // -> ENDING(endReason=CUSTOMER_IDLE)
+    CUSTOMER_IDLE_TIMEOUT,
 
-    // survey (as field in ENDING)
+    // survey (field in ENDING)
     SURVEY_SUBMITTED,
-    SURVEY_TIMEOUT,
+    SURVEY_TIMEOUT,              // endReason=CUSTOMER_IDLE
     SURVEY_SKIPPED,
 
     // transfer (cross-channel)
     SOURCE_INTERACTION_TRANSFERRED,
     TARGET_INTERACTION_INITIATED,
     TARGET_INTERACTION_CONNECTED,
-    TARGET_INTERACTION_CONNECT_FAILED,
-    ROLLBACK_TO_SOURCE_SUCCEEDED,
-    ROLLBACK_TO_SOURCE_FAILED,
-    TRANSFER_TIMEOUT,            // 180s exceeded -> force rollback
+    TARGET_INTERACTION_CONNECT_FAILED, // no rollback; conversation returns INITIATED
+    TRANSFER_TIMEOUT,                 // no rollback; conversation returns INITIATED
 
     // genesys same-channel / consult (conversation no-op)
     GENESYS_CONSULT_TRANSFER_STARTED,
@@ -247,395 +234,253 @@ public enum ConversationFactEvent {
 
 ## 5. Conversation 状态迁移规则（权威表）
 
-> 目标：让迁移表"短且稳定"。除少数关键迁移外，其余用字段更新 + Action 编排实现。
-
 ### 5.1 基础生命周期
 
 | 当前状态 | Fact | 目标状态 | 备注（字段/Action） |
 |----------|------|----------|---------------------|
-| NEW | SESSION_STARTED | INITIATED | Action: InitiateDownstreamAssignment |
-| INITIATED | INTERACTION_BECAME_ACTIVE | ACTIVE | set activeAt=now; Action: SendWelcomeMessage |
-| ACTIVE | INBOUND_MESSAGE_RECEIVED | IN_PROGRESS | set lastInboundAt=now; Action: RecordFirstResponse |
-
-> **DOWNSTREAM_UNAVAILABLE**: 不改变状态（仍 INITIATED），只触发系统提醒（见 7.2）。
+| NEW | SESSION_STARTED | INITIATED | Action: `InitiateDownstreamAssignment` |
+| INITIATED | INTERACTION_BECAME_ACTIVE | ACTIVE | set `activeAt=now`; Action: `SendWelcomeMessage` |
+| ACTIVE | INBOUND_MESSAGE_RECEIVED | IN_PROGRESS | set `lastInboundAt=now`; Action: `RecordFirstResponse` |
+| INITIATED | DOWNSTREAM_UNAVAILABLE | INITIATED | Action: `NotifySystemUnavailable` |
 
 ### 5.2 跨渠道转接（TRANSFERRED，含 180s deadline）
 
+> 最新口径: transfer 失败/超时后**不执行 rollback**，Conversation 直接回 `INITIATED`（重新分配/兜底）。
+
 | 当前状态 | Fact | 目标状态 | 备注（字段/Action） |
 |----------|------|----------|---------------------|
-| IN_PROGRESS | SOURCE_INTERACTION_TRANSFERRED | TRANSFERRED | set transferInFlight=true; set transferDeadlineAt=now+transferDeadlineSeconds(默认180s) |
-| TRANSFERRED | TARGET_INTERACTION_INITIATED | TRANSFERRED | Action: ConnectTargetInteractionCmd |
-| TRANSFERRED | TARGET_INTERACTION_CONNECTED | ACTIVE | set transferInFlight=false; set transferOutcome=CONNECTED |
-| TRANSFERRED | TARGET_INTERACTION_CONNECT_FAILED | TRANSFERRED | Action: RollbackToSourceCmd |
-| TRANSFERRED | TRANSFER_TIMEOUT | TRANSFERRED | treat as connect_failed; Action: RollbackToSourceCmd |
-| TRANSFERRED | ROLLBACK_TO_SOURCE_SUCCEEDED | ACTIVE | set transferInFlight=false; set transferOutcome=ROLLBACK_OK |
-| TRANSFERRED | ROLLBACK_TO_SOURCE_FAILED | INITIATED | set transferInFlight=false; set transferOutcome=ROLLBACK_FAILED |
-
-> 说明：这套规则不引入额外 transfer 子状态，仅用 Facts + 字段表达。
-
-```mermaid
-stateDiagram-v2
-    IN_PROGRESS --> TRANSFERRED : SOURCE_INTERACTION_TRANSFERRED
-    TRANSFERRED --> TRANSFERRED : TARGET_INTERACTION_INITIATED<br/>(Action: ConnectTargetInteractionCmd)
-    TRANSFERRED --> ACTIVE : TARGET_INTERACTION_CONNECTED<br/>(transferOutcome=CONNECTED)
-    TRANSFERRED --> TRANSFERRED : TARGET_INTERACTION_CONNECT_FAILED<br/>(Action: RollbackToSourceCmd)
-    TRANSFERRED --> TRANSFERRED : TRANSFER_TIMEOUT<br/>(Action: RollbackToSourceCmd)
-    TRANSFERRED --> ACTIVE : ROLLBACK_TO_SOURCE_SUCCEEDED<br/>(transferOutcome=ROLLBACK_OK)
-    TRANSFERRED --> INITIATED : ROLLBACK_TO_SOURCE_FAILED<br/>(transferOutcome=ROLLBACK_FAILED)
-```
+| IN_PROGRESS | SOURCE_INTERACTION_TRANSFERRED | TRANSFERRED | set `transferInFlight=true`; set `transferDeadlineAt=now+transferDeadlineSeconds(默认180s)` |
+| TRANSFERRED | TARGET_INTERACTION_INITIATED | TRANSFERRED | Action: `ConnectTargetInteractionCmd` |
+| TRANSFERRED | TARGET_INTERACTION_CONNECTED | ACTIVE | set `transferInFlight=false`; set `transferOutcome=CONNECTED` |
+| TRANSFERRED | TARGET_INTERACTION_CONNECT_FAILED | INITIATED | set `transferInFlight=false`; set `transferOutcome=FAILED`; Action: `InitiateDownstreamAssignment` 或兜底 |
+| TRANSFERRED | TRANSFER_TIMEOUT | INITIATED | set `transferInFlight=false`; set `transferOutcome=TIMEOUT`; Action: `InitiateDownstreamAssignment` 或兜底 |
 
 ### 5.3 进入 ENDING（统一收敛入口）
 
-#### 5.3.1 统一 ending 入口
+| 当前状态 | Fact | 目标状态 | 备注 |
+|----------|------|----------|------|
+| INITIATED/ACTIVE/IN_PROGRESS/TRANSFERRED | ENDING_STARTED | ENDING | set endReason; 触发 ENDING actions |
+| ANY(except CLOSED) | SYSTEM_ERROR | ENDING | set endReason=SYSTEM_ERROR; 触发 ENDING actions |
+
+### 5.4 Customer Idle（理想规则：全覆盖进入 ENDING，reason=customer idle）
 
 | 当前状态 | Fact | 目标状态 | 备注 |
 |----------|------|----------|------|
-| INITIATED/ACTIVE/IN_PROGRESS/TRANSFERRED | ENDING_STARTED | ENDING | set endReason from payload; 触发 ENDING actions |
-
-#### 5.3.2 system error
-
-| 当前状态 | Fact | 目标状态 | 备注 |
-|----------|------|----------|------|
-| ANY (except CLOSED) | SYSTEM_ERROR | ENDING | set endReason=SYSTEM_ERROR; 触发 ENDING actions |
-
-### 5.4 Customer Idle（理想规则：全覆盖进入 ENDING）
-
-CUSTOMER_IDLE_TIMEOUT 由 CustomerIdleMonitor 触发（见第 8 章）。
-
-| 当前状态 | Fact | 目标状态 | 备注 |
-|----------|------|----------|------|
-| INITIATED | CUSTOMER_IDLE_TIMEOUT | ENDING | set endReason=CUSTOMER_IDLE; ENDING actions |
-| ACTIVE | CUSTOMER_IDLE_TIMEOUT | ENDING | set endReason=CUSTOMER_IDLE; ENDING actions |
-| IN_PROGRESS | CUSTOMER_IDLE_TIMEOUT | ENDING | set endReason=CUSTOMER_IDLE; ENDING actions |
+| INITIATED | CUSTOMER_IDLE_TIMEOUT | ENDING | endReason=CUSTOMER_IDLE; ENDING actions |
+| ACTIVE | CUSTOMER_IDLE_TIMEOUT | ENDING | endReason=CUSTOMER_IDLE; ENDING actions |
+| IN_PROGRESS | CUSTOMER_IDLE_TIMEOUT | ENDING | endReason=CUSTOMER_IDLE; ENDING actions |
 | TRANSFERRED | CUSTOMER_IDLE_TIMEOUT | ENDING | 特殊：不取消转接；刷新 endingDeadlineAt；延迟 CloseInteractions |
-| ENDING | CUSTOMER_IDLE_TIMEOUT | ENDING | no-op（可刷新 endReason=customer idle） |
+| ENDING | CUSTOMER_IDLE_TIMEOUT | ENDING | no-op（可确认 reason=customer idle） |
 
 ---
 
-## 6. ENDING 规则（不可逆 + 最终必达 CLOSED）
+## 6. Transfer Flow（含 180s timeout 与 TRANSFERRED idle→ENDING 特殊处理）
 
-### 6.1 ENDING 基本原则
+```mermaid
+flowchart TD
+    A[Conversation IN_PROGRESS\n(source interaction serving)] -->|Fact: SOURCE_INTERACTION_TRANSFERRED| B[Conversation TRANSFERRED\ntransferInFlight=true\nset transferDeadlineAt=now+180s]
 
-- **ENDING 不可逆**: 不会返回 INITIATED/ACTIVE/IN_PROGRESS/TRANSFERRED
-- **ENDING 必选 Action**: Notify、CloseInteractions
-- **即使 Action 失败/超时，也必须最终 CLOSED**
+    B -->|Fact: TARGET_INTERACTION_INITIATED| B
 
-### 6.2 ENDING 的收敛条件（两条件 + 超时强制）
+    B -->|Fact: TARGET_INTERACTION_CONNECTED| C[Conversation ACTIVE\ntransferInFlight=false\ntransferOutcome=CONNECTED]
 
-- `endingActionsDone=true`（Fact: ENDING_ACTIONS_COMPLETED）
-- `interactionsClosed=true`（Fact: ALL_INTERACTIONS_ENDED）
+    B -->|Fact: TARGET_INTERACTION_CONNECT_FAILED| D[Conversation INITIATED\ntransferInFlight=false\ntransferOutcome=FAILED\nAction: InitiateDownstreamAssignment or fallback]
+
+    B -->|TransferMonitor: >=180s| E[Fact: TRANSFER_TIMEOUT]
+    E --> D
+
+    %% Customer idle during transfer: enter ENDING but don't cancel transfer
+    B -->|Fact: CUSTOMER_IDLE_TIMEOUT| F[Conversation ENDING\nendReason=CUSTOMER_IDLE\nNotify now\nCloseInteractions deferred\nendingDeadlineAt=max(now+120s, transferDeadlineAt+120s)]
+
+    %% After entering ENDING, transfer result may still arrive; used to release deferred close
+    F -->|Fact: TARGET_INTERACTION_CONNECTED| G[Release defer\nAction: CloseInteractions]
+    F -->|Fact: TARGET_INTERACTION_CONNECT_FAILED| G
+    F -->|Fact: TRANSFER_TIMEOUT| G
+
+    G --> H[Wait ALL_INTERACTIONS_ENDED & ENDING_ACTIONS_COMPLETED\nor ENDING_TIMEOUT]
+```
+
+---
+
+## 7. ENDING（不可逆 + 必达 CLOSED + Survey 字段化）
+
+### 7.1 ENDING 不可逆
+
+- ENDING 不回退到任何业务态。
+- ENDING 内除"关闭相关 Facts"外，其余 Facts 仅做 no-op + audit（必要时更新字段）。
+
+### 7.2 ENDING 收敛规则（两条件 + 超时强制）
+
+- `endingActionsDone=true`（ENDING_ACTIONS_COMPLETED）
+- `interactionsClosed=true`（ALL_INTERACTIONS_ENDED）
 - 两者都 true → CLOSED
 - 或 ENDING_TIMEOUT → 强制 CLOSED
 
 | 当前状态 | Fact | 目标状态 | 备注 |
 |----------|------|----------|------|
-| ENDING | ENDING_ACTIONS_COMPLETED | ENDING/CLOSED | set endingActionsDone=true; if interactionsClosed=true then CLOSED |
-| ENDING | ALL_INTERACTIONS_ENDED | ENDING/CLOSED | set interactionsClosed=true; if endingActionsDone=true then CLOSED |
+| ENDING | ENDING_ACTIONS_COMPLETED | ENDING/CLOSED | set `endingActionsDone=true`; 若 `interactionsClosed=true` 则 CLOSED |
+| ENDING | ALL_INTERACTIONS_ENDED | ENDING/CLOSED | set `interactionsClosed=true`; 若 `endingActionsDone=true` 则 CLOSED |
 | ENDING | ENDING_TIMEOUT | CLOSED | 强制 close，记录告警原因 |
 
-```mermaid
-flowchart TB
-    A[进入 ENDING] --> B[set endReason<br/>触发 ENDING actions]
-    B --> C{endingActionsDone<br/>&&<br/>interactionsClosed?}
-    C -->|Yes| D[CLOSED]
-    C -->|No| E{ENDING_TIMEOUT?<br/>(now >= endingDeadlineAt)}
-    E -->|Yes| F[强制 CLOSED<br/>记录告警原因]
-    E -->|No| G[等待 Facts<br/>ENDING_ACTIONS_COMPLETED<br/>ALL_INTERACTIONS_ENDED]
-    G --> C
+### 7.3 TRANSFERRED idle → ENDING（不取消转接）处理
 
-    style D fill:#c8e6c9
-    style F fill:#ffcdd2
-```
+当 `TRANSFERRED + CUSTOMER_IDLE_TIMEOUT → ENDING` 时：
 
-### 6.3 TRANSFERRED→ENDING（customer idle）特殊要求落地（不取消转接）
-
-当 TRANSFERRED + CUSTOMER_IDLE_TIMEOUT → ENDING 时：
-
-进入 ENDING 时执行：
 - 立即 Action: Notify
-- set `closeInteractionsDeferred=true`（延迟 CloseInteractions，避免干扰转接）
+- set `closeInteractionsDeferred=true`
 - 刷新 `endingDeadlineAt`（方案 B）：
   - `endingDeadlineAt = max(now + endingDeadlineSeconds, transferDeadlineAt + endingDeadlineSeconds)`
-- 允许 ENDING 内处理转接 outcome Facts（不改状态，仅用于解除 defer）：
-  - TARGET_INTERACTION_CONNECTED / ROLLBACK_TO_SOURCE_SUCCEEDED / ROLLBACK_TO_SOURCE_FAILED / TRANSFER_TIMEOUT
+- ENDING 内允许消费 transfer 结果（CONNECTED/FAILED/TIMEOUT）仅用于解除 defer（不改变状态）：
+  - 解除 defer: `closeInteractionsDeferred=false`，触发 Action: CloseInteractions（若此前未执行）
 
-解除 defer 规则：
-- 收到任意转接 outcome 后：
-  - set `closeInteractionsDeferred=false`
-  - 触发 Action: CloseInteractions（若此前未执行）
+### 7.4 Survey 字段化（不再进入 SURVEY 状态）
 
-### 6.4 Survey 简化：作为 ENDING 内字段等待（不再用主状态）
+进入 ENDING 时若 `surveyEligible=true`：
+- Action: SendSurvey
+- `surveyStatus=SENT`
 
-- 进入 ENDING 时若 `surveyEligible=true`：
-  - Action: SendSurveyCommand
-  - set `surveyStatus=SENT`
-- 收到 survey facts：
-  - SURVEY_SUBMITTED → `surveyStatus=SUBMITTED`
-  - SURVEY_SKIPPED → `surveyStatus=SKIPPED`
-  - SURVEY_TIMEOUT → `surveyStatus=TIMEOUT` 且 set `endReason=CUSTOMER_IDLE`（统一口径）
+收到 survey facts：
+- SURVEY_SUBMITTED → `surveyStatus=SUBMITTED`
+- SURVEY_SKIPPED → `surveyStatus=SKIPPED`
+- SURVEY_TIMEOUT → `surveyStatus=TIMEOUT` 且 **endReason=CUSTOMER_IDLE**
 
-是否延迟 CloseInteractions 等 survey：由字段控制（可选）。
-若需要等 survey 完成再关连接：可将 `closeInteractionsDeferred = closeInteractionsDeferred || (surveyStatus==SENT)`，并在 SUBMITTED/TIMEOUT/SKIPPED 时解除。
-
----
-
-## 7. Interaction 状态迁移规则（权威表，含 TRANSFERRED 回滚）
-
-### 7.1 基础连接/消息/重连（CONNECTED 即 ready）
-
-| 当前状态 | 事件 | 目标状态 | 备注 |
-|----------|------|----------|------|
-| INITIATED | CONNECTION_SUCCESS | CONNECTED | emit Fact: INTERACTION_BECAME_ACTIVE |
-| INITIATED | CONNECTION_FAIL | CLOSED | 若为 target，emit Fact: TARGET_INTERACTION_CONNECT_FAILED |
-| CONNECTED | FIRST_INBOUND_MESSAGE_RECEIVED | IN_PROGRESS | emit Fact: INBOUND_MESSAGE_RECEIVED |
-| CONNECTED/IN_PROGRESS | HEARTBEAT_MISS | DEGRADED | emit Fact: CONNECTION_DEGRADED; 触发重连 |
-| DEGRADED | RECONNECT_ATTEMPT | RECONNECTING | backoff reconnect |
-| RECONNECTING | RECONNECT_SUCCESS | CONNECTED/IN_PROGRESS | emit Fact: RECONNECT_SUCCEEDED |
-| RECONNECTING | RECONNECT_FAIL | CLOSED | emit Fact: RECONNECT_FAILED |
-| ANY | END_REQUESTED | CLOSED | 若为最后一个 emit ALL_INTERACTIONS_ENDED |
-
-### 7.2 跨渠道转接：source 进入 TRANSFERRED 与回滚
-
-| 当前状态（source） | 事件/Fact | 目标状态 | 备注 |
-|-------------------|-----------|----------|------|
-| IN_PROGRESS | TRANSFER_SUCCESS | TRANSFERRED | source detach 完成 |
-| TRANSFERRED | ROLLBACK_TO_SOURCE_SUCCEEDED | IN_PROGRESS | 回滚成功回到 IN_PROGRESS |
-| TRANSFERRED | ROLLBACK_TO_SOURCE_FAILED | DEGRADED | 回滚失败进入 DEGRADED |
-
-### 7.3 Genesys consult transfer（Conversation 不变）
-
-- Genesys Interaction: IN_PROGRESS → CONSULT_TRANSFER → IN_PROGRESS
-- emit Facts: GENESYS_CONSULT_TRANSFER_STARTED/ENDED
-- Conversation: no-op
-
----
-
-## 8. Monitor / Timer（确保简化逻辑可实现）
-
-### 8.1 CustomerIdleMonitor（理想规则的唯一触发源）
-
-- **适用状态**: INITIATED / ACTIVE / IN_PROGRESS / TRANSFERRED / ENDING(可选)
-- **触发条件**:
-  - 若 `lastInboundAt != null`: `now - lastInboundAt > customerIdleSeconds`
-  - 否则: `now - activeAt > customerIdleSeconds`（activeAt 不存在可退化为 sessionStartedAt）
-- **输出 Fact**: `CUSTOMER_IDLE_TIMEOUT`
-
-### 8.2 TransferMonitor（TRANSFERRED 180s 超时强制回滚）
-
-- **适用状态**: TRANSFERRED
-- **触发条件**: `now >= transferDeadlineAt`
-- **输出 Fact**: `TRANSFER_TIMEOUT`（随后 Action: RollbackToSourceCmd）
-
-### 8.3 EndingMonitor（ENDING 120s 强制 close）
-
-- **适用状态**: ENDING
-- **触发条件**: `now >= endingDeadlineAt`
-- **输出 Fact**: `ENDING_TIMEOUT`（强制 CLOSED）
+### 7.5 ENDING Flow（Mermaid）
 
 ```mermaid
-flowchart LR
-    subgraph Monitors["Monitor/Timer Components"]
-        M1[CustomerIdleMonitor] -->|CUSTOMER_IDLE_TIMEOUT| SM[Conversation State Machine]
-        M2[TransferMonitor] -->|TRANSFER_TIMEOUT| SM
-        M3[EndingMonitor] -->|ENDING_TIMEOUT| SM
-    end
+flowchart TD
+    A[Any state except CLOSED] -->|Fact: ENDING_STARTED(endReason=*)| B[ENDING (irreversible)\nPersist endReason\nSet endingDeadlineAt=now+120s]
+    A -->|Fact: CUSTOMER_IDLE_TIMEOUT| B2[ENDING (irreversible)\nendReason=CUSTOMER_IDLE\nSet/refresh endingDeadlineAt]
+    A -->|Fact: SYSTEM_ERROR| B3[ENDING (irreversible)\nendReason=SYSTEM_ERROR]
 
-    M1 -.->|check lastInboundAt / activeAt| DB[(Conversation Fields)]
-    M2 -.->|check transferDeadlineAt| DB
-    M3 -.->|check endingDeadlineAt| DB
+    %% On entry actions
+    B --> C[Action: Notify (mandatory)]
+    B2 --> C
+    B3 --> C
+    B --> D{closeInteractionsDeferred?}
+    B2 --> D
+    B3 --> D
+    D -->|no| E[Action: CloseInteractions (mandatory)]
+    D -->|yes| F[Defer CloseInteractions\nuntil transfer outcome or survey resolved\nor ENDING_TIMEOUT]
 
-    style Monitors fill:#fff9c4
+    %% Survey as field (no SURVEY state)
+    C --> S{surveyEligible?}
+    S -->|yes| S1[Action: SendSurveyCommand\nsurveyStatus=SENT]
+    S -->|no| S2[surveyStatus=NONE]
+
+    S1 -->|Fact: SURVEY_SUBMITTED| S3[surveyStatus=SUBMITTED]
+    S1 -->|Fact: SURVEY_SKIPPED| S4[surveyStatus=SKIPPED]
+    S1 -->|Fact: SURVEY_TIMEOUT| S5[surveyStatus=TIMEOUT\nendReason=CUSTOMER_IDLE]
+
+    %% Convergence signals
+    E --> X{Got ALL_INTERACTIONS_ENDED?}
+    F --> X
+    S2 --> X
+    S3 --> X
+    S4 --> X
+    S5 --> X
+
+    X -->|Fact: ALL_INTERACTIONS_ENDED| Y[interactionsClosed=true]
+    X -->|Fact: ENDING_ACTIONS_COMPLETED| Z[endingActionsDone=true]
+
+    Y --> W{endingActionsDone?}
+    Z --> W
+    W -->|yes| CLOSED[CLOSED]
+    W -->|no| WAIT[ENDING waiting]
+
+    WAIT -->|EndingMonitor: >= endingDeadlineAt| TIMEOUT[Fact: ENDING_TIMEOUT]
+    TIMEOUT --> CLOSED
 ```
 
 ---
 
-## 9. Action 机制
+## 8. Interaction 状态机规则（简化版）
 
-### 9.1 组件划分
+### 8.1 基础连接/消息/重连
 
-| 组件 | 职责 |
-|------|------|
-| **Conversation Engine** | 消费 Facts → 更新状态/字段 → 写入 Actions → ACK SQS |
-| **Action Worker** | 消费 Actions → 调用下游系统（可重试/熔断/并行）→ 产出必要的 Result/Facts |
+- INITIATED → CONNECTED → IN_PROGRESS（由 inbound 推进）
+- DEGRADED/RECONNECTING 用于弹性恢复
+- CLOSED 为终态
 
-```mermaid
-flowchart LR
-    F[Fact] --> CE[Conversation Engine]
-    CE -->|update state/fields| DB[(Conversation)]
-    CE -->|write event log| EL[(Event Log)]
-    CE -->|write Actions| AQ[(Action Queue SQS)]
-    CE -->|ACK| SQS[SQS]
-    AQ --> AW[Action Worker]
-    AW -->|call downstream| DS[Downstream Systems]
-    AW -->|emit Result/Facts| F
-
-    style CE fill:#bbdefb
-    style AW fill:#c8e6c9
-```
-
-### 9.2 Action 记录字段建议
-
-| 字段 | 说明 |
-|------|------|
-| `actionId` | 唯一标识 |
-| `conversationId` | 关联会话 |
-| `triggerEventId` | 触发的事件 ID |
-| `actionType` | 动作类型 |
-| `actionIdempotencyKey` | `= conversationId + ":" + triggerEventId + ":" + actionType` |
-| `payload` | 动作参数 |
-| `status` | PENDING / RUNNING / SUCCEEDED / FAILED |
-| `retryCount` / `nextRetryAt` | 重试信息 |
-
-### 9.3 ENDING 必选 Actions（强制）
-
-- **Notify**（必选，进入 ENDING 立即写入）
-- **CloseInteractions**（必选）
-  - 若 `closeInteractionsDeferred=false`: 立即写入
-  - 若 `closeInteractionsDeferred=true`: 待 transfer outcome / survey 完成后写入；否则 ENDING_TIMEOUT 时 best-effort 执行并强制 CLOSED
-
-### 9.4 典型 Actions（示例）
-
-- InitiateDownstreamAssignment
-- SendWelcomeMessage
-- RecordFirstResponse
-- NotifySystemUnavailable（仅系统提醒场景）
-- ConnectTargetInteractionCmd
-- RollbackToSourceCmd
-- SendSurveyCommand
-- Notify
-- CloseInteractions
-- ArchiveConversation（可选：以 CLOSED 作为最终触发点执行）
+> 因最新口径 transfer 失败不回滚，Interaction 不要求从 TRANSFERRED 回 IN_PROGRESS；TRANSFERRED 资源回收由 CloseInteractions 或通道侧策略关闭并回收。
 
 ---
 
-## 10. 事件处理流水线与分布式一致性（保持简洁）
+## 9. Monitor / Timer（确保理想规则可落地）
 
-### 10.1 SQS FIFO 语义
+### 9.1 CustomerIdleMonitor
 
-- `MessageGroupId = conversationId`: 组内有序
-- 投递语义: at-least-once（可能重复）
-- 必须实现:
-  - 事件幂等: `eventId`
-  - Action 幂等: `actionIdempotencyKey`
+- 覆盖状态: `INITIATED / ACTIVE / IN_PROGRESS / TRANSFERRED`
+- 条件:
+  - 有 inbound: `now - lastInboundAt > customerIdleSeconds`
+  - 无 inbound: `now - activeAt > customerIdleSeconds`（若尚未 ACTIVE，可用 sessionStartedAt）
+- 触发 Fact: `CUSTOMER_IDLE_TIMEOUT`
 
-### 10.2 消费流程（ACK 不等待 Action 执行）
+### 9.2 TransferMonitor（TRANSFERRED 180s）
 
-1. Idempotency check（eventId）
-2. Schema/configVersion 校验
-3. Normalization（映射为 Facts）
-4. 状态/字段更新 + event log 落库
-5. 写入 Actions
-6. ACK SQS
-7. Action Worker 异步执行
+- 状态: TRANSFERRED
+- 条件: `now >= transferDeadlineAt` 且仍 `transferInFlight=true`
+- 触发 Fact: `TRANSFER_TIMEOUT`（Conversation 直接回 INITIATED）
 
-```mermaid
-sequenceDiagram
-    participant SQS as SQS FIFO
-    participant Engine as Conversation Engine
-    participant DB as DB/Redis
-    participant ActionQ as Action Queue
-    participant Worker as Action Worker
+### 9.3 EndingMonitor（ENDING 120s）
 
-    SQS->>Engine: receive event (MessageGroupId=conversationId)
-    Engine->>Engine: 1. idempotency check (eventId)
-    Engine->>Engine: 2. schema/configVersion check
-    Engine->>Engine: 3. normalization → Facts
-    Engine->>DB: 4. update state/fields + event log
-    Engine->>ActionQ: 5. write Actions
-    Engine->>SQS: 6. ACK
-    Note over Engine,Worker: ACK does NOT wait for Action execution
-    ActionQ->>Worker: 7. async execute Actions
-    Worker->>Worker: call downstream (retry/circuit-breaker)
-    Worker->>SQS: emit Result/Facts (if needed)
-```
+- 状态: ENDING
+- 条件: `now >= endingDeadlineAt`
+- 触发 Fact: `ENDING_TIMEOUT`（强制 CLOSED）
 
 ---
 
-## 11. 场景对齐验证（覆盖所有已提出场景）
+## 10. Action 机制（ACK 不等待执行）
 
-下列场景均以"简化后主状态"验证，不再依赖 END_CHAT/SURVEY 主状态。
+### 10.1 组件
 
-### 11.1 用户进入后不说话直到超时（endReason=CUSTOMER_IDLE）
+- **Conversation Engine**: 消费 Facts → 更新状态/字段 → 写 Actions → ACK
+- **Action Worker**: 执行 Actions（重试/熔断/幂等），并在必要时产出 Facts（如 ENDING_ACTIONS_COMPLETED）
 
-- **Conversation**: NEW → INITIATED → ACTIVE → CUSTOMER_IDLE_TIMEOUT → ENDING(endReason=CUSTOMER_IDLE) → CLOSED
-- **Interaction**: INITIATED → CONNECTED → (CloseInteractions) → CLOSED
+### 10.2 ENDING 必选 Actions（强制）
 
-### 11.2 用户在 Bot → 转接 Agent 失败 → 回退 Bot（rollback success）
-
-- **Conversation**: IN_PROGRESS → SOURCE_INTERACTION_TRANSFERRED → TRANSFERRED → TARGET_CONNECT_FAILED → (rollback) → ACTIVE → IN_PROGRESS
-- **Interaction(Bot source)**: IN_PROGRESS → TRANSFERRED → ROLLBACK_TO_SOURCE_SUCCEEDED → IN_PROGRESS
-
-### 11.3 VIP 直进 Agent → 转 Bot 执行业务 → 再转回 Agent
-
-- **Phase1**: NEW→INITIATED→ACTIVE→IN_PROGRESS（VIP routing 直接选 Agent）
-- **Phase2**: IN_PROGRESS→TRANSFERRED→ACTIVE→IN_PROGRESS（Agent→Bot）
-- **Phase3**: IN_PROGRESS→TRANSFERRED→ACTIVE→IN_PROGRESS（Bot→Agent）
-- **结束**: 进入 ENDING→CLOSED
-
-### 11.4 CBOL NEW 成功，但 agent/bot 全 down，只能 CBOL 系统提醒
-
-- **Conversation**: NEW→INITIATED，收到 DOWNSTREAM_UNAVAILABLE 仍 INITIATED
-- **Action**: NotifySystemUnavailable（系统提醒）
-- 若客户 idle: CUSTOMER_IDLE_TIMEOUT→ENDING(endReason=CUSTOMER_IDLE)→CLOSED
-
-### 11.5 Genesys consult transfer（manager），Conversation 不变
-
-- **Conversation**: 保持 IN_PROGRESS
-- **Interaction**: IN_PROGRESS → CONSULT_TRANSFER → IN_PROGRESS
-- **Facts**: 仅审计/指标
-
-### 11.6 Genesys transfer back to queue / agent-to-agent（同渠道），Conversation 不变
-
-- **Conversation**: 保持 IN_PROGRESS
-- **Facts**: GENESYS_AGENT_TRANSFER_* no-op
-
-### 11.7 Survey 不再是主状态：在 ENDING 内等待，timeout 统一 CUSTOMER_IDLE
-
-- 进入 ENDING 时发 survey（eligible）
-- SURVEY_TIMEOUT → surveyStatus=TIMEOUT 且 endReason=CUSTOMER_IDLE
-- 最终 ENDING→CLOSED（两条件或 timeout 强制）
-
-### 11.8 TRANSFERRED 阶段 customer idle：进入 ENDING 但不取消转接（刷新 deadline）
-
-- **Conversation**: TRANSFERRED + CUSTOMER_IDLE_TIMEOUT → ENDING(endReason=CUSTOMER_IDLE)
-- `closeInteractionsDeferred=true`，等待 transfer outcome 后执行 CloseInteractions
-- `endingDeadlineAt` 刷新: `max(now+120, transferDeadlineAt+120)`
-- 最终必达 CLOSED（ENDING_TIMEOUT 兜底）
-
-### 11.9 TRANSFERRED 180s 无结果：强制 transfer timeout 并回滚
-
-- **TransferMonitor**: TRANSFER_TIMEOUT
-- **Action**: RollbackToSourceCmd
-- 回滚成功: 回到 ACTIVE（若已在 ENDING，则不改状态，仅用于解除 defer）
-- 最终必达 CLOSED（如果已进入 ENDING）
+- **Notify**（必选）
+- **CloseInteractions**（必选；可延迟）
 
 ---
 
-## 12. 配置项（默认值建议）
+## 11. 场景对齐验证（按最新"失败不回滚"口径）
 
-| 配置项 | 默认值 | 说明 |
-|--------|--------|------|
-| `endingDeadlineSeconds` | 120 | ENDING 强制收敛时间（秒） |
-| `transferDeadlineSeconds` | 180 | TRANSFERRED 超时时间（秒） |
-| `customerIdleSeconds` | 按业务配置 | Customer Idle 超时时间（秒） |
-| `surveyEnabled` | — | 是否启用 Survey |
-| `sequenceBarrierEnabled` | false | 是否启用严格顺序屏障（如需严格顺序再开） |
+### 11.1 用户进入后不说话直到超时（CUSTOMER_IDLE）
+
+`NEW→INITIATED→ACTIVE→CUSTOMER_IDLE_TIMEOUT→ENDING(endReason=CUSTOMER_IDLE)→CLOSED`
+
+### 11.2 Bot → Agent 转接失败（不回滚，直接回 INITIATED）
+
+`IN_PROGRESS→SOURCE_INTERACTION_TRANSFERRED→TRANSFERRED→TARGET_INTERACTION_CONNECT_FAILED→INITIATED→...`（重新分配/兜底）
+
+### 11.3 TRANSFERRED 180s 超时（不回滚，回 INITIATED）
+
+`TRANSFERRED→TRANSFER_TIMEOUT→INITIATED→...`（重新分配/兜底）
+
+### 11.4 TRANSFERRED 阶段 customer idle：进入 ENDING 不取消转接
+
+`TRANSFERRED→CUSTOMER_IDLE_TIMEOUT→ENDING(defer CloseInteractions, refresh deadline)→(transfer result arrives or timeout)→CloseInteractions→CLOSED`
+
+### 11.5 CBOL new 成功但 agent/bot 全 down
+
+`NEW→INITIATED→DOWNSTREAM_UNAVAILABLE (stay)→NotifySystemUnavailable→CUSTOMER_IDLE_TIMEOUT→ENDING→CLOSED`
+
+### 11.6 Survey timeout endReason 统一 CUSTOMER_IDLE
+
+ENDING 内 `SURVEY_TIMEOUT`: `surveyStatus=TIMEOUT` 且 `endReason=CUSTOMER_IDLE`
 
 ---
 
-## 附录：关键设计决策总结
+## 附录：关键设计决策总结（version4 vs version3 变更）
 
-| 决策 | 选择 | 理由 |
-|------|------|------|
-| 主状态数量 | Conversation 7 个，Interaction 8 个 | 保持少且稳定，复杂流程用字段表达 |
-| 状态机输入 | 仅 Fact 层 | Request/Command/Result 不直接驱动状态机 |
-| 异步动作 | Action（替代 Outbox） | 统一命名，具备幂等键 |
-| Survey | ENDING 内字段，非主状态 | 避免主状态膨胀 |
-| Transfer | TRANSFERRED 主状态 + 字段 | 不引入额外 transfer 子状态 |
-| ENDING | 不可逆，必达 CLOSED | 强治理，两条件 + 超时强制 |
-| Customer Idle | 全覆盖进入 ENDING | 任何可等待输入状态都能 idle 结束 |
-| 分布式一致性 | SQS FIFO + 幂等 + ACK 不等 Action | at-least-once + 幂等保证最终一致 |
+| 决策点 | version3 | version4（最终稿） | 变更理由 |
+|--------|----------|-------------------|----------|
+| Transfer 失败处理 | 执行 RollbackToSourceCmd，回 ACTIVE | 直接回 INITIATED（重新分配/兜底） | 简化流程，避免回滚复杂度 |
+| transferOutcome | NONE/CONNECTED/CONNECT_FAILED/ROLLBACK_OK/ROLLBACK_FAILED/TIMEOUT | NONE/CONNECTED/FAILED/TIMEOUT | 移除回滚相关状态 |
+| endReason | CUSTOMER_ENDED/AGENT_ENDED/BOT_ENDED/SYSTEM_ERROR/CUSTOMER_IDLE | CUSTOMER_IDLE/CUSTOMER_ENDED/AGENT_ENDED/BOT_ENDED/SYSTEM_ERROR | 统一 CUSTOMER_IDLE 为首选 |
+| Interaction TRANSFERRED 回滚 | 回 IN_PROGRESS | 不要求回滚，由 CloseInteractions 或通道侧回收 | 与 Conversation 口径一致 |
+| ROLLBACK_TO_SOURCE_* Facts | 存在 | 移除（Conversation 不再消费） | 简化事件集合 |
 
 ---
 
-*AI Messaging Hub 状态机管理与事件驱动编排详细设计 — version3 — 2026-08-31*
+*AI Messaging Hub 状态机管理与事件驱动编排详细设计 — version4（简化版·整篇最终稿）— 2026-08-31*
