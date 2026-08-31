@@ -13,6 +13,7 @@ import org.slf4j.MDC;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -54,10 +55,51 @@ class ActionWorkerTraceTest {
         };
         worker.submit(action, ctx);
         assertTrue(latch.await(3, TimeUnit.SECONDS));
-        // 验证 ctx 正确传递到异步线程
         assertEquals(traceContext.traceId(), capturedFromCtx[0]);
-        // 验证 MDC traceId 已设置（slf4j-simple 环境下 MDC 应正常工作）
         assertNotNull(capturedFromMdc[0], "MDC traceId should not be null");
         assertEquals(traceContext.traceId(), capturedFromMdc[0]);
+    }
+
+    @Test
+    void testCustomThreadPoolConfig() throws InterruptedException {
+        ActionWorker customWorker = new ActionWorker(1, 2, 30, 100);
+        CountDownLatch latch = new CountDownLatch(1);
+        CbolAction action = cxt -> latch.countDown();
+        customWorker.submit(action, ctx);
+        assertTrue(latch.await(3, TimeUnit.SECONDS));
+        customWorker.shutdown();
+    }
+
+    @Test
+    void testActionExceptionIsCaught() throws InterruptedException {
+        CountDownLatch latch = new CountDownLatch(1);
+        CbolAction action = cxt -> {
+            try {
+                throw new RuntimeException("intentional test error");
+            } finally {
+                latch.countDown();
+            }
+        };
+        // Should not throw
+        worker.submit(action, ctx);
+        assertTrue(latch.await(3, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void testNullActionThrows() {
+        assertThrows(NullPointerException.class, () -> worker.submit(null, ctx));
+    }
+
+    @Test
+    void testNullContextThrows() {
+        CbolAction action = cxt -> {};
+        assertThrows(NullPointerException.class, () -> worker.submit(action, null));
+    }
+
+    @Test
+    void testShutdownTwiceIsSafe() {
+        worker.shutdown();
+        // Second shutdown should not throw
+        assertDoesNotThrow(() -> worker.shutdown());
     }
 }

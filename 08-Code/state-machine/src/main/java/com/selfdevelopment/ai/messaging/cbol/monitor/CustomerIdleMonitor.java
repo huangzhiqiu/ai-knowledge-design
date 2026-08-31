@@ -2,19 +2,39 @@ package com.selfdevelopment.ai.messaging.cbol.monitor;
 
 import com.selfdevelopment.ai.messaging.cbol.context.CbolStateContext;
 import com.selfdevelopment.ai.messaging.cbol.enums.ConversationFact;
+import com.selfdevelopment.ai.messaging.cbol.enums.ConversationState;
 import com.selfdevelopment.ai.messaging.cbol.statemachine.CbolStateMachineService;
-import lombok.RequiredArgsConstructor;
 
-@RequiredArgsConstructor
-public class CustomerIdleMonitor {
-    private final CbolStateMachineService cbolStateMachineService;
+import java.util.Set;
 
-    public void check(CbolStateContext ctx, long lastActivityTs) {
-        long idleSec = ctx.marketConfig().customerIdleSeconds();
-        long now = System.currentTimeMillis();
-        boolean hit = (now - lastActivityTs) >= idleSec * 1000;
-        if (hit) {
-            cbolStateMachineService.fire(ctx, ConversationFact.SYS_CUSTOMER_IDLE);
-        }
+/**
+ * Monitors customer idle time and fires SYS_CUSTOMER_IDLE when the threshold is exceeded.
+ * Applies to all non-terminal states (INITIATED, ACTIVE, TRANSFERRED).
+ */
+public class CustomerIdleMonitor extends AbstractTimeoutMonitor {
+
+    private static final Set<ConversationState> APPLICABLE_STATES = Set.of(
+            ConversationState.INITIATED,
+            ConversationState.ACTIVE,
+            ConversationState.TRANSFERRED
+    );
+
+    public CustomerIdleMonitor(CbolStateMachineService cbolStateMachineService) {
+        super(cbolStateMachineService);
+    }
+
+    @Override
+    protected boolean isApplicable(ConversationState state) {
+        return APPLICABLE_STATES.contains(state);
+    }
+
+    @Override
+    protected long timeoutSeconds(CbolStateContext ctx) {
+        return ctx.marketConfig().customerIdleSeconds();
+    }
+
+    @Override
+    protected ConversationFact timeoutEvent() {
+        return ConversationFact.SYS_CUSTOMER_IDLE;
     }
 }

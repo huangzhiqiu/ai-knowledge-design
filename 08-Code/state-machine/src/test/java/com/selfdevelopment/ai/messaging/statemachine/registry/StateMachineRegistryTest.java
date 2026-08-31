@@ -78,4 +78,20 @@ class StateMachineRegistryTest {
         assertEquals(TestState.B,
                 retrieved.fireEvent(TestState.A, TestEvent.GO, null).getTargetState());
     }
+
+    @Test
+    void shouldClearAllMachines() {
+        registry.register(machine);
+        assertEquals(1, registry.size());
+        registry.clear();
+        assertEquals(0, registry.size());
+        assertFalse(registry.contains("test-machine"));
+    }
+
+    @Test
+    void shouldClearEmptyRegistryWithoutError() {
+        assertEquals(0, registry.size());
+        assertDoesNotThrow(() -> registry.clear());
+        assertEquals(0, registry.size());
+    }
 }

@@ -12,6 +12,7 @@ import com.selfdevelopment.ai.messaging.statemachine.core.StateDef;
 import com.selfdevelopment.ai.messaging.statemachine.core.StateMachine;
 import com.selfdevelopment.ai.messaging.statemachine.core.Transition;
 import com.selfdevelopment.ai.messaging.statemachine.core.TransitionKind;
+import com.selfdevelopment.ai.messaging.statemachine.exception.StateMachineException;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -102,10 +103,10 @@ public final class StateMachineBuilder<S, E, C> {
         DefaultStateConfigurer<S, E, C> stateConfig = new DefaultStateConfigurer<>();
         DefaultTransitionConfigurer<S, E, C> transitionConfig = new DefaultTransitionConfigurer<>();
         try {
-            configurer.configure((StateConfigurer<S, E, C>) stateConfig);
-            configurer.configure((TransitionConfigurer<S, E, C>) transitionConfig);
+            configurer.configure(stateConfig);
+            configurer.configure(transitionConfig);
         } catch (Exception e) {
-            throw new RuntimeException("State machine configuration failed: " + e.getMessage(), e);
+            throw new StateMachineException("State machine configuration failed: " + e.getMessage(), e);
         }
 
         Map<S, StateDef<S, E, C>> states = stateConfig.getStates();

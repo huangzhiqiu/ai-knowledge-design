@@ -84,6 +84,14 @@ public final class StateMachineRegistry {
         return machines.size();
     }
 
+    /**
+     * Removes all registered state machines.
+     * Primarily intended for test isolation.
+     */
+    public void clear() {
+        machines.clear();
+    }
+
     private String extractId(StateMachine<?, ?, ?> machine) {
         // SimpleStateMachine exposes getMachineId(); for other implementations,
         // fall back to toString-based extraction or require explicit ID registration.

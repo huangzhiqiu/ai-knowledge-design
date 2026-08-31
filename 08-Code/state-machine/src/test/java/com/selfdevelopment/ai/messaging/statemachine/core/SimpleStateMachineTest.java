@@ -400,7 +400,7 @@ class SimpleStateMachineTest {
 
         StateMachineException ex = assertThrows(StateMachineException.class,
                 () -> machine.fireEvent(LightState.RED, LightEvent.TIMER, null));
-        assertTrue(ex.getMessage().contains("Action execution failed"));
+        assertTrue(ex.getMessage().contains("Transition action failed"));
         assertNotNull(ex.getCause());
         assertEquals("action failed", ex.getCause().getMessage());
     }
@@ -427,6 +427,60 @@ class SimpleStateMachineTest {
                 () -> machine.fireEvent(LightState.RED, LightEvent.TIMER, null));
         assertEquals(1, errors.size());
         assertTrue(errors.get(0).contains("boom"));
+    }
+
+    @Test
+    void shouldNotAbortTransitionWhenEntryActionFails() {
+        List<String> errors = new ArrayList<>();
+        StateMachine<LightState, LightEvent, Void> machine =
+                StateMachineBuilder.<LightState, LightEvent, Void>builder("entry-error-test")
+                    .stateWithEntry(LightState.GREEN, ctx -> { throw new RuntimeException("entry failed"); })
+                    .transition()
+                        .from(LightState.RED).on(LightEvent.TIMER).to(LightState.GREEN)
+                    .and()
+                    .build();
+
+        machine.addListener(new StateMachineListener<>() {
+            @Override
+            public void transitionError(StateContext<LightState, LightEvent, Void> ctx) {
+                errors.add("error:" + ctx.getException().getMessage());
+            }
+        });
+
+        // Entry action failure should NOT abort transition (best-effort)
+        StateContext<LightState, LightEvent, Void> result =
+                machine.fireEvent(LightState.RED, LightEvent.TIMER, null);
+        assertEquals(LightState.GREEN, result.getTargetState());
+        assertTrue(result.isTransitionAccepted());
+        assertEquals(1, errors.size());
+        assertTrue(errors.get(0).contains("entry failed"));
+    }
+
+    @Test
+    void shouldNotAbortTransitionWhenExitActionFails() {
+        List<String> errors = new ArrayList<>();
+        StateMachine<LightState, LightEvent, Void> machine =
+                StateMachineBuilder.<LightState, LightEvent, Void>builder("exit-error-test")
+                    .stateWithExit(LightState.RED, ctx -> { throw new RuntimeException("exit failed"); })
+                    .transition()
+                        .from(LightState.RED).on(LightEvent.TIMER).to(LightState.GREEN)
+                    .and()
+                    .build();
+
+        machine.addListener(new StateMachineListener<>() {
+            @Override
+            public void transitionError(StateContext<LightState, LightEvent, Void> ctx) {
+                errors.add("error:" + ctx.getException().getMessage());
+            }
+        });
+
+        // Exit action failure should NOT abort transition (best-effort)
+        StateContext<LightState, LightEvent, Void> result =
+                machine.fireEvent(LightState.RED, LightEvent.TIMER, null);
+        assertEquals(LightState.GREEN, result.getTargetState());
+        assertTrue(result.isTransitionAccepted());
+        assertEquals(1, errors.size());
+        assertTrue(errors.get(0).contains("exit failed"));
     }
 
     @Test

@@ -147,26 +147,20 @@ public final class SimpleStateMachine<S, E, C> implements StateMachine<S, E, C> 
                 continue;
             }
 
-            try {
-                // Execute exit action of source state (only for external transitions)
-                if (!t.isInternal()) {
+            // Execute exit action of source state (best-effort, failures do not block transition)
+            if (!t.isInternal()) {
+                executeSafely(() -> {
                     StateDef<S, E, C> sourceDef = stateDefs.get(sourceState);
                     if (sourceDef != null && sourceDef.hasExitAction()) {
                         sourceDef.exit(preCtx);
                     }
-                }
+                }, preCtx, "exit action of state " + sourceState);
+            }
 
-                // Execute transition action
+            // Execute transition action (failures propagate and abort transition)
+            try {
                 t.executeAction(preCtx);
-
-                // Execute entry action of target state (only for external transitions)
-                if (!t.isInternal()) {
-                    StateDef<S, E, C> targetDef = stateDefs.get(t.getTargetState());
-                    if (targetDef != null && targetDef.hasEntryAction()) {
-                        targetDef.enter(preCtx);
-                    }
-                }
-            } catch (Exception ex) {
+            } catch (RuntimeException ex) {
                 StateContext<S, E, C> errorCtx = StateContext.<S, E, C>builder()
                         .sourceState(sourceState)
                         .targetState(t.getTargetState())
@@ -177,7 +171,17 @@ public final class SimpleStateMachine<S, E, C> implements StateMachine<S, E, C> 
                         .transitionAccepted(false)
                         .build();
                 listeners.forEach(l -> l.transitionError(errorCtx));
-                throw new StateMachineException("Action execution failed: " + ex.getMessage(), ex);
+                throw new StateMachineException("Transition action failed: " + ex.getMessage(), ex);
+            }
+
+            // Execute entry action of target state (best-effort, failures do not block transition)
+            if (!t.isInternal()) {
+                executeSafely(() -> {
+                    StateDef<S, E, C> targetDef = stateDefs.get(t.getTargetState());
+                    if (targetDef != null && targetDef.hasEntryAction()) {
+                        targetDef.enter(preCtx);
+                    }
+                }, preCtx, "entry action of state " + t.getTargetState());
             }
 
             S targetState = t.isInternal() ? sourceState : t.getTargetState();
@@ -277,5 +281,26 @@ public final class SimpleStateMachine<S, E, C> implements StateMachine<S, E, C> 
     public String toString() {
         return "SimpleStateMachine{id='" + machineId + "', transitions=" + getTransitionCount()
                 + ", initial=" + initialState + ", ends=" + endStates + "}";
+    }
+
+    /**
+     * Executes a runnable safely, catching and logging any RuntimeException.
+     * Used for best-effort actions (entry/exit) that should not abort the transition.
+     */
+    private void executeSafely(Runnable action, StateContext<S, E, C> ctx, String description) {
+        try {
+            action.run();
+        } catch (RuntimeException ex) {
+            StateContext<S, E, C> errorCtx = StateContext.<S, E, C>builder()
+                    .sourceState(ctx.getSourceState())
+                    .targetState(ctx.getTargetState())
+                    .event(ctx.getEvent())
+                    .businessContext(ctx.getBusinessContext())
+                    .extendedState(ctx.getExtendedState())
+                    .exception(ex)
+                    .transitionAccepted(true)
+                    .build();
+            listeners.forEach(l -> l.transitionError(errorCtx));
+        }
     }
 }
