@@ -84,5 +84,15 @@ Mature open-source libraries exist (Spring StateMachine, COLA StateMachine), but
 </dependency>
 ```
 
+## Document Index
+
+| Document | Description |
+|----------|-------------|
+| [README.md](./README.md) | 自研轻量级状态机引擎设计（架构、原则、性能、安全合规） |
+| [architecture.md](./architecture.md) | 状态机架构设计 |
+| [api-design.md](./api-design.md) | 状态机 API 设计 |
+| [integration.md](./integration.md) | 状态机集成设计 |
+| [event-driven-orchestration-design.md](./event-driven-orchestration-design.md) | **AI Messaging Hub 状态机管理与事件驱动编排详细设计（version3）** — 双层状态机模型、标准事件语义、Conversation/Interaction 状态迁移权威表、ENDING 强治理、Monitor/Timer、Action 机制、分布式一致性、9 大场景验证 |
+
 ## Reference
 COLA StateMachine: https://github.com/alibaba/COLA (design inspiration only; no code or binaries imported)
