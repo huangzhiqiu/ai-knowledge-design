@@ -251,6 +251,13 @@ public final class SimpleStateMachine<S, E, C> implements StateMachine<S, E, C> 
     }
 
     @Override
+    public Collection<Transition<S, E, C>> getAllTransitions() {
+        return transitions.values().stream()
+                .flatMap(List::stream)
+                .toList();
+    }
+
+    @Override
     public String getMachineId() {
         return machineId;
     }

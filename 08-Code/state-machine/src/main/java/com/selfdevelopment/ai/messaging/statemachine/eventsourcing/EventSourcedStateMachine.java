@@ -3,6 +3,7 @@ package com.selfdevelopment.ai.messaging.statemachine.eventsourcing;
 import com.selfdevelopment.ai.messaging.statemachine.core.ExtendedState;
 import com.selfdevelopment.ai.messaging.statemachine.core.StateContext;
 import com.selfdevelopment.ai.messaging.statemachine.core.StateMachine;
+import com.selfdevelopment.ai.messaging.statemachine.core.Transition;
 import com.selfdevelopment.ai.messaging.statemachine.exception.StateMachineException;
 import com.selfdevelopment.ai.messaging.statemachine.listener.StateMachineListener;
 
@@ -140,6 +141,9 @@ public class EventSourcedStateMachine<S, E, C> implements StateMachine<S, E, C> 
 
     @Override
     public int getTransitionCount() { return delegate.getTransitionCount(); }
+
+    @Override
+    public Collection<Transition<S, E, C>> getAllTransitions() { return delegate.getAllTransitions(); }
 
     @Override
     public String getMachineId() { return delegate.getMachineId(); }

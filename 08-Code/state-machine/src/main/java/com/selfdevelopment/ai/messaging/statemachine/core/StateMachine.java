@@ -102,6 +102,14 @@ public interface StateMachine<S, E, C> {
     int getTransitionCount();
 
     /**
+     * Returns all transition rules in this state machine.
+     * Useful for diagram generation, validation, and introspection.
+     *
+     * @return an unmodifiable collection of all transitions
+     */
+    Collection<Transition<S, E, C>> getAllTransitions();
+
+    /**
      * Returns the machine identifier.
      *
      * @return the machine ID

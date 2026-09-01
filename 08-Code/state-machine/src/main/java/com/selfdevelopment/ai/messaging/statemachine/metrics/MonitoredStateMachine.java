@@ -3,6 +3,7 @@ package com.selfdevelopment.ai.messaging.statemachine.metrics;
 import com.selfdevelopment.ai.messaging.statemachine.core.ExtendedState;
 import com.selfdevelopment.ai.messaging.statemachine.core.StateContext;
 import com.selfdevelopment.ai.messaging.statemachine.core.StateMachine;
+import com.selfdevelopment.ai.messaging.statemachine.core.Transition;
 import com.selfdevelopment.ai.messaging.statemachine.exception.StateMachineException;
 import com.selfdevelopment.ai.messaging.statemachine.listener.StateMachineListener;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -133,6 +134,11 @@ public class MonitoredStateMachine<S, E, C> implements StateMachine<S, E, C> {
     @Override
     public int getTransitionCount() {
         return delegate.getTransitionCount();
+    }
+
+    @Override
+    public Collection<Transition<S, E, C>> getAllTransitions() {
+        return delegate.getAllTransitions();
     }
 
     @Override

@@ -2,6 +2,7 @@ package com.selfdevelopment.ai.messaging.statemachine.idempotency;
 
 import com.selfdevelopment.ai.messaging.statemachine.core.StateContext;
 import com.selfdevelopment.ai.messaging.statemachine.core.StateMachine;
+import com.selfdevelopment.ai.messaging.statemachine.core.Transition;
 import com.selfdevelopment.ai.messaging.statemachine.listener.StateMachineListener;
 
 import java.util.Collection;
@@ -147,6 +148,11 @@ public class IdempotentStateMachineDecorator<S, E, C> implements StateMachine<S,
     @Override
     public int getTransitionCount() {
         return delegate.getTransitionCount();
+    }
+
+    @Override
+    public Collection<Transition<S, E, C>> getAllTransitions() {
+        return delegate.getAllTransitions();
     }
 
     @Override

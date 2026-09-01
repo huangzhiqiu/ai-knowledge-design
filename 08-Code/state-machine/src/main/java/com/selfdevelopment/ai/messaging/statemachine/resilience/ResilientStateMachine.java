@@ -153,6 +153,9 @@ public class ResilientStateMachine<S, E, C> implements StateMachine<S, E, C> {
     public int getTransitionCount() { return delegate.getTransitionCount(); }
 
     @Override
+    public Collection<Transition<S, E, C>> getAllTransitions() { return delegate.getAllTransitions(); }
+
+    @Override
     public String getMachineId() { return delegate.getMachineId(); }
 
     @Override
