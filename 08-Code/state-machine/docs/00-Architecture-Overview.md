@@ -44,7 +44,7 @@ Transitions are stored in a `ConcurrentHashMap` keyed by `(sourceState, event)`,
 The core framework depends only on the JDK standard library. No Spring, no Apache Commons, no Guava. This makes it:
 
 - Easy to embed in any Java project
-- Lightweight (~15 classes)
+- Lightweight core (~15 core classes, 84 total with business layer and advanced features)
 - Free from dependency conflicts
 - Fast to start (no framework initialization)
 
@@ -71,6 +71,14 @@ public class ConversationConfig extends StateMachineConfigurerAdapter<Conversati
 
 ```mermaid
 graph TB
+    subgraph "Event Ingress Layer"
+        IN1[AibotEventNormalizer]
+        IN2[GenesysEventNormalizer]
+        IN3[CbolEventDispatcher]
+        IN1 --> IN3
+        IN2 --> IN3
+    end
+
     subgraph "CBOL Business Layer"
         A[CbolStateMachineService] --> B[ConversationStateMachineFactory]
         A --> C[ActionWorker]
@@ -80,15 +88,24 @@ graph TB
         G[MarketConfigProvider] --> A
         H[CbolStateContext] --> A
         I[TraceContext / TraceMdcHelper] --> A
+        REPO[ConversationRepository] --> A
+    end
+
+    subgraph "Connector Layer"
+        CN1[AibotConnector]
+        CN2[GenesysConnector]
+        CN3[CbolWebsocketConnector]
+        CN4[ChatHistoryOdsConnector]
     end
 
     subgraph "Decorator Layer (Advanced Features)"
         DA[TimeoutAwareStateMachine]
+        DF[FailoverStateMachine]
         DB[ResilientStateMachine]
         DC[EventSourcedStateMachine]
         DD[MonitoredStateMachine]
         DE[IdempotentStateMachineDecorator]
-        DA --> DB --> DC --> DD --> DE
+        DA --> DF --> DB --> DC --> DD --> DE
     end
 
     subgraph "State Machine Core Framework"
@@ -103,6 +120,12 @@ graph TB
         V[StateMachineValidator] --> J
     end
 
+    subgraph "Event-Driven Infrastructure"
+        EV1[StandardEvent]
+        EV2[EventNormalizer]
+        EV3[EventDispatcher]
+    end
+
     subgraph "Supporting Infrastructure"
         R1[StateRepository]
         R2[StateTransitionStore]
@@ -112,15 +135,24 @@ graph TB
     end
 
     subgraph "External Systems"
-        S1[Conversation Repository] --> A
-        S2[Redis / Cache] --> G
-        S3[SLF4J / MDC] --> I
-        S4[Prometheus / Grafana] --> R5
+        S1[AIBot API] --> CN1
+        S2[Genesys Cloud] --> CN2
+        S3[Customer WebSocket] --> CN3
+        S4[Chat History ODS] --> CN4
+        S5[MySQL / MongoDB] --> REPO
+        S6[SLF4J / MDC] --> I
+        S7[Prometheus / Grafana] --> R5
     end
 
+    IN3 --> A
     A --> DA
     DE --> K
+    A --> CN1
+    A --> CN2
+    A --> CN3
+    A --> CN4
     DA -.-> R3
+    DF -.-> failEventProvider
     DB -.-> R1
     DC -.-> R2
     DD -.-> R5
@@ -188,8 +220,8 @@ com.selfdevelopment.ai.messaging/
 │   │   ├── StateMachineTimeoutScheduler.java # Scheduler interface
 │   │   ├── InMemoryTimeoutScheduler.java  # ScheduledExecutorService-based implementation
 │   │   └── TimeoutAwareStateMachine.java  # Auto-schedule/cancel decorator
-│   └── diagram/                           # Diagram generation
-│       └── StateMachineDiagramGenerator.java # Mermaid / PlantUML / transition table
+│   ├── diagram/                           # Diagram generation
+│   │   └── StateMachineDiagramGenerator.java # Mermaid / PlantUML / transition table
 │   └── event/                             # Standard event-driven infrastructure
 │       ├── StandardEvent.java             # Standard event contract (eventId, type, source, entityId, payload, traceId)
 │       ├── EventNormalizer.java           # Event normalizer interface <SRC, DST>
@@ -197,8 +229,8 @@ com.selfdevelopment.ai.messaging/
 │
 └── cbol/                                   # CBOL business layer
     ├── enums/
-    │   ├── ConversationState.java          # 5 states: INITIATED, ACTIVE, TRANSFERRED, ENDING, CLOSED
-    │   ├── ConversationFact.java           # 13 events (lifecycle, transfer, ending, system)
+    │   ├── ConversationState.java          # 7 states: INITIATED, ACTIVE, TRANSFERRED, SURVEY_IN_PROGRESS, ENDING, ERROR, CLOSED
+    │   ├── ConversationFact.java           # 18 events (lifecycle, transfer, survey, ending, system, failover)
     │   ├── InteractionState.java           # Channel-level states (reserved)
     │   ├── EndReason.java                  # Conversation end reasons (reserved)
     │   └── TransferOutcome.java            # Transfer result codes (reserved)

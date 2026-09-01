@@ -147,12 +147,15 @@ Key-value store for variables shared across transitions.
 
 ```java
 public final class ExtendedState {
-    private final Map<Object, Object> variables = new ConcurrentHashMap<>();
+    private final Map<String, Object> variables = new ConcurrentHashMap<>();
 
-    public void set(Object key, Object value) { ... }
-    public <T> T get(Object key, Class<T> type) { ... }
-    public boolean contains(Object key) { ... }
-    public Set<Object> keySet() { ... }
+    public ExtendedState set(String key, Object value) { ... }  // returns this for chaining
+    public <T> T get(String key) { ... }
+    public <T> T getOrDefault(String key, T defaultValue) { ... }
+    public boolean contains(String key) { ... }
+    public ExtendedState remove(String key) { ... }  // returns this for chaining
+    public Map<String, Object> getVariables() { ... }  // unmodifiable view
+    public void clear() { ... }
 }
 ```
 

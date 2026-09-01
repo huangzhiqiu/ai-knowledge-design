@@ -19,11 +19,13 @@ The CBOL (AI Messaging Hub) business layer implements conversation lifecycle man
 
 ```java
 public enum ConversationState {
-    INITIATED,    // Conversation created, waiting for customer connection
-    ACTIVE,       // Customer connected, AI or agent actively handling
-    TRANSFERRED,  // Transfer to human agent in progress
-    ENDING,       // Conversation ending, grace period for survey/cleanup
-    CLOSED        // Terminal state, conversation fully closed
+    INITIATED,          // Conversation created, waiting for customer connection
+    ACTIVE,             // Customer connected, AI or agent actively handling
+    TRANSFERRED,        // Transfer to human agent in progress
+    SURVEY_IN_PROGRESS, // Post-conversation survey in progress (controlled by flow)
+    ENDING,             // Conversation ending, grace period for cleanup
+    ERROR,              // Action failed, failover state (retry or abort)
+    CLOSED              // Terminal state, conversation fully closed
 }
 ```
 
@@ -31,11 +33,13 @@ public enum ConversationState {
 
 | State | Description | Entry Trigger | Exit Trigger |
 |-------|-------------|---------------|--------------|
-| INITIATED | Conversation created but customer not yet connected | System creates conversation | CUSTOMER_CONNECT |
-| ACTIVE | Customer connected, active conversation | CUSTOMER_CONNECT | TRANSFER_REQUEST / CUSTOMER_CLOSE / SYS_CUSTOMER_IDLE |
-| TRANSFERRED | Transfer to agent in progress | TRANSFER_REQUEST | TRANSFER_CONNECTED / TRANSFER_FAILED / TRANSFER_TIMEOUT / SYS_CUSTOMER_IDLE |
-| ENDING | Grace period before closure | CUSTOMER_CLOSE / SYS_CUSTOMER_IDLE | SYS_ENDING_GRACE_TIMEOUT |
-| CLOSED | Terminal state | SYS_ENDING_GRACE_TIMEOUT | (none) |
+| INITIATED | Conversation created but customer not yet connected | System creates conversation | CUSTOMER_CONNECT / SYS_ACTION_FAILED |
+| ACTIVE | Customer connected, active conversation | CUSTOMER_CONNECT / SYS_RETRY | TRANSFER_REQUEST / SURVEY_START / CUSTOMER_CLOSE / SYS_CUSTOMER_IDLE / SYS_ACTION_FAILED |
+| TRANSFERRED | Transfer to agent in progress | TRANSFER_REQUEST | TRANSFER_CONNECTED / TRANSFER_FAILED / TRANSFER_TIMEOUT / SURVEY_START / SYS_CUSTOMER_IDLE / SYS_ACTION_FAILED |
+| SURVEY_IN_PROGRESS | Post-conversation survey active | SURVEY_START | SURVEY_COMPLETE / SYS_SURVEY_TIMEOUT / SYS_CUSTOMER_IDLE / CUSTOMER_CLOSE / SYS_ACTION_FAILED |
+| ENDING | Grace period before closure | CUSTOMER_CLOSE / SYS_CUSTOMER_IDLE / SURVEY_COMPLETE / SYS_SURVEY_TIMEOUT | SYS_ENDING_GRACE_TIMEOUT |
+| ERROR | Action failed, failover state | SYS_ACTION_FAILED | SYS_RETRY / SYS_ABORT |
+| CLOSED | Terminal state | SYS_ENDING_GRACE_TIMEOUT / SYS_ABORT | (none) |
 
 ### 2.3 Events (ConversationFact)
 
@@ -51,15 +55,24 @@ public enum ConversationFact {
     TRANSFER_FAILED,       // Transfer failed (agent unavailable, rejected, etc.)
     TRANSFER_TIMEOUT,      // Transfer timed out waiting for agent
 
+    // SURVEY
+    SURVEY_START,          // Start post-conversation survey (surveyEnabled=true)
+    SURVEY_COMPLETE,       // Survey completed by customer
+
     // ENDING
     CUSTOMER_CLOSE,        // Customer explicitly closed
     AGENT_CLOSE,           // Agent closed (reserved)
-    SURVEY_COMPLETE,       // Post-conversation survey completed (reserved)
 
     // SYSTEM (fired by monitors)
     SYS_CUSTOMER_IDLE,          // Customer idle threshold exceeded
     SYS_TRANSFER_TIMEOUT,       // Transfer duration exceeded threshold
-    SYS_ENDING_GRACE_TIMEOUT    // Ending grace period exceeded
+    SYS_ENDING_GRACE_TIMEOUT,   // Ending grace period exceeded
+    SYS_SURVEY_TIMEOUT,         // Survey duration exceeded threshold
+
+    // FAILOVER (action error → fail branch)
+    SYS_ACTION_FAILED,    // Action threw unhandled exception → enter ERROR
+    SYS_RETRY,            // Retry from ERROR → ACTIVE
+    SYS_ABORT             // Abort from ERROR → CLOSED
 }
 ```
 
@@ -403,7 +416,7 @@ public record StateTransitionRecord(
 
 ### 9.1 ConversationStateMachineFactory
 
-Builds and registers the conversation state machine with all 10 transition rules.
+Builds and registers the conversation state machine with all 23 transition rules (T01-T23).
 
 ```java
 public class ConversationStateMachineFactory {
@@ -508,4 +521,4 @@ sequenceDiagram
 | Integration | Full conversation lifecycle | JUnit 5 + InMemoryProvider |
 | Integration | Multi-market configuration | JUnit 5 + parameterized tests |
 
-**Current Coverage:** 87% line / 71% branch (112 test cases)
+**Current Coverage:** 83% line / 71% branch (327 test cases)

@@ -47,6 +47,7 @@
 - **TraceId** — full-chain via SLF4J MDC
 - **Async actions** — bounded thread pool with MDC propagation
 - **Failover** — action error → SYS_ACTION_FAILED → ERROR → retry/abort
+- **Event-driven** — StandardEvent, EventNormalizer, EventDispatcher, 4 Connectors
 
 ### Build & Test
 ```bash

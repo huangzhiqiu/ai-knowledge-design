@@ -15,14 +15,19 @@ In a concurrent environment, multiple threads or services may attempt to transit
 A `StateRepository` interface with optimistic locking via version numbers.
 
 ```java
-// Repository interface
-public interface StateRepository<S> {
-    Optional<VersionedState<S>> findById(String entityId);
-    VersionedState<S> save(String entityId, S state, long expectedVersion);
+// Repository interface (dual generic: state type + ID type)
+public interface StateRepository<S, ID> {
+    VersionedState<S> load(ID id);
+    long compareAndSet(ID id, long expectedVersion, S newState);
+    long save(ID id, S state);
+    boolean exists(ID id);
+    boolean delete(ID id);
 }
 
 // Versioned state record
-public record VersionedState<S>(S state, long version) {}
+public record VersionedState<S>(S state, long version) {
+    public static <S> VersionedState<S> initial(S state) { ... }
+}
 
 // Optimistic lock exception
 public class OptimisticLockException extends RuntimeException {
@@ -507,7 +512,7 @@ StateMachine<OrderState, OrderEvent, OrderContext> pipeline =
 
 ---
 
-## 9. Failover (Action Error → Fail Event)
+## 10. Failover (Action Error → Fail Event)
 
 ### 9.1 Overview
 
@@ -594,7 +599,7 @@ This allows the fail event to carry diagnostic information (e.g., store in Exten
 
 ---
 
-## 10. Summary Table
+## 11. Summary Table
 
 | Feature | Package | Key Class | Dependency |
 |---|---|---|---|
@@ -604,5 +609,7 @@ This allows the fail event to carry diagnostic information (e.g., store in Exten
 | Metrics | `statemachine.metrics` | `MonitoredStateMachine` | Micrometer (optional) |
 | Event Sourcing | `statemachine.eventsourcing` | `EventSourcedStateMachine` | None |
 | Resilience | `statemachine.resilience` | `ResilientStateMachine` | None |
+| Failover | `statemachine.resilience` | `FailoverStateMachine` | None |
 | Timeout | `statemachine.timeout` | `TimeoutAwareStateMachine` | None |
 | Diagram | `statemachine.diagram` | `StateMachineDiagramGenerator` | None |
+| Event-Driven | `statemachine.event` | `StandardEvent`, `EventDispatcher` | None |
