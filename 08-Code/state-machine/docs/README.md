@@ -11,7 +11,8 @@
 | 02 | [CBOL Business Layer Design](./02-CBOL-Business-Layer-Design.md) | CBOL-specific: conversation states/events, CbolStateContext, multi-market config, monitors, ActionWorker, service layer, error handling |
 | 03 | [State Transition Diagrams](./03-State-Transition-Diagrams.md) | Mermaid state diagrams, transition tables, monitor flowcharts, event classification, default config |
 | 04 | [Usage Guide](./04-Usage-Guide.md) | Quick start, builder DSL, configurer adapter, listeners, extended state, multi-market, monitors, async actions, error handling, testing, best practices, Spring Boot integration |
-| 05 | [Advanced Features](./05-Advanced-Features.md) | Persistence & optimistic locking, build-time validation, idempotency, metrics, event sourcing, resilience/failure handling, timeout events, diagram generation, decorator composition |
+| 05 | [Advanced Features](./05-Advanced-Features.md) | Persistence & optimistic locking, build-time validation, idempotency, metrics, event sourcing, resilience/failure handling, timeout events, diagram generation, failover, decorator composition |
+| 06 | [Multi-Market Design](./06-Multi-Market-Design.md) | Multi-market architecture: config control vs per-market vs hybrid, market-aware guards/actions/extensions, implementation roadmap, risk assessment |
 
 ## Quick Reference
 
@@ -37,13 +38,14 @@
 - **Diagrams** — auto-generate Mermaid, PlantUML, transition tables from config
 
 ### CBOL Business Layer
-- **5 states** — INITIATED, ACTIVE, TRANSFERRED, ENDING, CLOSED
-- **13 events** — lifecycle, transfer, ending, system
-- **10 transitions** — including v6 transfer-failure-reset-to-INITIATED
+- **7 states** — INITIATED, ACTIVE, TRANSFERRED, SURVEY_IN_PROGRESS, ENDING, ERROR, CLOSED
+- **18 events** — lifecycle, transfer, survey, ending, system, failover
+- **23 transitions** — including v6 transfer-failure-reset, survey flow, failover flow
 - **3 monitors** — CustomerIdle, TransferTimeout, EndingGrace (can be replaced by timeout feature)
-- **Multi-market** — per-market timeouts and feature flags
+- **Multi-market** — per-market timeouts, feature flags, action mapping, extensions
 - **TraceId** — full-chain via SLF4J MDC
 - **Async actions** — bounded thread pool with MDC propagation
+- **Failover** — action error → SYS_ACTION_FAILED → ERROR → retry/abort
 
 ### Build & Test
 ```bash
@@ -52,7 +54,7 @@ cd 08-Code/state-machine
 ./mvnw.cmd jacoco:report       # Generate coverage report
 ```
 
-**Current stats:** 229 test cases, 84% line / 71% branch coverage
+**Current stats:** 327 test cases, 83% line / 71% branch coverage
 
 ### Package Structure
 ```
@@ -68,7 +70,8 @@ statemachine/
 ├── idempotency/    # ProcessedEventStore, IdempotentStateMachineDecorator
 ├── metrics/        # StateMachineMetrics, MonitoredStateMachine (Micrometer optional)
 ├── eventsourcing/  # StateTransitionEvent, StateTransitionStore, EventSourcedStateMachine
-├── resilience/     # FailureHandler, Throw/ReturnSource/Fallback/Retry handlers, ResilientStateMachine
+├── resilience/     # FailureHandler, Throw/ReturnSource/Fallback/Retry handlers, ResilientStateMachine, FailoverStateMachine, FailoverContext
 ├── timeout/        # TimeoutConfig, StateMachineTimeoutScheduler, InMemoryTimeoutScheduler, TimeoutAwareStateMachine
+├── event/          # StandardEvent, EventNormalizer, EventDispatcher (event-driven infrastructure)
 └── diagram/        # StateMachineDiagramGenerator (Mermaid/PlantUML/table)
 ```
