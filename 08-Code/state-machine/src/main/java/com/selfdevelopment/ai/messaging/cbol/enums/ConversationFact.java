@@ -25,5 +25,9 @@ public enum ConversationFact {
     SYS_CUSTOMER_IDLE,
     SYS_TRANSFER_TIMEOUT,
     SYS_ENDING_GRACE_TIMEOUT,
-    SYS_SURVEY_TIMEOUT
+    SYS_SURVEY_TIMEOUT,
+    // FAILOVER (action error → fail event → fail branch)
+    SYS_ACTION_FAILED,
+    SYS_RETRY,
+    SYS_ABORT
 }

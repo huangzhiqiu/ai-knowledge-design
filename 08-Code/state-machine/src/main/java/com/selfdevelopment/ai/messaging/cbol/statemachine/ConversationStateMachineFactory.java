@@ -121,6 +121,48 @@ public class ConversationStateMachineFactory {
                 .to(ConversationState.CLOSED)
                 .and();
 
+        // ===== FAILOVER FLOW (action error → SYS_ACTION_FAILED → ERROR → retry/abort) =====
+        // When an action throws an unhandled RuntimeException, FailoverStateMachine automatically
+        // fires SYS_ACTION_FAILED. Each non-terminal state routes to ERROR for centralized handling.
+        // From ERROR: SYS_RETRY returns to ACTIVE, SYS_ABORT terminates to CLOSED.
+
+        builder.transition()
+                .from(ConversationState.INITIATED)
+                .on(ConversationFact.SYS_ACTION_FAILED)
+                .to(ConversationState.ERROR)
+                .and();
+
+        builder.transition()
+                .from(ConversationState.ACTIVE)
+                .on(ConversationFact.SYS_ACTION_FAILED)
+                .to(ConversationState.ERROR)
+                .and();
+
+        builder.transition()
+                .from(ConversationState.TRANSFERRED)
+                .on(ConversationFact.SYS_ACTION_FAILED)
+                .to(ConversationState.ERROR)
+                .and();
+
+        builder.transition()
+                .from(ConversationState.SURVEY_IN_PROGRESS)
+                .on(ConversationFact.SYS_ACTION_FAILED)
+                .to(ConversationState.ERROR)
+                .and();
+
+        // ERROR state recovery paths
+        builder.transition()
+                .from(ConversationState.ERROR)
+                .on(ConversationFact.SYS_RETRY)
+                .to(ConversationState.ACTIVE)
+                .and();
+
+        builder.transition()
+                .from(ConversationState.ERROR)
+                .on(ConversationFact.SYS_ABORT)
+                .to(ConversationState.CLOSED)
+                .and();
+
         StateMachine<ConversationState, ConversationFact, CbolStateContext> sm = builder.build();
         CbolStateMachineRegistry.register(sm);
         return sm;

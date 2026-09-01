@@ -32,10 +32,20 @@ stateDiagram-v2
 
     ENDING --> CLOSED : SYS_ENDING_GRACE_TIMEOUT
 
+    %% Failover: action error → SYS_ACTION_FAILED → ERROR → retry/abort
+    INITIATED --> ERROR : SYS_ACTION_FAILED
+    ACTIVE --> ERROR : SYS_ACTION_FAILED
+    TRANSFERRED --> ERROR : SYS_ACTION_FAILED
+    SURVEY_IN_PROGRESS --> ERROR : SYS_ACTION_FAILED
+    ERROR --> ACTIVE : SYS_RETRY
+    ERROR --> CLOSED : SYS_ABORT
+
     CLOSED --> [*]
 ```
 
 > **Survey as in-progress state**: When `surveyEnabled=true`, `closeConversation()` fires `SURVEY_START` to enter `SURVEY_IN_PROGRESS` instead of directly going to `ENDING`. The survey flow is fully controlled by the state machine.
+
+> **Failover (action error → fail event)**: When an action throws an unhandled exception, `FailoverStateMachine` automatically fires `SYS_ACTION_FAILED` to enter `ERROR` state. From `ERROR`, the system can retry (`SYS_RETRY` → ACTIVE) or abort (`SYS_ABORT` → CLOSED). Fail events themselves do NOT trigger another failover (loop prevention).
 
 ### 1.2 Transition Table
 
@@ -58,6 +68,12 @@ stateDiagram-v2
 | T15 | SURVEY_IN_PROGRESS | SYS_SURVEY_TIMEOUT | ENDING | - | Save partial results | SurveyTimeoutMonitor | Survey timed out |
 | T16 | SURVEY_IN_PROGRESS | SYS_CUSTOMER_IDLE | ENDING | - | - | CustomerIdleMonitor | Customer left during survey |
 | T17 | SURVEY_IN_PROGRESS | CUSTOMER_CLOSE | ENDING | - | - | - | Customer explicitly closes survey |
+| T18 | INITIATED | SYS_ACTION_FAILED | ERROR | - | Log error, alert | FailoverStateMachine | **Failover: action error** |
+| T19 | ACTIVE | SYS_ACTION_FAILED | ERROR | - | Log error, alert | FailoverStateMachine | **Failover: action error** |
+| T20 | TRANSFERRED | SYS_ACTION_FAILED | ERROR | - | Log error, alert | FailoverStateMachine | **Failover: action error** |
+| T21 | SURVEY_IN_PROGRESS | SYS_ACTION_FAILED | ERROR | - | Log error, alert | FailoverStateMachine | **Failover: action error** |
+| T22 | ERROR | SYS_RETRY | ACTIVE | - | Re-initialize resources | - | Manual or system retry |
+| T23 | ERROR | SYS_ABORT | CLOSED | - | Clean up, notify | - | Unrecoverable error |
 
 ### 1.3 State Entry/Exit Actions
 
@@ -68,6 +84,7 @@ stateDiagram-v2
 | TRANSFERRED | Initiate transfer request | Cancel pending transfer (reserved) |
 | SURVEY_IN_PROGRESS | Show survey UI, start survey timer | Save survey results, stop timer |
 | ENDING | Start grace period timer | (none) |
+| ERROR | Log error, alert on-call, capture diagnostics | Clear error state |
 | CLOSED | Clean up resources, archive conversation | (none, terminal) |
 
 ## 2. Interaction State Machine (Reserved)
