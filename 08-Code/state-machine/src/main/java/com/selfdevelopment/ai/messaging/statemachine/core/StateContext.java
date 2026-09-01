@@ -1,5 +1,8 @@
 package com.selfdevelopment.ai.messaging.statemachine.core;
 
+import lombok.Builder;
+import lombok.Getter;
+
 import java.util.Map;
 
 /**
@@ -19,101 +22,23 @@ import java.util.Map;
  * @param <E> the event type
  * @param <C> the business context type
  */
+@Getter
+@Builder
 public final class StateContext<S, E, C> {
 
     private final S sourceState;
     private final S targetState;
     private final E event;
     private final C businessContext;
-    private final ExtendedState extendedState;
+
+    @Builder.Default
+    private final ExtendedState extendedState = new ExtendedState();
+
     private final Map<String, Object> eventHeaders;
     private final Exception exception;
-    private final boolean transitionAccepted;
 
-    private StateContext(Builder<S, E, C> builder) {
-        this.sourceState = builder.sourceState;
-        this.targetState = builder.targetState;
-        this.event = builder.event;
-        this.businessContext = builder.businessContext;
-        this.extendedState = builder.extendedState != null ? builder.extendedState : new ExtendedState();
-        this.eventHeaders = builder.eventHeaders;
-        this.exception = builder.exception;
-        this.transitionAccepted = builder.transitionAccepted;
-    }
-
-    public S getSourceState() { return sourceState; }
-    public S getTargetState() { return targetState; }
-    public E getEvent() { return event; }
-    public C getBusinessContext() { return businessContext; }
-    public ExtendedState getExtendedState() { return extendedState; }
-    public Map<String, Object> getEventHeaders() { return eventHeaders; }
-    public Exception getException() { return exception; }
-    public boolean isTransitionAccepted() { return transitionAccepted; }
-
-    /**
-     * Creates a new builder.
-     */
-    public static <S, E, C> Builder<S, E, C> builder() {
-        return new Builder<>();
-    }
-
-    /**
-     * Builder for {@link StateContext}.
-     */
-    public static final class Builder<S, E, C> {
-        private S sourceState;
-        private S targetState;
-        private E event;
-        private C businessContext;
-        private ExtendedState extendedState;
-        private Map<String, Object> eventHeaders;
-        private Exception exception;
-        private boolean transitionAccepted = true;
-
-        public Builder<S, E, C> sourceState(S sourceState) {
-            this.sourceState = sourceState;
-            return this;
-        }
-
-        public Builder<S, E, C> targetState(S targetState) {
-            this.targetState = targetState;
-            return this;
-        }
-
-        public Builder<S, E, C> event(E event) {
-            this.event = event;
-            return this;
-        }
-
-        public Builder<S, E, C> businessContext(C businessContext) {
-            this.businessContext = businessContext;
-            return this;
-        }
-
-        public Builder<S, E, C> extendedState(ExtendedState extendedState) {
-            this.extendedState = extendedState;
-            return this;
-        }
-
-        public Builder<S, E, C> eventHeaders(Map<String, Object> eventHeaders) {
-            this.eventHeaders = eventHeaders;
-            return this;
-        }
-
-        public Builder<S, E, C> exception(Exception exception) {
-            this.exception = exception;
-            return this;
-        }
-
-        public Builder<S, E, C> transitionAccepted(boolean transitionAccepted) {
-            this.transitionAccepted = transitionAccepted;
-            return this;
-        }
-
-        public StateContext<S, E, C> build() {
-            return new StateContext<>(this);
-        }
-    }
+    @Builder.Default
+    private final boolean transitionAccepted = true;
 
     @Override
     public String toString() {

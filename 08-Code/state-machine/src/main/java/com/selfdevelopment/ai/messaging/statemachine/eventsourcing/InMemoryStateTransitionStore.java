@@ -27,10 +27,10 @@ public class InMemoryStateTransitionStore<S, E> implements StateTransitionStore<
 
     @Override
     public void append(StateTransitionEvent<S, E> event) {
-        if (event == null || event.entityId() == null) {
+        if (event == null || event.getEntityId() == null) {
             throw new IllegalArgumentException("event and event.entityId must not be null");
         }
-        eventsByEntity.computeIfAbsent(event.entityId(), k -> new CopyOnWriteArrayList<>())
+        eventsByEntity.computeIfAbsent(event.getEntityId(), k -> new CopyOnWriteArrayList<>())
                 .add(event);
     }
 
@@ -53,7 +53,7 @@ public class InMemoryStateTransitionStore<S, E> implements StateTransitionStore<
             return List.of();
         }
         return replay(entityId).stream()
-                .filter(e -> e.timestamp() != null && !e.timestamp().isAfter(upTo))
+                .filter(e -> e.getTimestamp() != null && !e.getTimestamp().isAfter(upTo))
                 .toList();
     }
 
@@ -69,8 +69,8 @@ public class InMemoryStateTransitionStore<S, E> implements StateTransitionStore<
         // Find the last accepted event and return its toState
         for (int i = events.size() - 1; i >= 0; i--) {
             StateTransitionEvent<S, E> event = events.get(i);
-            if (event.accepted() && event.toState() != null) {
-                return Optional.of(event.toState());
+            if (event.isAccepted() && event.getToState() != null) {
+                return Optional.of(event.getToState());
             }
         }
         return Optional.empty();

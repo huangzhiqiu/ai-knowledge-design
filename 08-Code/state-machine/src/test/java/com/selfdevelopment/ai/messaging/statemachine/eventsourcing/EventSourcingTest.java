@@ -54,8 +54,8 @@ class EventSourcingTest {
 
         List<StateTransitionEvent<TestState, TestEvent>> events = store.replay("entity-1");
         assertEquals(1, events.size());
-        assertEquals(TestState.A, events.get(0).fromState());
-        assertEquals(TestState.B, events.get(0).toState());
+        assertEquals(TestState.A, events.get(0).getFromState());
+        assertEquals(TestState.B, events.get(0).getToState());
     }
 
     @Test
@@ -122,7 +122,7 @@ class EventSourcingTest {
 
         Optional<StateTransitionEvent<TestState, TestEvent>> last = store.lastEvent("entity-1");
         assertTrue(last.isPresent());
-        assertEquals(TestEvent.GO, last.get().event());
+        assertEquals(TestEvent.GO, last.get().getEvent());
     }
 
     @Test
@@ -155,7 +155,7 @@ class EventSourcingTest {
 
         assertEquals(TestState.B, result.getTargetState());
         assertEquals(1, store.count("entity-1"));
-        assertTrue(store.lastEvent("entity-1").get().accepted());
+        assertTrue(store.lastEvent("entity-1").get().isAccepted());
     }
 
     @Test
@@ -164,8 +164,8 @@ class EventSourcingTest {
                 eventSourced.fireEvent(TestState.A, TestEvent.INVALID, null));
 
         assertEquals(1, store.count("entity-1"));
-        assertFalse(store.lastEvent("entity-1").get().accepted());
-        assertNotNull(store.lastEvent("entity-1").get().denialReason());
+        assertFalse(store.lastEvent("entity-1").get().isAccepted());
+        assertNotNull(store.lastEvent("entity-1").get().getDenialReason());
     }
 
     @Test
