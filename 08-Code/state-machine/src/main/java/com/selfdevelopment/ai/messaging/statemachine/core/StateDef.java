@@ -1,5 +1,7 @@
 package com.selfdevelopment.ai.messaging.statemachine.core;
 
+import lombok.Getter;
+
 import java.util.Objects;
 
 /**
@@ -15,6 +17,7 @@ import java.util.Objects;
  * @param <E> the event type
  * @param <C> the context type
  */
+@Getter
 public final class StateDef<S, E, C> {
 
     private final S id;
@@ -30,12 +33,6 @@ public final class StateDef<S, E, C> {
         this.initial = builder.initial;
         this.end = builder.end;
     }
-
-    public S getId() { return id; }
-    public Action<S, E, C> getEntryAction() { return entryAction; }
-    public Action<S, E, C> getExitAction() { return exitAction; }
-    public boolean isInitial() { return initial; }
-    public boolean isEnd() { return end; }
 
     public boolean hasEntryAction() { return entryAction != null; }
     public boolean hasExitAction() { return exitAction != null; }

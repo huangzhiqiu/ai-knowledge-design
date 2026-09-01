@@ -1,5 +1,7 @@
 package com.selfdevelopment.ai.messaging.cbol.connector;
 
+import lombok.Getter;
+
 import java.time.Instant;
 import java.util.Map;
 import java.util.Optional;
@@ -49,6 +51,7 @@ public interface Connector<REQ, RES> {
     /**
      * Exception thrown by connectors when an operation fails.
      */
+    @Getter
     class ConnectorException extends RuntimeException {
         private final String connectorName;
         private final String operation;
@@ -64,9 +67,6 @@ public interface Connector<REQ, RES> {
             this.connectorName = connectorName;
             this.operation = operation;
         }
-
-        public String getConnectorName() { return connectorName; }
-        public String getOperation() { return operation; }
     }
 
     /**

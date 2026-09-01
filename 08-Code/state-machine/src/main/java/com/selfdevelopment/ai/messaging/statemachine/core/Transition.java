@@ -1,5 +1,7 @@
 package com.selfdevelopment.ai.messaging.statemachine.core;
 
+import lombok.Getter;
+
 import java.util.Objects;
 
 /**
@@ -14,6 +16,7 @@ import java.util.Objects;
  * @param <E> the event type
  * @param <C> the context type
  */
+@Getter
 public final class Transition<S, E, C> {
 
     private final S sourceState;
@@ -79,13 +82,6 @@ public final class Transition<S, E, C> {
             action.execute(context);
         }
     }
-
-    public S getSourceState() { return sourceState; }
-    public E getEvent() { return event; }
-    public S getTargetState() { return targetState; }
-    public Guard<S, E, C> getGuard() { return guard; }
-    public Action<S, E, C> getAction() { return action; }
-    public TransitionKind getKind() { return kind; }
 
     /**
      * Returns true if this is an internal transition (state does not change).
