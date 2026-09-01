@@ -82,6 +82,15 @@ graph TB
         I[TraceContext / TraceMdcHelper] --> A
     end
 
+    subgraph "Decorator Layer (Advanced Features)"
+        DA[TimeoutAwareStateMachine]
+        DB[ResilientStateMachine]
+        DC[EventSourcedStateMachine]
+        DD[MonitoredStateMachine]
+        DE[IdempotentStateMachineDecorator]
+        DA --> DB --> DC --> DD --> DE
+    end
+
     subgraph "State Machine Core Framework"
         B --> J[StateMachineBuilder]
         J --> K[SimpleStateMachine]
@@ -91,13 +100,31 @@ graph TB
         K --> O[ExtendedState]
         K --> P[StateMachineListener]
         Q[StateMachineRegistry] --> K
+        V[StateMachineValidator] --> J
+    end
+
+    subgraph "Supporting Infrastructure"
+        R1[StateRepository]
+        R2[StateTransitionStore]
+        R3[TimeoutScheduler]
+        R4[ProcessedEventStore]
+        R5[MeterRegistry]
     end
 
     subgraph "External Systems"
-        R[Conversation Repository] --> A
-        S[Redis / Cache] --> G
-        T[SLF4J / MDC] --> I
+        S1[Conversation Repository] --> A
+        S2[Redis / Cache] --> G
+        S3[SLF4J / MDC] --> I
+        S4[Prometheus / Grafana] --> R5
     end
+
+    A --> DA
+    DE --> K
+    DA -.-> R3
+    DB -.-> R1
+    DC -.-> R2
+    DD -.-> R5
+    DE -.-> R4
 ```
 
 ## 4. Package Structure
@@ -106,7 +133,7 @@ graph TB
 com.selfdevelopment.ai.messaging/
 ├── statemachine/                          # Core framework
 │   ├── core/                              # Core abstractions
-│   │   ├── StateMachine.java              # Interface (lifecycle, fireEvent, listeners)
+│   │   ├── StateMachine.java              # Interface (lifecycle, fireEvent, listeners, getAllTransitions)
 │   │   ├── SimpleStateMachine.java        # Default implementation (stateless, table-driven)
 │   │   ├── Transition.java                # Transition rule (source, event, target, guard, action, kind)
 │   │   ├── StateDef.java                  # State definition (entry/exit actions, initial/end flags)
@@ -116,7 +143,7 @@ com.selfdevelopment.ai.messaging/
 │   │   ├── Action.java                    # Functional interface for transition actions
 │   │   └── TransitionKind.java            # EXTERNAL / INTERNAL enum
 │   ├── builder/
-│   │   └── StateMachineBuilder.java       # Fluent DSL builder + fromConfigurer() factory
+│   │   └── StateMachineBuilder.java       # Fluent DSL builder + fromConfigurer() factory + build(validate)
 │   ├── config/
 │   │   ├── StateMachineConfigurerAdapter.java  # Base class for Spring-style configuration
 │   │   ├── StateConfigurer.java           # State configuration interface
@@ -127,8 +154,42 @@ com.selfdevelopment.ai.messaging/
 │   │   └── StateMachineListener.java      # 8 callback hooks (started, stopped, transition*, stateChanged, error)
 │   ├── registry/
 │   │   └── StateMachineRegistry.java      # Named registry for sharing machines
-│   └── exception/
-│       └── StateMachineException.java     # Runtime exception for all state machine errors
+│   ├── exception/
+│   │   └── StateMachineException.java     # Runtime exception for all state machine errors
+│   ├── persistence/                       # State persistence with optimistic locking
+│   │   ├── StateRepository.java           # Repository interface (findById, save with version)
+│   │   ├── InMemoryStateRepository.java   # In-memory implementation with atomic version
+│   │   ├── VersionedState.java            # Record (state, version)
+│   │   └── OptimisticLockException.java   # Version conflict exception
+│   ├── validation/                        # Build-time validation
+│   │   ├── StateMachineValidator.java     # 8 validation rules (ERROR/WARNING levels)
+│   │   └── ValidationError.java           # Record (rule, level, message, state, event)
+│   ├── idempotency/                       # Idempotent event processing
+│   │   ├── ProcessedEventStore.java       # Store interface for processed event IDs
+│   │   ├── InMemoryProcessedEventStore.java # In-memory implementation
+│   │   └── IdempotentStateMachineDecorator.java # Event ID deduplication decorator
+│   ├── metrics/                           # Observability (Micrometer optional)
+│   │   ├── StateMachineMetrics.java       # Metrics collector (Timer/Counter, 5 metrics)
+│   │   └── MonitoredStateMachine.java     # Auto-instrumenting decorator
+│   ├── eventsourcing/                     # Event sourcing / audit trail
+│   │   ├── StateTransitionEvent.java      # Immutable transition record (timestamp, traceId, metadata)
+│   │   ├── StateTransitionStore.java      # Store interface (append, replay, reconstruct, time-travel)
+│   │   ├── InMemoryStateTransitionStore.java # Thread-safe in-memory implementation
+│   │   └── EventSourcedStateMachine.java  # Auto-recording decorator
+│   ├── resilience/                        # Failure handling strategies
+│   │   ├── FailureHandler.java            # Strategy interface (NO_TRANSITION/GUARD_FAILED/ACTION_ERROR)
+│   │   ├── ThrowFailureHandler.java       # Throws StateMachineException (default)
+│   │   ├── ReturnSourceFailureHandler.java # Returns source state, accepted=false
+│   │   ├── FallbackStateFailureHandler.java # Transitions to configured fallback state
+│   │   ├── RetryFailureHandler.java       # Retries with fixed/exponential backoff
+│   │   └── ResilientStateMachine.java     # Decorator integrating failure handlers
+│   ├── timeout/                           # Scheduled timeout events
+│   │   ├── TimeoutConfig.java             # State timeout config (duration, event, repeat)
+│   │   ├── StateMachineTimeoutScheduler.java # Scheduler interface
+│   │   ├── InMemoryTimeoutScheduler.java  # ScheduledExecutorService-based implementation
+│   │   └── TimeoutAwareStateMachine.java  # Auto-schedule/cancel decorator
+│   └── diagram/                           # Diagram generation
+│       └── StateMachineDiagramGenerator.java # Mermaid / PlantUML / transition table
 │
 └── cbol/                                   # CBOL business layer
     ├── enums/
@@ -155,7 +216,7 @@ com.selfdevelopment.ai.messaging/
     ├── statemachine/
     │   ├── ConversationStateMachineFactory.java  # Builds and registers the conversation state machine
     │   ├── InteractionStateMachineFactory.java   # Channel-level state machine (reserved)
-    │   ├── CbolStateMachineService.java    # Main service entry point (fire, audit logging)
+    │   ├── CbolStateMachineService.java    # Main service entry point (fire, audit logging, fireWithLock)
     │   └── CbolStateMachineRegistry.java   # Singleton holder for shared registry
     └── monitor/
         ├── AbstractTimeoutMonitor.java     # Base class for time-based monitors

@@ -435,3 +435,231 @@ public class StateMachineConfig {
     }
 }
 ```
+
+## 12. Advanced Features
+
+### 12.1 Build-Time Validation
+
+Validate the state machine configuration at build time to catch errors early:
+
+```java
+// Validate during build (throws on ERROR-level issues)
+StateMachine<OrderState, OrderEvent, OrderContext> machine =
+    StateMachineBuilder.<OrderState, OrderEvent, OrderContext>builder("order")
+        .initialState(OrderState.CREATED)
+        .transition()
+            .from(OrderState.CREATED).on(OrderEvent.PAY).to(OrderState.PAID)
+        .and()
+        .build(true);  // validate=true
+
+// Or validate separately to get all errors
+List<ValidationError> errors = StateMachineValidator.validate(machine);
+errors.forEach(e -> System.out.println(e.level() + ": " + e.message()));
+```
+
+Validation rules: `NO_TRANSITIONS`, `INITIAL_STATE_DEFINED`, `INITIAL_STATE_REACHABLE`, `END_STATE_NO_OUTGOING`, `UNREACHABLE_STATE`, `DEAD_END_STATE`, `INTERNAL_TRANSITION_MATCH`, `DUPLICATE_TRANSITION_NO_GUARD`.
+
+### 12.2 Persistence with Optimistic Locking
+
+Use the built-in repository pattern with version-based optimistic locking:
+
+```java
+StateRepository<ConversationState> repository = new InMemoryStateRepository<>();
+
+// Save initial state
+repository.save("conv-123", ConversationState.INITIATED, 0);
+
+// Load and transition with optimistic lock
+CbolStateMachineService service = new CbolStateMachineService(machine, repository);
+StateContext<...> result = service.fireWithLock("conv-123", ConversationFact.USER_MESSAGE, ctx);
+// Automatically retries up to 3 times on version conflict
+```
+
+For production, implement `StateRepository` with JDBC/MongoDB:
+
+```java
+public class JdbcStateRepository<S> implements StateRepository<S> {
+    // SELECT state, version FROM conversations WHERE id = ?
+    // UPDATE conversations SET state = ?, version = version + 1 WHERE id = ? AND version = ?
+}
+```
+
+### 12.3 Idempotent Event Processing
+
+Prevent duplicate event processing with event ID deduplication:
+
+```java
+ProcessedEventStore store = new InMemoryProcessedEventStore();
+IdempotentStateMachineDecorator<OrderState, OrderEvent, OrderContext> idempotent =
+    new IdempotentStateMachineDecorator<>(machine, store);
+
+// First call: processes the event
+StateContext<...> result1 = idempotent.fireEventWithId(
+    "evt-001", OrderState.CREATED, OrderEvent.PAY, ctx);
+
+// Second call with same ID: returns cached result, does NOT re-process
+StateContext<...> result2 = idempotent.fireEventWithId(
+    "evt-001", OrderState.CREATED, OrderEvent.PAY, ctx);
+```
+
+### 12.4 Metrics with Micrometer
+
+Auto-instrument the state machine with Micrometer metrics:
+
+```java
+MeterRegistry registry = new SimpleMeterRegistry();  // or Spring's auto-configured registry
+StateMachine<OrderState, OrderEvent, OrderContext> monitored =
+    new MonitoredStateMachine<>(machine, registry);
+
+// All fireEvent calls are automatically instrumented
+monitored.fireEvent(OrderState.CREATED, OrderEvent.PAY, ctx);
+
+// Available metrics:
+// - statemachine.transition.duration (Timer)
+// - statemachine.transition.success (Counter)
+// - statemachine.transition.error (Counter)
+// - statemachine.transition.denied (Counter)
+// - statemachine.event.received (Counter)
+```
+
+### 12.5 Event Sourcing / Audit Trail
+
+Automatically record all transitions for audit and replay:
+
+```java
+StateTransitionStore<ConversationState, ConversationFact> store =
+    new InMemoryStateTransitionStore<>();
+
+StateMachine<ConversationState, ConversationFact, CbolStateContext> eventSourced =
+    new EventSourcedStateMachine<>(machine, store, "conv-123");
+
+// All transitions are automatically recorded
+eventSourced.fireEvent(ConversationState.INITIATED, ConversationFact.USER_MESSAGE, ctx);
+
+// Replay full history
+List<StateTransitionEvent<...>> history = store.replay("conv-123");
+
+// Reconstruct current state
+Optional<ConversationState> current = store.reconstructState("conv-123");
+
+// Time-travel query
+List<...> stateAtTime = store.replayUpTo("conv-123", Instant.parse("2026-01-01T10:00:00Z"));
+```
+
+### 12.6 Resilience / Failure Handling
+
+Choose a failure handling strategy based on your use case:
+
+```java
+// 1. Throw on failure (default)
+StateMachine<...> resilient = new ResilientStateMachine<>(machine, new ThrowFailureHandler<>());
+
+// 2. Return source state (no exceptions, check return value)
+StateMachine<...> resilient = new ResilientStateMachine<>(machine, new ReturnSourceFailureHandler<>());
+StateContext<...> result = resilient.fireEvent(state, event, ctx);
+if (!result.isTransitionAccepted()) {
+    // handle denial
+}
+
+// 3. Fallback to ERROR state
+StateMachine<...> resilient = new ResilientStateMachine<>(machine,
+    new FallbackStateFailureHandler<>(OrderState.ERROR));
+
+// 4. Retry with exponential backoff, then fallback
+FailureHandler<...> fallback = new FallbackStateFailureHandler<>(OrderState.ERROR);
+RetryFailureHandler<...> retry = RetryFailureHandler.exponentialBackoff(
+    3, fallback, 100, 5000);
+StateMachine<...> resilient = new ResilientStateMachine<>(machine, retry);
+```
+
+### 12.7 Timeout Events / Scheduled Transitions
+
+Automatically trigger events when an entity stays in a state too long:
+
+```java
+// Configure timeouts
+Map<ConversationState, TimeoutConfig<ConversationState, ConversationFact>> timeouts = Map.of(
+    ConversationState.ACTIVE, TimeoutConfig.<ConversationState, ConversationFact>builder()
+        .state(ConversationState.ACTIVE)
+        .timeoutEvent(ConversationFact.IDLE_TIMEOUT)
+        .duration(30).timeUnit(TimeUnit.SECONDS).build(),
+    ConversationState.TRANSFERRING, TimeoutConfig.<ConversationState, ConversationFact>builder()
+        .state(ConversationState.TRANSFERRING)
+        .timeoutEvent(ConversationFact.TRANSFER_TIMEOUT)
+        .duration(60).timeUnit(TimeUnit.SECONDS).build()
+);
+
+// Create scheduler
+StateMachineTimeoutScheduler<ConversationState, ConversationFact> scheduler =
+    new InMemoryTimeoutScheduler<>("conversation-timeout", 4);
+
+// Wrap the machine
+StateMachine<ConversationState, ConversationFact, CbolStateContext> timeoutAware =
+    new TimeoutAwareStateMachine<>(machine, scheduler, timeouts, "conv-123");
+
+// Entering ACTIVE automatically starts 30s timer
+timeoutAware.fireEvent(ConversationState.INITIATED, ConversationFact.USER_MESSAGE, ctx);
+
+// Leaving ACTIVE automatically cancels the timer
+timeoutAware.fireEvent(ConversationState.ACTIVE, ConversationFact.AGENT_JOIN, ctx);
+
+// Query timeout status
+boolean active = timeoutAware.isTimeoutActive();
+long remainingMs = timeoutAware.getRemainingTimeoutMs();
+timeoutAware.cancelTimeout();  // manual cancel
+```
+
+This replaces the need for external Monitor classes (CustomerIdleMonitor, TransferMonitor, EndingGraceMonitor).
+
+### 12.8 Diagram Generation
+
+Generate documentation diagrams directly from the state machine configuration:
+
+```java
+// Mermaid (for GitHub / Markdown)
+String mermaid = StateMachineDiagramGenerator.toMermaid(machine);
+
+// PlantUML (for Confluence / enterprise docs)
+String plantUml = StateMachineDiagramGenerator.toPlantUml(machine);
+
+// Transition table (Markdown)
+String table = StateMachineDiagramGenerator.toTransitionTable(machine);
+
+// Write to files
+Files.writeString(Path.of("state-diagram.mmd"), mermaid);
+Files.writeString(Path.of("state-diagram.puml"), plantUml);
+Files.writeString(Path.of("transitions.md"), table);
+```
+
+### 12.9 Decorator Composition
+
+Compose multiple decorators for a full-featured pipeline:
+
+```java
+StateMachine<OrderState, OrderEvent, OrderContext> pipeline =
+    new TimeoutAwareStateMachine<>(          // 1. Outermost: timeout management
+        new ResilientStateMachine<>(         // 2. Failure handling
+            new EventSourcedStateMachine<>(  // 3. Audit trail
+                new MonitoredStateMachine<>( // 4. Metrics
+                    new IdempotentStateMachineDecorator<>( // 5. Innermost: deduplication
+                        machine,
+                        eventStore
+                    ),
+                    meterRegistry
+                ),
+                transitionStore,
+                "order-123"
+            ),
+            new ThrowFailureHandler<>()
+        ),
+        timeoutScheduler,
+        timeoutConfigs,
+        "order-123"
+    );
+```
+
+**Recommended order (outermost to innermost):** TimeoutAware → Resilient → EventSourced → Monitored → Idempotent → SimpleStateMachine
+
+---
+
+*For detailed design of each advanced feature, see [05-Advanced-Features.md](./05-Advanced-Features.md).*
