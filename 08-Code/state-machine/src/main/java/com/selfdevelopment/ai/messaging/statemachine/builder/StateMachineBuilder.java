@@ -13,6 +13,7 @@ import com.selfdevelopment.ai.messaging.statemachine.core.StateMachine;
 import com.selfdevelopment.ai.messaging.statemachine.core.Transition;
 import com.selfdevelopment.ai.messaging.statemachine.core.TransitionKind;
 import com.selfdevelopment.ai.messaging.statemachine.exception.StateMachineException;
+import com.selfdevelopment.ai.messaging.statemachine.validation.StateMachineValidator;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -294,7 +295,27 @@ public final class StateMachineBuilder<S, E, C> {
      *
      * @return the constructed state machine
      */
+    /**
+     * Builds the state machine without validation.
+     *
+     * @return the constructed state machine
+     */
     public StateMachine<S, E, C> build() {
+        return build(false);
+    }
+
+    /**
+     * Builds the state machine with optional build-time validation.
+     * <p>
+     * When validation is enabled, the configuration is checked for common errors:
+     * unreachable states, dead-end states, end states with outgoing transitions,
+     * internal transitions with mismatched source/target, etc.
+     *
+     * @param validate if true, validates the configuration and throws on ERROR-level issues
+     * @return the constructed state machine
+     * @throws IllegalStateException if validation fails with ERROR-level issues
+     */
+    public StateMachine<S, E, C> build(boolean validate) {
         // Auto-complete any in-progress transition
         if (currentSource != null && currentEvent != null && currentTarget != null) {
             transitions.add(new Transition<>(
@@ -302,7 +323,30 @@ public final class StateMachineBuilder<S, E, C> {
                     currentGuard, currentAction, currentKind));
             resetCurrent();
         }
+
+        if (validate) {
+            StateMachineValidator<S, E, C> validator = new StateMachineValidator<>();
+            validator.validateOrThrow(new ArrayList<>(transitions), initialState, new HashSet<>(endStates));
+        }
+
         return new SimpleStateMachine<>(machineId, transitions, initialState, endStates, stateDefs);
+    }
+
+    /**
+     * Validates the current configuration without building.
+     *
+     * @return list of validation errors (empty if valid)
+     */
+    public List<com.selfdevelopment.ai.messaging.statemachine.validation.ValidationError> validate() {
+        // Auto-complete any in-progress transition
+        if (currentSource != null && currentEvent != null && currentTarget != null) {
+            transitions.add(new Transition<>(
+                    currentSource, currentEvent, currentTarget,
+                    currentGuard, currentAction, currentKind));
+            resetCurrent();
+        }
+        StateMachineValidator<S, E, C> validator = new StateMachineValidator<>();
+        return validator.validate(new ArrayList<>(transitions), initialState, new HashSet<>(endStates));
     }
 
     private void resetCurrent() {
