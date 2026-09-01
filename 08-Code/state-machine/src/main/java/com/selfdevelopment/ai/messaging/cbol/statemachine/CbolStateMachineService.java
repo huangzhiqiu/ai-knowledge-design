@@ -49,7 +49,24 @@ public class CbolStateMachineService {
      */
     public CbolStateMachineService(StateRepository<ConversationState, String> stateRepository,
                                     int maxRetries) {
-        this.convSm = CbolStateMachineRegistry.get(ConversationStateMachineFactory.MACHINE_ID);
+        this(CbolStateMachineRegistry.get(ConversationStateMachineFactory.MACHINE_ID),
+                stateRepository, maxRetries);
+    }
+
+    /**
+     * Creates a service with an explicitly injected state machine.
+     * <p>
+     * This constructor is primarily for testing — it allows injecting a mock or
+     * custom state machine instead of looking it up from the global registry.
+     *
+     * @param convSm          the conversation state machine (must not be null)
+     * @param stateRepository the state repository for persistence (null for stateless mode)
+     * @param maxRetries      maximum number of retries on optimistic lock conflict
+     */
+    public CbolStateMachineService(StateMachine<ConversationState, ConversationFact, CbolStateContext> convSm,
+                                    StateRepository<ConversationState, String> stateRepository,
+                                    int maxRetries) {
+        this.convSm = Objects.requireNonNull(convSm, "convSm must not be null");
         this.stateRepository = stateRepository;
         this.maxRetries = maxRetries;
     }
@@ -128,20 +145,24 @@ public class CbolStateMachineService {
 
     /**
      * Fires an event without persistent state storage (stateless mode).
+     * <p>
+     * Wraps any state machine exception with conversation context (conversationId, fact,
+     * current state) to make troubleshooting easier.
      */
     private StateContext<ConversationState, ConversationFact, CbolStateContext> fireStateless(
             CbolStateContext ctx, ConversationFact fact) {
         TraceMdcHelper.set(ctx.traceContext());
         long start = System.currentTimeMillis();
+        String conversationId = ctx.conversation().conversationId();
+        ConversationState from = ctx.conversation().state();
         try {
-            ConversationState from = ctx.conversation().state();
             StateContext<ConversationState, ConversationFact, CbolStateContext> result =
                     convSm.fireEvent(from, fact, ctx);
 
             StateTransitionRecord record = StateTransitionRecord.builder()
-                    .businessId(ctx.conversation().conversationId())
+                    .businessId(conversationId)
                     .fromState(from.name())
-                    .toState(result.getTargetState().name())
+                    .toState(result.getTargetState() != null ? result.getTargetState().name() : "null")
                     .fact(fact.name())
                     .guardResult(result.isTransitionAccepted())
                     .timestampMs(System.currentTimeMillis())
@@ -150,6 +171,14 @@ public class CbolStateMachineService {
                     .build();
             log.info("StateTransitionRecord: {}", record);
             return result;
+        } catch (RuntimeException ex) {
+            // Wrap with conversation context for easier troubleshooting
+            String message = String.format(
+                    "State machine transition failed: conversationId=%s, from=%s, fact=%s, traceId=%s: %s",
+                    conversationId, from, fact, ctx.traceContext().traceId(), ex.getMessage());
+            log.error(message, ex);
+            throw new com.selfdevelopment.ai.messaging.statemachine.exception.StateMachineException(
+                    message, ex);
         } finally {
             TraceMdcHelper.clear();
         }
@@ -169,9 +198,17 @@ public class CbolStateMachineService {
 
     /**
      * Convenience method that returns only the target state.
+     *
+     * @throws IllegalStateException if the transition was rejected and target state is null
      */
     public ConversationState fireAndGetState(CbolStateContext ctx, ConversationFact fact) {
-        return fire(ctx, fact).getTargetState();
+        StateContext<ConversationState, ConversationFact, CbolStateContext> result = fire(ctx, fact);
+        if (result.getTargetState() == null) {
+            throw new IllegalStateException(
+                    "Transition returned null target state (rejected): conversationId="
+                            + ctx.conversation().conversationId() + ", fact=" + fact);
+        }
+        return result.getTargetState();
     }
 
     /**

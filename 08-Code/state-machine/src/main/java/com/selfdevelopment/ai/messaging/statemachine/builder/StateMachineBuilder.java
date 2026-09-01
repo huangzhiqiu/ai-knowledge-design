@@ -62,13 +62,8 @@ public final class StateMachineBuilder<S, E, C> {
     private S initialState;
     private final Set<S> endStates = new HashSet<>();
 
-    // Current transition being built
-    private S currentSource;
-    private E currentEvent;
-    private S currentTarget;
-    private Guard<S, E, C> currentGuard;
-    private Action<S, E, C> currentAction;
-    private TransitionKind currentKind = TransitionKind.EXTERNAL;
+    /** Current transition being built (null when not in a transition block). */
+    private TransitionBuilder<S, E, C> currentTransition;
 
     private StateMachineBuilder(String machineId) {
         this.machineId = Objects.requireNonNull(machineId, "machineId must not be null");
@@ -199,7 +194,7 @@ public final class StateMachineBuilder<S, E, C> {
      * @return this builder (for fluent chaining)
      */
     public StateMachineBuilder<S, E, C> transition() {
-        resetCurrent();
+        this.currentTransition = new TransitionBuilder<>();
         return this;
     }
 
@@ -207,7 +202,7 @@ public final class StateMachineBuilder<S, E, C> {
      * Sets the source state of the current transition.
      */
     public StateMachineBuilder<S, E, C> from(S sourceState) {
-        this.currentSource = Objects.requireNonNull(sourceState, "sourceState must not be null");
+        ensureInTransition().source = Objects.requireNonNull(sourceState, "sourceState must not be null");
         return this;
     }
 
@@ -215,7 +210,7 @@ public final class StateMachineBuilder<S, E, C> {
      * Sets the triggering event of the current transition.
      */
     public StateMachineBuilder<S, E, C> on(E event) {
-        this.currentEvent = Objects.requireNonNull(event, "event must not be null");
+        ensureInTransition().event = Objects.requireNonNull(event, "event must not be null");
         return this;
     }
 
@@ -223,29 +218,29 @@ public final class StateMachineBuilder<S, E, C> {
      * Sets the target state of the current transition.
      */
     public StateMachineBuilder<S, E, C> to(S targetState) {
-        this.currentTarget = Objects.requireNonNull(targetState, "targetState must not be null");
+        ensureInTransition().target = Objects.requireNonNull(targetState, "targetState must not be null");
         return this;
     }
 
     /**
      * Sets the guard condition for the current transition.
      *
-     * @param guard the guard condition
+     * @param guard the guard condition (null means no guard)
      * @return this builder
      */
     public StateMachineBuilder<S, E, C> guard(Guard<S, E, C> guard) {
-        this.currentGuard = Objects.requireNonNull(guard, "guard must not be null");
+        ensureInTransition().guard = guard;
         return this;
     }
 
     /**
      * Sets the action to execute on the current transition.
      *
-     * @param action the action
+     * @param action the action (null means no action)
      * @return this builder
      */
     public StateMachineBuilder<S, E, C> perform(Action<S, E, C> action) {
-        this.currentAction = Objects.requireNonNull(action, "action must not be null");
+        ensureInTransition().action = action;
         return this;
     }
 
@@ -255,7 +250,7 @@ public final class StateMachineBuilder<S, E, C> {
      * @return this builder
      */
     public StateMachineBuilder<S, E, C> internal() {
-        this.currentKind = TransitionKind.INTERNAL;
+        ensureInTransition().kind = TransitionKind.INTERNAL;
         return this;
     }
 
@@ -265,7 +260,7 @@ public final class StateMachineBuilder<S, E, C> {
      * @return this builder
      */
     public StateMachineBuilder<S, E, C> external() {
-        this.currentKind = TransitionKind.EXTERNAL;
+        ensureInTransition().kind = TransitionKind.EXTERNAL;
         return this;
     }
 
@@ -276,14 +271,12 @@ public final class StateMachineBuilder<S, E, C> {
      * @throws IllegalStateException if source/event/target are not set
      */
     public StateMachineBuilder<S, E, C> and() {
-        if (currentSource == null || currentEvent == null || currentTarget == null) {
+        if (currentTransition == null || !currentTransition.isComplete()) {
             throw new IllegalStateException(
                     "Transition must have source, event, and target set before calling and()");
         }
-        transitions.add(new Transition<>(
-                currentSource, currentEvent, currentTarget,
-                currentGuard, currentAction, currentKind));
-        resetCurrent();
+        transitions.add(currentTransition.build());
+        currentTransition = null;
         return this;
     }
 
@@ -317,12 +310,7 @@ public final class StateMachineBuilder<S, E, C> {
      */
     public StateMachine<S, E, C> build(boolean validate) {
         // Auto-complete any in-progress transition
-        if (currentSource != null && currentEvent != null && currentTarget != null) {
-            transitions.add(new Transition<>(
-                    currentSource, currentEvent, currentTarget,
-                    currentGuard, currentAction, currentKind));
-            resetCurrent();
-        }
+        flushCurrentTransition();
 
         if (validate) {
             StateMachineValidator<S, E, C> validator = new StateMachineValidator<>();
@@ -338,23 +326,50 @@ public final class StateMachineBuilder<S, E, C> {
      * @return list of validation errors (empty if valid)
      */
     public List<com.selfdevelopment.ai.messaging.statemachine.validation.ValidationError> validate() {
-        // Auto-complete any in-progress transition
-        if (currentSource != null && currentEvent != null && currentTarget != null) {
-            transitions.add(new Transition<>(
-                    currentSource, currentEvent, currentTarget,
-                    currentGuard, currentAction, currentKind));
-            resetCurrent();
-        }
+        flushCurrentTransition();
         StateMachineValidator<S, E, C> validator = new StateMachineValidator<>();
         return validator.validate(new ArrayList<>(transitions), initialState, new HashSet<>(endStates));
     }
 
-    private void resetCurrent() {
-        currentSource = null;
-        currentEvent = null;
-        currentTarget = null;
-        currentGuard = null;
-        currentAction = null;
-        currentKind = TransitionKind.EXTERNAL;
+    /**
+     * Returns the current transition builder, creating one if not in a transition block.
+     * This allows from/on/to etc. to be called without an explicit transition() call.
+     */
+    private TransitionBuilder<S, E, C> ensureInTransition() {
+        if (currentTransition == null) {
+            currentTransition = new TransitionBuilder<>();
+        }
+        return currentTransition;
+    }
+
+    /**
+     * If a complete transition is in progress, add it to the list and clear.
+     */
+    private void flushCurrentTransition() {
+        if (currentTransition != null && currentTransition.isComplete()) {
+            transitions.add(currentTransition.build());
+            currentTransition = null;
+        }
+    }
+
+    /**
+     * Internal builder for a single transition. Encapsulates all transition fields
+     * in one place instead of 7 separate fields on the main builder.
+     */
+    private static final class TransitionBuilder<S, E, C> {
+        S source;
+        E event;
+        S target;
+        Guard<S, E, C> guard;
+        Action<S, E, C> action;
+        TransitionKind kind = TransitionKind.EXTERNAL;
+
+        boolean isComplete() {
+            return source != null && event != null && target != null;
+        }
+
+        Transition<S, E, C> build() {
+            return new Transition<>(source, event, target, guard, action, kind);
+        }
     }
 }
