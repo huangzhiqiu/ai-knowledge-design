@@ -190,6 +190,10 @@ com.selfdevelopment.ai.messaging/
 │   │   └── TimeoutAwareStateMachine.java  # Auto-schedule/cancel decorator
 │   └── diagram/                           # Diagram generation
 │       └── StateMachineDiagramGenerator.java # Mermaid / PlantUML / transition table
+│   └── event/                             # Standard event-driven infrastructure
+│       ├── StandardEvent.java             # Standard event contract (eventId, type, source, entityId, payload, traceId)
+│       ├── EventNormalizer.java           # Event normalizer interface <SRC, DST>
+│       └── EventDispatcher.java           # Event dispatcher (handler routing, interceptors)
 │
 └── cbol/                                   # CBOL business layer
     ├── enums/
@@ -209,6 +213,12 @@ com.selfdevelopment.ai.messaging/
     ├── config/
     │   ├── StateMachineMarketConfig.java   # Market-level configuration (timeouts, thresholds)
     │   └── MarketConfigProvider.java       # Config provider interface + InMemoryProvider
+    ├── ingress/                            # Event ingress layer
+    │   ├── AibotEvent.java                 # AIBot external event record
+    │   ├── GenesysEvent.java               # Genesys external event record
+    │   ├── AibotEventNormalizer.java       # AIBot → StandardEvent (4 event type mappings)
+    │   ├── GenesysEventNormalizer.java     # Genesys → StandardEvent (6 event type mappings)
+    │   └── CbolEventDispatcher.java         # Dual state machine pipeline dispatcher
     ├── action/
     │   ├── CbolAction.java                 # Functional interface for CBOL actions
     │   ├── ActionWorker.java               # Async executor with bounded thread pool + MDC propagation
@@ -218,6 +228,14 @@ com.selfdevelopment.ai.messaging/
     │   ├── InteractionStateMachineFactory.java   # Channel-level state machine (reserved)
     │   ├── CbolStateMachineService.java    # Main service entry point (fire, audit logging, fireWithLock)
     │   └── CbolStateMachineRegistry.java   # Singleton holder for shared registry
+    ├── connector/                          # Business connector layer
+    │   ├── Connector.java                  # Connector interface + request/response records + exception
+    │   ├── AibotConnector.java             # AIBot API connector (sendMessage, triggerHandoff, endSession)
+    │   ├── GenesysConnector.java           # Genesys Cloud connector (routeToQueue, sendAgentMessage, transfer)
+    │   ├── CbolWebsocketConnector.java     # Customer WebSocket connector (pushMessage, typingIndicator, session mgmt)
+    │   └── ChatHistoryOdsConnector.java    # Chat history ODS connector (saveMessage, saveStateChange, queryHistory)
+    ├── repository/                         # CBOL persistence implementation
+    │   └── ConversationRepository.java     # Conversation state repository (optimistic locking, instance storage)
     └── monitor/
         ├── AbstractTimeoutMonitor.java     # Base class for time-based monitors
         ├── CustomerIdleMonitor.java        # Fires SYS_CUSTOMER_IDLE when idle threshold exceeded
