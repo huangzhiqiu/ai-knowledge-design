@@ -182,24 +182,71 @@ flowchart LR
 
 ## 6. State Machine Lifecycle
 
+### 6.1 Startup Phase
+
 ```mermaid
 flowchart TD
-    A[Application Startup] --> B[ConversationStateMachineFactory.build()]
-    B --> C[Create 10 Transition rules]
-    C --> D[Register in CbolStateMachineRegistry]
-    D --> E[State machine ready]
-
-    E --> F[CbolStateMachineService.fire()]
-    F --> G[fireEvent(sourceState, event, context)]
-    G --> H{Transition exists?}
-    H -->|No| I[throw StateMachineException]
-    H -->|Yes| J{Guard satisfied?}
-    J -->|No| K[Next candidate / throw]
-    J -->|Yes| L[Execute exit action]
-    L --> M[Execute transition action]
-    M --> N[Execute entry action]
-    N --> O[Notify listeners]
-    O --> P[Return StateContext]
-
-    P --> Q[Caller updates conversation state in DB]
+    A[Application Startup] --> B[ConversationStateMachineFactory.build]
+    B --> C[Define 23 Transition rules<br/>T01-T23]
+    C --> D[StateMachineValidator<br/>8 build-time rules]
+    D --> E{Validation passed?}
+    E -->|No| F[Throw IllegalStateException<br/>with all validation errors]
+    E -->|Yes| G[Register in StateMachineRegistry]
+    G --> H[State machine ready<br/>id = conversation-sm]
 ```
+
+### 6.2 Event Processing Phase
+
+```mermaid
+flowchart TD
+    A[CbolStateMachineService.fire] --> B[Load conversation from DB]
+    B --> C[Resolve market config]
+    C --> D[fireEvent sourceState, event, context]
+
+    D --> E{Transition exists<br/>for source+event?}
+    E -->|No| F[Throw StateMachineException<br/>No transition found]
+    E -->|Yes| G{Guard satisfied?}
+
+    G -->|No| H[Throw StateMachineException<br/>Guard rejected transition]
+    G -->|Yes| I[Execute exit action<br/>best-effort]
+
+    I --> J[Execute transition action]
+    J --> K{Action threw exception?}
+
+    K -->|Yes| L[FailoverStateMachine intercepts]
+    L --> M[Generate SYS_ACTION_FAILED event]
+    M --> N[Re-fire fail event<br/>→ enter ERROR state]
+    N --> O{Fail event also failed?}
+    O -->|Yes| P[Throw StateMachineException<br/>loop prevention]
+    O -->|No| Q[Continue with ERROR state result]
+
+    K -->|No| R[Execute entry action<br/>best-effort]
+    Q --> R
+    R --> S[Notify listeners<br/>8 callback points]
+    S --> T[Return StateContext]
+
+    F --> U[Exception propagates to caller]
+    H --> U
+    P --> U
+
+    T --> V[Caller updates conversation state<br/>optimistic lock + version]
+    V --> W{CAS succeeded?}
+    W -->|No| X[Retry with backoff<br/>max 3 attempts]
+    X --> V
+    W -->|Yes| Y[Persist StateTransitionRecord<br/>audit log]
+    Y --> Z[Done]
+    U --> Z
+```
+
+### 6.3 Lifecycle Callbacks
+
+| Phase | Listener Callback | When |
+|-------|-------------------|------|
+| State machine start | `stateMachineStarted()` | After `start()` called |
+| Event received | `eventReceived(event)` | Before transition lookup |
+| Transition accepted | `transitionAccepted(transition)` | After guard passes, before actions |
+| Transition rejected | `transitionRejected(event, source)` | No transition or guard failed |
+| State entered | `stateEntered(state)` | After entry action executes |
+| State exited | `stateExited(state)` | After exit action executes |
+| Action executed | `actionExecuted(action, result)` | After transition action completes |
+| State machine stop | `stateMachineStopped()` | After `stop()` called |
