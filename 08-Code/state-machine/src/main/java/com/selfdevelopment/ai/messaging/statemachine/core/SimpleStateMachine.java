@@ -24,6 +24,16 @@ import java.util.concurrent.CopyOnWriteArrayList;
  *   <li><b>Listener support</b>: inspired by Spring StateMachine's listener mechanism</li>
  *   <li><b>Extended state</b>: key-value variables shared across transitions</li>
  * </ul>
+ * <p>
+ * <b>Two firing modes:</b>
+ * <ul>
+ *   <li>{@link #fireEvent} — throws {@link StateMachineException} when no transition matches
+ *       or all guards fail. Use this when you want failures to propagate (e.g., with
+ *       ResilientStateMachine / FailoverStateMachine decorators).</li>
+ *   <li>{@link #tryFireEvent} — returns a rejected {@link StateContext} instead of throwing.
+ *       Use this when you want to handle "event not applicable" gracefully without try-catch.</li>
+ * </ul>
+ * Both modes still throw on action execution failures (those are real errors, not "not applicable").
  *
  * @param <S> the state type
  * @param <E> the event type
@@ -45,24 +55,15 @@ public final class SimpleStateMachine<S, E, C> implements StateMachine<S, E, C> 
     private final Set<S> endStates;
     private volatile boolean started = false;
 
-    /**
-     * Creates a state machine from a list of transitions.
-     */
     public SimpleStateMachine(String machineId, List<Transition<S, E, C>> transitions) {
         this(machineId, transitions, null, Collections.emptySet(), Collections.emptyMap());
     }
 
-    /**
-     * Creates a state machine with initial state and end states.
-     */
     public SimpleStateMachine(String machineId, List<Transition<S, E, C>> transitions,
                               S initialState, Set<S> endStates) {
         this(machineId, transitions, initialState, endStates, Collections.emptyMap());
     }
 
-    /**
-     * Creates a state machine with state definitions (entry/exit actions).
-     */
     public SimpleStateMachine(String machineId, List<Transition<S, E, C>> transitions,
                               S initialState, Set<S> endStates,
                               Map<S, StateDef<S, E, C>> stateDefs) {
@@ -81,6 +82,8 @@ public final class SimpleStateMachine<S, E, C> implements StateMachine<S, E, C> 
         }
         this.transitions = Collections.unmodifiableMap(map);
     }
+
+    // ===== Lifecycle =====
 
     @Override
     public void start() {
@@ -103,13 +106,62 @@ public final class SimpleStateMachine<S, E, C> implements StateMachine<S, E, C> 
         return started;
     }
 
+    // ===== Event firing =====
+
     @Override
     public StateContext<S, E, C> fireEvent(S sourceState, E event, C context) {
         return fireEvent(sourceState, event, context, null);
     }
 
+    /**
+     * Fires an event and throws on rejection (no transition / guard failed).
+     * <p>
+     * Internally delegates to {@link #tryFireEvent}, then throws if the result
+     * was rejected. Action execution failures always throw, regardless of mode.
+     */
     @Override
     public StateContext<S, E, C> fireEvent(S sourceState, E event, C context, ExtendedState extendedState) {
+        StateContext<S, E, C> result = tryFireEvent(sourceState, event, context, extendedState);
+        if (!result.isTransitionAccepted()) {
+            // Extract the rejection reason from the context (set by tryFireEvent)
+            String reason = result.getException() != null
+                    ? result.getException().getMessage()
+                    : "Transition rejected";
+            // Preserve original message format for backward compatibility
+            // (ResilientStateMachine parses "No transition found" / "guard condition failed")
+            String message = reason.contains("No transition found")
+                    ? String.format("No transition found: state=%s, event=%s (machine=%s)",
+                            sourceState, event, machineId)
+                    : String.format("Transition guard condition failed: state=%s, event=%s (machine=%s)",
+                            sourceState, event, machineId);
+            throw new StateMachineException(message);
+        }
+        return result;
+    }
+
+    /**
+     * Fires an event and returns a rejected context instead of throwing.
+     * <p>
+     * When no transition matches or all guards fail, returns a {@link StateContext}
+     * with {@code transitionAccepted=false}. Action execution failures still throw
+     * (those are real errors, not "event not applicable").
+     * <p>
+     * Use this method when you want to handle rejections gracefully:
+     * <pre>{@code
+     * StateContext<S, E, C> result = machine.tryFireEvent(state, event, ctx);
+     * if (!result.isTransitionAccepted()) {
+     *     log.warn("Event not applicable: {}", event);
+     *     return;
+     * }
+     * }</pre>
+     *
+     * @param sourceState   the current state
+     * @param event         the event to fire
+     * @param context       the business context
+     * @param extendedState the extended state (null creates a fresh one)
+     * @return the state context (accepted or rejected)
+     */
+    public StateContext<S, E, C> tryFireEvent(S sourceState, E event, C context, ExtendedState extendedState) {
         Objects.requireNonNull(sourceState, "sourceState must not be null");
         Objects.requireNonNull(event, "event must not be null");
 
@@ -117,102 +169,61 @@ public final class SimpleStateMachine<S, E, C> implements StateMachine<S, E, C> 
 
         List<Transition<S, E, C>> candidates = transitions.get(TransitionKey.of(sourceState, event));
         if (candidates == null || candidates.isEmpty()) {
-            StateContext<S, E, C> deniedCtx = StateContext.<S, E, C>builder()
-                    .sourceState(sourceState)
-                    .event(event)
-                    .businessContext(context)
-                    .extendedState(ext)
-                    .transitionAccepted(false)
-                    .build();
-            listeners.forEach(l -> l.transitionDenied(deniedCtx, "No transition found"));
-            throw new StateMachineException(
-                    String.format("No transition found: state=%s, event=%s (machine=%s)",
-                            sourceState, event, machineId));
+            StateContext<S, E, C> denied = buildContext(sourceState, null, event, context, ext,
+                    false, new StateMachineException("No transition found"));
+            listeners.forEach(l -> l.transitionDenied(denied, "No transition found"));
+            return denied;
         }
 
         for (Transition<S, E, C> t : candidates) {
-            StateContext<S, E, C> preCtx = StateContext.<S, E, C>builder()
-                    .sourceState(sourceState)
-                    .targetState(t.getTargetState())
-                    .event(event)
-                    .businessContext(context)
-                    .extendedState(ext)
-                    .build();
+            StateContext<S, E, C> preCtx = buildContext(sourceState, t.getTargetState(), event,
+                    context, ext, true, null);
 
             listeners.forEach(l -> l.transitionStarted(t, preCtx));
 
             if (!t.isGuardSatisfied(preCtx)) {
-                // Guard failed for this candidate; try next candidate without notifying denied
-                // (denied is notified once after all candidates are exhausted)
                 continue;
             }
 
-            // Execute exit action of source state (best-effort, failures do not block transition)
+            // Exit action (best-effort)
             if (!t.isInternal()) {
-                executeSafely(() -> {
-                    StateDef<S, E, C> sourceDef = stateDefs.get(sourceState);
-                    if (sourceDef != null && sourceDef.hasExitAction()) {
-                        sourceDef.exit(preCtx);
-                    }
-                }, preCtx, "exit action of state " + sourceState);
+                executeStateAction(stateDefs.get(sourceState), true, preCtx, sourceState);
             }
 
-            // Execute transition action (failures propagate and abort transition)
+            // Transition action (failures propagate)
             try {
                 t.executeAction(preCtx);
             } catch (RuntimeException ex) {
-                StateContext<S, E, C> errorCtx = StateContext.<S, E, C>builder()
-                        .sourceState(sourceState)
-                        .targetState(t.getTargetState())
-                        .event(event)
-                        .businessContext(context)
-                        .extendedState(ext)
-                        .exception(ex)
-                        .transitionAccepted(false)
-                        .build();
+                StateContext<S, E, C> errorCtx = buildContext(sourceState, t.getTargetState(),
+                        event, context, ext, false, ex);
                 listeners.forEach(l -> l.transitionError(errorCtx));
                 throw new StateMachineException("Transition action failed: " + ex.getMessage(), ex);
             }
 
-            // Execute entry action of target state (best-effort, failures do not block transition)
+            // Entry action (best-effort)
             if (!t.isInternal()) {
-                executeSafely(() -> {
-                    StateDef<S, E, C> targetDef = stateDefs.get(t.getTargetState());
-                    if (targetDef != null && targetDef.hasEntryAction()) {
-                        targetDef.enter(preCtx);
-                    }
-                }, preCtx, "entry action of state " + t.getTargetState());
+                executeStateAction(stateDefs.get(t.getTargetState()), false, preCtx, t.getTargetState());
             }
 
             S targetState = t.isInternal() ? sourceState : t.getTargetState();
-            StateContext<S, E, C> resultCtx = StateContext.<S, E, C>builder()
-                    .sourceState(sourceState)
-                    .targetState(targetState)
-                    .event(event)
-                    .businessContext(context)
-                    .extendedState(ext)
-                    .transitionAccepted(true)
-                    .build();
+            StateContext<S, E, C> result = buildContext(sourceState, targetState, event, context,
+                    ext, true, null);
 
-            listeners.forEach(l -> l.transitionEnded(t, resultCtx));
+            listeners.forEach(l -> l.transitionEnded(t, result));
             if (!t.isInternal() && !sourceState.equals(targetState)) {
-                listeners.forEach(l -> l.stateChanged(resultCtx));
+                listeners.forEach(l -> l.stateChanged(result));
             }
-            return resultCtx;
+            return result;
         }
 
-        StateContext<S, E, C> deniedCtx = StateContext.<S, E, C>builder()
-                .sourceState(sourceState)
-                .event(event)
-                .businessContext(context)
-                .extendedState(ext)
-                .transitionAccepted(false)
-                .build();
-        listeners.forEach(l -> l.transitionDenied(deniedCtx, "All guard conditions failed"));
-        throw new StateMachineException(
-                String.format("Transition guard condition failed: state=%s, event=%s (machine=%s)",
-                        sourceState, event, machineId));
+        // All guards failed
+        StateContext<S, E, C> denied = buildContext(sourceState, null, event, context, ext,
+                false, new StateMachineException("Transition guard condition failed"));
+        listeners.forEach(l -> l.transitionDenied(denied, "All guard conditions failed"));
+        return denied;
     }
+
+    // ===== Queries =====
 
     @Override
     public boolean hasTransition(S sourceState, E event) {
@@ -231,13 +242,8 @@ public final class SimpleStateMachine<S, E, C> implements StateMachine<S, E, C> 
         List<Transition<S, E, C>> candidates = transitions.get(TransitionKey.of(sourceState, event));
         ExtendedState ext = new ExtendedState();
         for (Transition<S, E, C> t : candidates) {
-            StateContext<S, E, C> ctx = StateContext.<S, E, C>builder()
-                    .sourceState(sourceState)
-                    .targetState(t.getTargetState())
-                    .event(event)
-                    .businessContext(context)
-                    .extendedState(ext)
-                    .build();
+            StateContext<S, E, C> ctx = buildContext(sourceState, t.getTargetState(), event,
+                    context, ext, true, null);
             if (t.isGuardSatisfied(ctx)) {
                 return true;
             }
@@ -272,6 +278,8 @@ public final class SimpleStateMachine<S, E, C> implements StateMachine<S, E, C> 
         return endStates;
     }
 
+    // ===== Listeners =====
+
     @Override
     public void addListener(StateMachineListener<S, E, C> listener) {
         if (listener != null) {
@@ -290,23 +298,54 @@ public final class SimpleStateMachine<S, E, C> implements StateMachine<S, E, C> 
                 + ", initial=" + initialState + ", ends=" + endStates + "}";
     }
 
+    // ===== Private helpers =====
+
     /**
-     * Executes a runnable safely, catching and logging any RuntimeException.
-     * Used for best-effort actions (entry/exit) that should not abort the transition.
+     * Builds a StateContext in one place, eliminating repeated builder calls.
      */
-    private void executeSafely(Runnable action, StateContext<S, E, C> ctx, String description) {
+    private StateContext<S, E, C> buildContext(S sourceState, S targetState, E event,
+                                                 C context, ExtendedState ext,
+                                                 boolean accepted, Exception exception) {
+        return StateContext.<S, E, C>builder()
+                .sourceState(sourceState)
+                .targetState(targetState)
+                .event(event)
+                .businessContext(context)
+                .extendedState(ext)
+                .transitionAccepted(accepted)
+                .exception(exception)
+                .build();
+    }
+
+    /**
+     * Executes a state entry or exit action safely (best-effort, failures do not block transition).
+     *
+     * @param stateDef the state definition (may be null)
+     * @param isExit   true for exit action, false for entry action
+     * @param ctx      the state context
+     * @param state    the state (for logging)
+     */
+    private void executeStateAction(StateDef<S, E, C> stateDef, boolean isExit,
+                                      StateContext<S, E, C> ctx, S state) {
+        if (stateDef == null) {
+            return;
+        }
+        boolean hasAction = isExit ? stateDef.hasExitAction() : stateDef.hasEntryAction();
+        if (!hasAction) {
+            return;
+        }
         try {
-            action.run();
+            if (isExit) {
+                stateDef.exit(ctx);
+            } else {
+                stateDef.enter(ctx);
+            }
         } catch (RuntimeException ex) {
-            StateContext<S, E, C> errorCtx = StateContext.<S, E, C>builder()
-                    .sourceState(ctx.getSourceState())
-                    .targetState(ctx.getTargetState())
-                    .event(ctx.getEvent())
-                    .businessContext(ctx.getBusinessContext())
-                    .extendedState(ctx.getExtendedState())
-                    .exception(ex)
-                    .transitionAccepted(true)
-                    .build();
+            // Best-effort: log via listener, do not abort transition
+            StateContext<S, E, C> errorCtx = buildContext(
+                    ctx.getSourceState(), ctx.getTargetState(), ctx.getEvent(),
+                    ctx.getBusinessContext(), ctx.getExtendedState(),
+                    false, ex);  // FIX: was true — entry/exit failure should NOT mark as accepted
             listeners.forEach(l -> l.transitionError(errorCtx));
         }
     }
