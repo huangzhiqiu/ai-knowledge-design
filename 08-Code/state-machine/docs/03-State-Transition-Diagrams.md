@@ -87,32 +87,81 @@ stateDiagram-v2
 | ERROR | Log error, alert on-call, capture diagnostics | Clear error state |
 | CLOSED | Clean up resources, archive conversation | (none, terminal) |
 
-## 2. Interaction State Machine (Reserved)
+## 2. Interaction State Machine
 
 ### 2.1 States
 
 ```java
 public enum InteractionState {
     CONNECTING,     // Channel establishing connection
-    CONNECTED,      // Channel active, messages flowing
-    RECONNECTING,   // Channel dropped, attempting reconnect
-    DISCONNECTED    // Channel terminated
+    CONNECTED,      // Channel active, communication flowing
+    RECONNECTING,   // Channel dropped, attempting reconnection
+    HELD,           // Customer on hold (agent-initiated)
+    TRANSFERRING,   // Channel transfer in progress (e.g., WebSocket handoff)
+    DISCONNECTED    // Channel terminated (terminal)
 }
 ```
 
-### 2.2 State Diagram (Reserved)
+### 2.2 Events (InteractionFact)
+
+```java
+public enum InteractionFact {
+    // Connection lifecycle
+    CONNECTION_ESTABLISHED, CONNECTION_FAILED, CONNECTION_DROPPED,
+    RECONNECT_SUCCESS, RECONNECT_FAILED, RECONNECT_EXHAUSTED, CLOSE_REQUEST,
+    // Hold
+    HOLD_REQUEST, HOLD_RESUME,
+    // Transfer (channel-level)
+    TRANSFER_START, TRANSFER_COMPLETE, TRANSFER_FAILED
+}
+```
+
+### 2.3 State Diagram
 
 ```mermaid
 stateDiagram-v2
     [*] --> CONNECTING
+
     CONNECTING --> CONNECTED : CONNECTION_ESTABLISHED
     CONNECTING --> DISCONNECTED : CONNECTION_FAILED
+
     CONNECTED --> RECONNECTING : CONNECTION_DROPPED
-    RECONNECTING --> CONNECTED : RECONNECT_SUCCESS
-    RECONNECTING --> DISCONNECTED : RECONNECT_FAILED / MAX_RETRIES
+    CONNECTED --> HELD : HOLD_REQUEST
+    CONNECTED --> TRANSFERRING : TRANSFER_START
     CONNECTED --> DISCONNECTED : CLOSE_REQUEST
+
+    RECONNECTING --> CONNECTED : RECONNECT_SUCCESS
+    RECONNECTING --> DISCONNECTED : RECONNECT_FAILED
+    RECONNECTING --> DISCONNECTED : RECONNECT_EXHAUSTED
+
+    HELD --> CONNECTED : HOLD_RESUME
+    HELD --> DISCONNECTED : CLOSE_REQUEST
+
+    TRANSFERRING --> CONNECTED : TRANSFER_COMPLETE
+    TRANSFERRING --> CONNECTED : TRANSFER_FAILED
+    TRANSFERRING --> DISCONNECTED : CLOSE_REQUEST
+
     DISCONNECTED --> [*]
 ```
+
+### 2.4 Transition Table
+
+| ID | Source | Event | Target | Notes |
+|----|--------|-------|--------|-------|
+| I01 | CONNECTING | CONNECTION_ESTABLISHED | CONNECTED | Channel connected successfully |
+| I02 | CONNECTING | CONNECTION_FAILED | DISCONNECTED | Connection failed (network/auth) |
+| I03 | CONNECTED | CONNECTION_DROPPED | RECONNECTING | Active connection dropped unexpectedly |
+| I04 | CONNECTED | CLOSE_REQUEST | DISCONNECTED | Explicit close (customer/agent) |
+| I05 | RECONNECTING | RECONNECT_SUCCESS | CONNECTED | Reconnection attempt succeeded |
+| I06 | RECONNECTING | RECONNECT_FAILED | DISCONNECTED | Reconnection attempt failed |
+| I07 | RECONNECTING | RECONNECT_EXHAUSTED | DISCONNECTED | Max reconnection retries reached |
+| I08 | CONNECTED | HOLD_REQUEST | HELD | Agent puts customer on hold |
+| I09 | HELD | HOLD_RESUME | CONNECTED | Customer retrieved from hold |
+| I10 | HELD | CLOSE_REQUEST | DISCONNECTED | Close while on hold |
+| I11 | CONNECTED | TRANSFER_START | TRANSFERRING | Channel transfer initiated |
+| I12 | TRANSFERRING | TRANSFER_COMPLETE | CONNECTED | Transfer completed, on new channel |
+| I13 | TRANSFERRING | TRANSFER_FAILED | CONNECTED | Transfer failed, stay on original channel |
+| I14 | TRANSFERRING | CLOSE_REQUEST | DISCONNECTED | Close during transfer |
 
 ## 3. Monitor Trigger Diagrams
 
