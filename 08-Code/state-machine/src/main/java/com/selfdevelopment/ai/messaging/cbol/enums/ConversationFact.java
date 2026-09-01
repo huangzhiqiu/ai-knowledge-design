@@ -1,5 +1,11 @@
 package com.selfdevelopment.ai.messaging.cbol.enums;
 
+/**
+ * Events (facts) that drive conversation state transitions.
+ * <p>
+ * Survey-related events: SURVEY_START enters the survey in-progress state,
+ * SURVEY_COMPLETE exits it normally, SYS_SURVEY_TIMEOUT exits it on timeout.
+ */
 public enum ConversationFact {
     // LIFECYCLE
     CUSTOMER_CONNECT,
@@ -9,12 +15,15 @@ public enum ConversationFact {
     TRANSFER_CONNECTED,
     TRANSFER_FAILED,
     TRANSFER_TIMEOUT,
+    // SURVEY (survey as in-progress state, controlled by flow)
+    SURVEY_START,
+    SURVEY_COMPLETE,
     // ENDING
     CUSTOMER_CLOSE,
     AGENT_CLOSE,
-    SURVEY_COMPLETE,
     // SYSTEM
     SYS_CUSTOMER_IDLE,
     SYS_TRANSFER_TIMEOUT,
-    SYS_ENDING_GRACE_TIMEOUT
+    SYS_ENDING_GRACE_TIMEOUT,
+    SYS_SURVEY_TIMEOUT
 }

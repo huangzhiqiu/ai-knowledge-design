@@ -14,19 +14,28 @@ stateDiagram-v2
     INITIATED --> ENDING : SYS_CUSTOMER_IDLE
 
     ACTIVE --> TRANSFERRED : TRANSFER_REQUEST
-    ACTIVE --> ENDING : CUSTOMER_CLOSE
+    ACTIVE --> SURVEY_IN_PROGRESS : SURVEY_START (surveyEnabled)
+    ACTIVE --> ENDING : CUSTOMER_CLOSE (no survey)
     ACTIVE --> ENDING : SYS_CUSTOMER_IDLE
 
     TRANSFERRED --> ACTIVE : TRANSFER_CONNECTED (reserved)
     TRANSFERRED --> INITIATED : TRANSFER_FAILED
     TRANSFERRED --> INITIATED : TRANSFER_TIMEOUT
     TRANSFERRED --> INITIATED : SYS_TRANSFER_TIMEOUT
+    TRANSFERRED --> SURVEY_IN_PROGRESS : SURVEY_START (surveyEnabled)
     TRANSFERRED --> ENDING : SYS_CUSTOMER_IDLE
+
+    SURVEY_IN_PROGRESS --> ENDING : SURVEY_COMPLETE
+    SURVEY_IN_PROGRESS --> ENDING : SYS_SURVEY_TIMEOUT
+    SURVEY_IN_PROGRESS --> ENDING : SYS_CUSTOMER_IDLE
+    SURVEY_IN_PROGRESS --> ENDING : CUSTOMER_CLOSE
 
     ENDING --> CLOSED : SYS_ENDING_GRACE_TIMEOUT
 
     CLOSED --> [*]
 ```
+
+> **Survey as in-progress state**: When `surveyEnabled=true`, `closeConversation()` fires `SURVEY_START` to enter `SURVEY_IN_PROGRESS` instead of directly going to `ENDING`. The survey flow is fully controlled by the state machine.
 
 ### 1.2 Transition Table
 
@@ -37,12 +46,18 @@ stateDiagram-v2
 | T03 | TRANSFERRED | TRANSFER_CONNECTED | ACTIVE | - | - | - | Reserved for future |
 | T04 | TRANSFERRED | TRANSFER_FAILED | INITIATED | - | - | - | **v6: no rollback to ACTIVE** |
 | T05 | TRANSFERRED | TRANSFER_TIMEOUT | INITIATED | - | - | - | **v6: no rollback to ACTIVE** |
-| T06 | ACTIVE | CUSTOMER_CLOSE | ENDING | - | - | - | Customer explicitly closes |
+| T06 | ACTIVE | CUSTOMER_CLOSE | ENDING | !surveyEnabled | - | - | Customer closes, no survey |
 | T07 | INITIATED | SYS_CUSTOMER_IDLE | ENDING | - | - | CustomerIdleMonitor | Idle before connect |
 | T08 | ACTIVE | SYS_CUSTOMER_IDLE | ENDING | - | - | CustomerIdleMonitor | Customer idle timeout |
 | T09 | TRANSFERRED | SYS_CUSTOMER_IDLE | ENDING | - | - | CustomerIdleMonitor | Idle during transfer |
 | T10 | TRANSFERRED | SYS_TRANSFER_TIMEOUT | INITIATED | - | - | TransferMonitor | **v6: no rollback** |
 | T11 | ENDING | SYS_ENDING_GRACE_TIMEOUT | CLOSED | - | - | EndingGraceMonitor | Terminal transition |
+| T12 | ACTIVE | SURVEY_START | SURVEY_IN_PROGRESS | surveyEnabled | Show survey UI | - | **Survey as in-progress state** |
+| T13 | TRANSFERRED | SURVEY_START | SURVEY_IN_PROGRESS | surveyEnabled | Show survey UI | - | **Survey as in-progress state** |
+| T14 | SURVEY_IN_PROGRESS | SURVEY_COMPLETE | ENDING | - | Save survey results | - | Survey completed normally |
+| T15 | SURVEY_IN_PROGRESS | SYS_SURVEY_TIMEOUT | ENDING | - | Save partial results | SurveyTimeoutMonitor | Survey timed out |
+| T16 | SURVEY_IN_PROGRESS | SYS_CUSTOMER_IDLE | ENDING | - | - | CustomerIdleMonitor | Customer left during survey |
+| T17 | SURVEY_IN_PROGRESS | CUSTOMER_CLOSE | ENDING | - | - | - | Customer explicitly closes survey |
 
 ### 1.3 State Entry/Exit Actions
 
@@ -51,7 +66,8 @@ stateDiagram-v2
 | INITIATED | (none) | (none) |
 | ACTIVE | Send welcome message (reserved) | Notify channel (reserved) |
 | TRANSFERRED | Initiate transfer request | Cancel pending transfer (reserved) |
-| ENDING | Start grace period timer | Send survey (if surveyEnabled) |
+| SURVEY_IN_PROGRESS | Show survey UI, start survey timer | Save survey results, stop timer |
+| ENDING | Start grace period timer | (none) |
 | CLOSED | Clean up resources, archive conversation | (none, terminal) |
 
 ## 2. Interaction State Machine (Reserved)

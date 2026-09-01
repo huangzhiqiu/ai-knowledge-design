@@ -45,6 +45,51 @@ public class ConversationStateMachineFactory {
                 .to(ConversationState.ENDING)
                 .and();
 
+        // ===== SURVEY FLOW (survey as in-progress state, controlled by state machine) =====
+        // When a conversation ends but survey is enabled, fire SURVEY_START instead of CUSTOMER_CLOSE.
+        // The business layer (CbolStateMachineService.closeConversation) decides which event to fire
+        // based on conversation.surveyEnabled().
+
+        builder.transition()
+                .from(ConversationState.ACTIVE)
+                .on(ConversationFact.SURVEY_START)
+                .to(ConversationState.SURVEY_IN_PROGRESS)
+                .and();
+
+        builder.transition()
+                .from(ConversationState.TRANSFERRED)
+                .on(ConversationFact.SURVEY_START)
+                .to(ConversationState.SURVEY_IN_PROGRESS)
+                .and();
+
+        // Survey completes normally → ENDING
+        builder.transition()
+                .from(ConversationState.SURVEY_IN_PROGRESS)
+                .on(ConversationFact.SURVEY_COMPLETE)
+                .to(ConversationState.ENDING)
+                .and();
+
+        // Survey timeout → ENDING (system-driven)
+        builder.transition()
+                .from(ConversationState.SURVEY_IN_PROGRESS)
+                .on(ConversationFact.SYS_SURVEY_TIMEOUT)
+                .to(ConversationState.ENDING)
+                .and();
+
+        // Customer leaves during survey → ENDING
+        builder.transition()
+                .from(ConversationState.SURVEY_IN_PROGRESS)
+                .on(ConversationFact.SYS_CUSTOMER_IDLE)
+                .to(ConversationState.ENDING)
+                .and();
+
+        // Customer explicitly closes during survey → ENDING
+        builder.transition()
+                .from(ConversationState.SURVEY_IN_PROGRESS)
+                .on(ConversationFact.CUSTOMER_CLOSE)
+                .to(ConversationState.ENDING)
+                .and();
+
         // SYSTEM events (from monitors)
         builder.transition()
                 .from(ConversationState.INITIATED)

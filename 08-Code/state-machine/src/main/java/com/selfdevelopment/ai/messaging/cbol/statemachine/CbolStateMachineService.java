@@ -175,6 +175,47 @@ public class CbolStateMachineService {
     }
 
     /**
+     * Closes a conversation, automatically routing through the survey flow if enabled.
+     * <p>
+     * If {@code conversation.surveyEnabled()} is true, fires {@link ConversationFact#SURVEY_START}
+     * to enter {@link ConversationState#SURVEY_IN_PROGRESS}. Otherwise fires
+     * {@link ConversationFact#CUSTOMER_CLOSE} to go directly to {@link ConversationState#ENDING}.
+     * <p>
+     * This ensures the survey is treated as an in-progress state controlled by the state machine
+     * flow, rather than a boolean flag on the conversation instance.
+     *
+     * @param ctx the conversation context
+     * @return the state context after the transition
+     */
+    public StateContext<ConversationState, ConversationFact, CbolStateContext> closeConversation(
+            CbolStateContext ctx) {
+        Objects.requireNonNull(ctx, "ctx must not be null");
+        Objects.requireNonNull(ctx.conversation(), "ctx.conversation must not be null");
+
+        ConversationFact fact = ctx.conversation().surveyEnabled()
+                ? ConversationFact.SURVEY_START
+                : ConversationFact.CUSTOMER_CLOSE;
+
+        log.debug("closeConversation: surveyEnabled={}, firing={}",
+                ctx.conversation().surveyEnabled(), fact);
+
+        return fire(ctx, fact);
+    }
+
+    /**
+     * Completes the survey and transitions to ENDING.
+     * <p>
+     * Only valid when the conversation is in {@link ConversationState#SURVEY_IN_PROGRESS}.
+     *
+     * @param ctx the conversation context
+     * @return the state context after the transition
+     */
+    public StateContext<ConversationState, ConversationFact, CbolStateContext> completeSurvey(
+            CbolStateContext ctx) {
+        return fire(ctx, ConversationFact.SURVEY_COMPLETE);
+    }
+
+    /**
      * Returns whether this service uses persistent state storage.
      *
      * @return true if a state repository is configured
