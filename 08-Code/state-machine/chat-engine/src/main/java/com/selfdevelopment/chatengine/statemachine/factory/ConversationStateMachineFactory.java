@@ -1,9 +1,17 @@
 package com.selfdevelopment.chatengine.statemachine.factory;
 
+import com.selfdevelopment.chatengine.action.CbolAction;
+import com.selfdevelopment.chatengine.action.impl.CustomerCloseAction;
+import com.selfdevelopment.chatengine.action.impl.CustomerConnectAction;
+import com.selfdevelopment.chatengine.action.impl.SurveyCompleteAction;
+import com.selfdevelopment.chatengine.action.impl.SurveyStartAction;
+import com.selfdevelopment.chatengine.action.impl.TransferFailedAction;
+import com.selfdevelopment.chatengine.action.impl.TransferRequestAction;
 import com.selfdevelopment.chatengine.service.ChatEngineStateMachineService;
 
 import com.selfdevelopment.chatengine.statemachine.registry.CbolStateMachineRegistry;
 
+import com.selfdevelopment.statemachine.api.Action;
 import com.selfdevelopment.statemachine.builder.StateMachineBuilder;
 import com.selfdevelopment.statemachine.api.StateMachine;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
@@ -14,20 +22,40 @@ public class ConversationStateMachineFactory {
 
     public static final String MACHINE_ID = "conversation";
 
+    // Action instances (stateless, can be shared)
+    private static final CustomerConnectAction CUSTOMER_CONNECT_ACTION = new CustomerConnectAction();
+    private static final TransferRequestAction TRANSFER_REQUEST_ACTION = new TransferRequestAction();
+    private static final TransferFailedAction TRANSFER_FAILED_ACTION = new TransferFailedAction();
+    private static final CustomerCloseAction CUSTOMER_CLOSE_ACTION = new CustomerCloseAction();
+    private static final SurveyStartAction SURVEY_START_ACTION = new SurveyStartAction();
+    private static final SurveyCompleteAction SURVEY_COMPLETE_ACTION = new SurveyCompleteAction();
+
+    /**
+     * Adapter to wrap CbolAction into Action<S, E, C> for the state machine framework.
+     * Extracts the business context (CbolStateContext) from the StateContext.
+     */
+    private static Action<ConversationState, ConversationFact, CbolStateContext> wrap(CbolAction action) {
+        return context -> action.execute(context.getBusinessContext());
+    }
+
     public static StateMachine<ConversationState, ConversationFact, CbolStateContext> build() {
         StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> builder =
                 StateMachineBuilder.builder(MACHINE_ID);
 
+        // INITIATED → ACTIVE: customer connects, execute CustomerConnectAction
         builder.transition()
                 .from(ConversationState.INITIATED)
                 .on(ConversationFact.CUSTOMER_CONNECT)
                 .to(ConversationState.ACTIVE)
+                .perform(wrap(CUSTOMER_CONNECT_ACTION))
                 .and();
 
+        // ACTIVE → TRANSFERRED: transfer requested, execute TransferRequestAction
         builder.transition()
                 .from(ConversationState.ACTIVE)
                 .on(ConversationFact.TRANSFER_REQUEST)
                 .to(ConversationState.TRANSFERRED)
+                .perform(wrap(TRANSFER_REQUEST_ACTION))
                 .and();
 
         // Agent attached (internal transition, stays in ACTIVE)
@@ -45,23 +73,27 @@ public class ConversationStateMachineFactory {
                 .to(ConversationState.ACTIVE)
                 .and();
 
-        // v6: transfer failed -> INITIATED (no rollback)
+        // v6: transfer failed -> INITIATED (no rollback), execute TransferFailedAction
         builder.transition()
                 .from(ConversationState.TRANSFERRED)
                 .on(ConversationFact.TRANSFER_FAILED)
                 .to(ConversationState.INITIATED)
+                .perform(wrap(TRANSFER_FAILED_ACTION))
                 .and();
 
         builder.transition()
                 .from(ConversationState.TRANSFERRED)
                 .on(ConversationFact.TRANSFER_TIMEOUT)
                 .to(ConversationState.INITIATED)
+                .perform(wrap(TRANSFER_FAILED_ACTION))
                 .and();
 
+        // ACTIVE → ENDING: customer closes, execute CustomerCloseAction
         builder.transition()
                 .from(ConversationState.ACTIVE)
                 .on(ConversationFact.CUSTOMER_CLOSE)
                 .to(ConversationState.ENDING)
+                .perform(wrap(CUSTOMER_CLOSE_ACTION))
                 .and();
 
         // ===== SURVEY FLOW (survey as in-progress state, controlled by state machine) =====
@@ -69,23 +101,27 @@ public class ConversationStateMachineFactory {
         // The business layer (ChatEngineStateMachineService.closeConversation) decides which event to fire
         // based on conversation.surveyEnabled().
 
+        // ACTIVE → SURVEY_IN_PROGRESS: survey starts, execute SurveyStartAction
         builder.transition()
                 .from(ConversationState.ACTIVE)
                 .on(ConversationFact.SURVEY_START)
                 .to(ConversationState.SURVEY_IN_PROGRESS)
+                .perform(wrap(SURVEY_START_ACTION))
                 .and();
 
         builder.transition()
                 .from(ConversationState.TRANSFERRED)
                 .on(ConversationFact.SURVEY_START)
                 .to(ConversationState.SURVEY_IN_PROGRESS)
+                .perform(wrap(SURVEY_START_ACTION))
                 .and();
 
-        // Survey completes normally → ENDING
+        // Survey completes normally → ENDING, execute SurveyCompleteAction
         builder.transition()
                 .from(ConversationState.SURVEY_IN_PROGRESS)
                 .on(ConversationFact.SURVEY_COMPLETE)
                 .to(ConversationState.ENDING)
+                .perform(wrap(SURVEY_COMPLETE_ACTION))
                 .and();
 
         // Survey timeout → ENDING (system-driven)
@@ -132,6 +168,7 @@ public class ConversationStateMachineFactory {
                 .from(ConversationState.TRANSFERRED)
                 .on(ConversationFact.SYS_TRANSFER_TIMEOUT)
                 .to(ConversationState.INITIATED)
+                .perform(wrap(TRANSFER_FAILED_ACTION))
                 .and();
 
         builder.transition()
