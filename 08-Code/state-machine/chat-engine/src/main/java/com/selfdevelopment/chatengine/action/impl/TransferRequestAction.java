@@ -1,7 +1,10 @@
 package com.selfdevelopment.chatengine.action.impl;
 
-import com.selfdevelopment.chatengine.action.CbolAction;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
+import com.selfdevelopment.chatengine.enums.ConversationFact;
+import com.selfdevelopment.chatengine.enums.ConversationState;
+import com.selfdevelopment.statemachine.api.Action;
+import com.selfdevelopment.statemachine.core.StateContext;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -16,10 +19,11 @@ import lombok.extern.slf4j.Slf4j;
  * </ul>
  */
 @Slf4j
-public class TransferRequestAction implements CbolAction {
+public class TransferRequestAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override
-    public void execute(CbolStateContext ctx) {
+    public void execute(StateContext<ConversationState, ConversationFact, CbolStateContext> context) {
+        CbolStateContext ctx = context.getBusinessContext();
         String conversationId = ctx.conversation().conversationId();
         String market = ctx.conversation().market();
 

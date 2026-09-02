@@ -1,7 +1,10 @@
 package com.selfdevelopment.chatengine.action.impl;
 
-import com.selfdevelopment.chatengine.action.CbolAction;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
+import com.selfdevelopment.chatengine.enums.ConversationFact;
+import com.selfdevelopment.chatengine.enums.ConversationState;
+import com.selfdevelopment.statemachine.api.Action;
+import com.selfdevelopment.statemachine.core.StateContext;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -16,10 +19,11 @@ import lombok.extern.slf4j.Slf4j;
  * </ul>
  */
 @Slf4j
-public class CustomerCloseAction implements CbolAction {
+public class CustomerCloseAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override
-    public void execute(CbolStateContext ctx) {
+    public void execute(StateContext<ConversationState, ConversationFact, CbolStateContext> context) {
+        CbolStateContext ctx = context.getBusinessContext();
         String conversationId = ctx.conversation().conversationId();
 
         log.info("Executing CustomerCloseAction: conversationId={}", conversationId);
@@ -51,7 +55,6 @@ public class CustomerCloseAction implements CbolAction {
 
     private void releaseAgentResources(CbolStateContext ctx) {
         // In production: if agentId != null, release agent from Genesys
-        // agentId not available in ConversationInstance
         log.debug("Releasing agent resources: conversationId={}", ctx.conversation().conversationId());
     }
 

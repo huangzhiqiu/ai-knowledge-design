@@ -1,9 +1,12 @@
 package com.selfdevelopment.chatengine.action;
 
-import com.selfdevelopment.chatengine.context.TraceContext;
-
 import com.selfdevelopment.chatengine.context.CbolStateContext;
+import com.selfdevelopment.chatengine.context.TraceContext;
 import com.selfdevelopment.chatengine.context.TraceMdcHelper;
+import com.selfdevelopment.chatengine.enums.ConversationFact;
+import com.selfdevelopment.chatengine.enums.ConversationState;
+import com.selfdevelopment.statemachine.api.Action;
+import com.selfdevelopment.statemachine.core.StateContext;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Objects;
@@ -19,6 +22,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>
  * Uses a bounded thread pool to prevent OOM under high load.
  * Propagates trace context (MDC) to worker threads.
+ * <p>
+ * This worker directly uses the core {@link Action} interface from statemachine-core,
+ * ensuring consistency with the state machine framework.
  */
 @Slf4j
 public class ActionWorker {
@@ -52,22 +58,27 @@ public class ActionWorker {
      * Submits an action for asynchronous execution.
      * Trace context (MDC) is automatically propagated to the worker thread.
      *
-     * @param action the action to execute
+     * @param action the action to execute (core Action interface)
      * @param ctx    the state context containing trace information
      * @throws NullPointerException if action or ctx is null
      */
-    public void submit(CbolAction action, CbolStateContext ctx) {
+    public void submit(Action<ConversationState, ConversationFact, CbolStateContext> action,
+                       StateContext<ConversationState, ConversationFact, CbolStateContext> ctx) {
         Objects.requireNonNull(action, "action must not be null");
         Objects.requireNonNull(ctx, "ctx must not be null");
-        Objects.requireNonNull(ctx.traceContext(), "ctx.traceContext must not be null");
+
+        CbolStateContext businessCtx = ctx.getBusinessContext();
+        Objects.requireNonNull(businessCtx, "ctx.businessContext must not be null");
+        Objects.requireNonNull(businessCtx.traceContext(), "ctx.traceContext must not be null");
 
         executor.submit(() -> {
             try {
-                TraceMdcHelper.set(ctx.traceContext());
+                TraceMdcHelper.set(businessCtx.traceContext());
                 action.execute(ctx);
             } catch (RuntimeException e) {
                 log.error("Action execution failed, conversationId={}",
-                        ctx.conversation() != null ? ctx.conversation().conversationId() : "unknown", e);
+                        businessCtx.conversation() != null
+                                ? businessCtx.conversation().conversationId() : "unknown", e);
             } finally {
                 TraceMdcHelper.clear();
             }
