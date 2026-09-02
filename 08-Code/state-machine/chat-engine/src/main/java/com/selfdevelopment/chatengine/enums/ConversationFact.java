@@ -8,6 +8,7 @@ package com.selfdevelopment.chatengine.enums;
  */
 public enum ConversationFact {
     // LIFECYCLE
+    CONVERSATION_INITIATED,  // NEW → INITIATED: conversation initialization prepared
     CUSTOMER_CONNECT,
     AGENT_ATTACHED,
     // TRANSFER

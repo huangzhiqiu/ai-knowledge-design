@@ -1,5 +1,6 @@
 package com.selfdevelopment.chatengine.statemachine.factory;
 
+import com.selfdevelopment.chatengine.action.impl.ConversationInitAction;
 import com.selfdevelopment.chatengine.action.impl.CustomerCloseAction;
 import com.selfdevelopment.chatengine.action.impl.CustomerConnectAction;
 import com.selfdevelopment.chatengine.action.impl.SurveyCompleteAction;
@@ -22,6 +23,7 @@ public class ConversationStateMachineFactory {
 
     // Action instances (stateless, can be shared)
     // These actions directly implement the core Action<S, E, C> interface from statemachine-core
+    private static final ConversationInitAction CONVERSATION_INIT_ACTION = new ConversationInitAction();
     private static final CustomerConnectAction CUSTOMER_CONNECT_ACTION = new CustomerConnectAction();
     private static final TransferRequestAction TRANSFER_REQUEST_ACTION = new TransferRequestAction();
     private static final TransferFailedAction TRANSFER_FAILED_ACTION = new TransferFailedAction();
@@ -36,13 +38,14 @@ public class ConversationStateMachineFactory {
         // Set initial state to NEW: conversation record created, but not started yet
         builder.initialState(ConversationState.NEW);
 
-        // NEW → ACTIVE: customer connects from a newly created conversation, execute CustomerConnectAction
-        // NEW is the initial state: conversation record created, but no messages exchanged yet
+        // NEW → INITIATED: conversation initialization prepared, execute ConversationInitAction
+        // NEW is the initial state: conversation record created, but not started yet
+        // This transition performs preparation work: validate config, allocate resources, setup routing
         builder.transition()
                 .from(ConversationState.NEW)
-                .on(ConversationFact.CUSTOMER_CONNECT)
-                .to(ConversationState.ACTIVE)
-                .perform(CUSTOMER_CONNECT_ACTION)
+                .on(ConversationFact.CONVERSATION_INITIATED)
+                .to(ConversationState.INITIATED)
+                .perform(CONVERSATION_INIT_ACTION)
                 .and();
 
         // INITIATED → ACTIVE: customer connects, execute CustomerConnectAction

@@ -73,13 +73,16 @@ public class ChatEngineDemo {
     /**
      * Demo 1: Basic conversation flow with action execution.
      * <p>
-     * NEW → ACTIVE → TRANSFERRED → ACTIVE → ENDING → CLOSED
+     * NEW → INITIATED → ACTIVE → TRANSFERRED → ACTIVE → ENDING → CLOSED
      * <p>
      * NEW is the initial state: conversation record created (customer opened chat window),
-     * but no messages exchanged yet. CUSTOMER_CONNECT triggers the transition to ACTIVE.
+     * but no messages exchanged yet. CONVERSATION_INITIATED triggers preparation work
+     * (ConversationInitAction: validate config, allocate resources, setup routing).
+     * Then CUSTOMER_CONNECT transitions to ACTIVE (CustomerConnectAction).
      * <p>
      * Each transition executes its associated action:
      * <ul>
+     *   <li>CONVERSATION_INITIATED: ConversationInitAction</li>
      *   <li>CUSTOMER_CONNECT: CustomerConnectAction</li>
      *   <li>TRANSFER_REQUEST: TransferRequestAction</li>
      *   <li>CUSTOMER_CLOSE: CustomerCloseAction</li>
@@ -92,7 +95,7 @@ public class ChatEngineDemo {
         ChatEngineStateMachineService service = new ChatEngineStateMachineService();
 
         // 2. Create a conversation instance in NEW state (initial state)
-        //    NEW: conversation record created, but customer hasn't connected yet
+        //    NEW: conversation record created, but initialization not done yet
         ConversationInstance conversation = ConversationInstance.builder()
                 .conversationId("conv-001")
                 .market("HK")
@@ -107,7 +110,10 @@ public class ChatEngineDemo {
 
         // 4. Fire events to drive the state machine
         //    Each transition executes its associated action
-        System.out.println("  Initial state: NEW (conversation created, waiting for customer connect)");
+        System.out.println("  Initial state: NEW (conversation created, waiting for initialization)");
+        System.out.println("  [Action: ConversationInitAction - validate config, allocate resources, setup routing]");
+        ctx = printTransition(ctx, ConversationFact.CONVERSATION_INITIATED, service);
+
         System.out.println("  [Action: CustomerConnectAction - create record, send welcome]");
         ctx = printTransition(ctx, ConversationFact.CUSTOMER_CONNECT, service);
 
