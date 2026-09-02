@@ -11,8 +11,8 @@ import com.selfdevelopment.chatengine.service.ChatEngineStateMachineService;
  */
 public class TransferMonitor extends AbstractTimeoutMonitor {
 
-    public TransferMonitor(ChatEngineStateMachineService ChatEngineStateMachineService) {
-        super(ChatEngineStateMachineService);
+    public TransferMonitor(ChatEngineStateMachineService chatEngineStateMachineService) {
+        super(chatEngineStateMachineService);
     }
 
     @Override

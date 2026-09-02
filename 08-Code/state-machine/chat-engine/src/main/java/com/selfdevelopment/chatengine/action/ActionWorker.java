@@ -1,7 +1,6 @@
 package com.selfdevelopment.chatengine.action;
 
 import com.selfdevelopment.chatengine.context.CbolStateContext;
-import com.selfdevelopment.chatengine.context.TraceContext;
 import com.selfdevelopment.chatengine.context.TraceMdcHelper;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
@@ -10,12 +9,14 @@ import com.selfdevelopment.statemachine.core.StateContext;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 /**
  * Worker for executing state machine actions asynchronously.
@@ -25,6 +26,13 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>
  * This worker directly uses the core {@link Action} interface from statemachine-core,
  * ensuring consistency with the state machine framework.
+ * <p>
+ * Supports three submission modes:
+ * <ul>
+ *   <li>{@link #submit(Action, StateContext)}: Fire-and-forget, exceptions are logged only</li>
+ *   <li>{@link #submitWithResult(Action, StateContext)}: Returns CompletableFuture for result tracking</li>
+ *   <li>{@link #submitWithCallback(Action, StateContext, Consumer, Consumer)}: Success/failure callbacks</li>
+ * </ul>
  */
 @Slf4j
 public class ActionWorker {
@@ -55,8 +63,11 @@ public class ActionWorker {
     }
 
     /**
-     * Submits an action for asynchronous execution.
+     * Submits an action for asynchronous execution (fire-and-forget).
      * Trace context (MDC) is automatically propagated to the worker thread.
+     * <p>
+     * Exceptions are caught and logged only. Use {@link #submitWithResult} or
+     * {@link #submitWithCallback} if you need to handle execution failures.
      *
      * @param action the action to execute (core Action interface)
      * @param ctx    the state context containing trace information
@@ -67,22 +78,77 @@ public class ActionWorker {
         Objects.requireNonNull(action, "action must not be null");
         Objects.requireNonNull(ctx, "ctx must not be null");
 
+        submitWithResult(action, ctx).exceptionally(ex -> {
+            CbolStateContext businessCtx = ctx.getBusinessContext();
+            String conversationId = (businessCtx != null && businessCtx.conversation() != null)
+                    ? businessCtx.conversation().conversationId() : "unknown";
+            log.error("Action execution failed, conversationId={}", conversationId, ex);
+            return null;
+        });
+    }
+
+    /**
+     * Submits an action for asynchronous execution and returns a CompletableFuture.
+     * Trace context (MDC) is automatically propagated to the worker thread.
+     * <p>
+     * The returned CompletableFuture completes normally when the action succeeds,
+     * or completes exceptionally if the action throws an exception.
+     *
+     * @param action the action to execute (core Action interface)
+     * @param ctx    the state context containing trace information
+     * @return a CompletableFuture that completes when the action finishes
+     * @throws NullPointerException if action or ctx is null
+     */
+    public CompletableFuture<Void> submitWithResult(
+            Action<ConversationState, ConversationFact, CbolStateContext> action,
+            StateContext<ConversationState, ConversationFact, CbolStateContext> ctx) {
+        Objects.requireNonNull(action, "action must not be null");
+        Objects.requireNonNull(ctx, "ctx must not be null");
+
         CbolStateContext businessCtx = ctx.getBusinessContext();
         Objects.requireNonNull(businessCtx, "ctx.businessContext must not be null");
         Objects.requireNonNull(businessCtx.traceContext(), "ctx.traceContext must not be null");
 
-        executor.submit(() -> {
+        return CompletableFuture.runAsync(() -> {
             try {
                 TraceMdcHelper.set(businessCtx.traceContext());
                 action.execute(ctx);
-            } catch (RuntimeException e) {
-                log.error("Action execution failed, conversationId={}",
-                        businessCtx.conversation() != null
-                                ? businessCtx.conversation().conversationId() : "unknown", e);
             } finally {
                 TraceMdcHelper.clear();
             }
-        });
+        }, executor);
+    }
+
+    /**
+     * Submits an action for asynchronous execution with success and failure callbacks.
+     * Trace context (MDC) is automatically propagated to the worker thread.
+     *
+     * @param action        the action to execute (core Action interface)
+     * @param ctx           the state context containing trace information
+     * @param onSuccess     callback invoked when the action succeeds (may be null)
+     * @param onFailure     callback invoked when the action fails (may be null)
+     * @throws NullPointerException if action or ctx is null
+     */
+    public void submitWithCallback(
+            Action<ConversationState, ConversationFact, CbolStateContext> action,
+            StateContext<ConversationState, ConversationFact, CbolStateContext> ctx,
+            Consumer<StateContext<ConversationState, ConversationFact, CbolStateContext>> onSuccess,
+            Consumer<Throwable> onFailure) {
+        Objects.requireNonNull(action, "action must not be null");
+        Objects.requireNonNull(ctx, "ctx must not be null");
+
+        submitWithResult(action, ctx)
+                .thenRun(() -> {
+                    if (onSuccess != null) {
+                        onSuccess.accept(ctx);
+                    }
+                })
+                .exceptionally(ex -> {
+                    if (onFailure != null) {
+                        onFailure.accept(ex);
+                    }
+                    return null;
+                });
     }
 
     /**
@@ -99,6 +165,16 @@ public class ActionWorker {
             executor.shutdownNow();
             Thread.currentThread().interrupt();
         }
+    }
+
+    /**
+     * Returns the underlying executor service for advanced configuration
+     * (e.g., monitoring, metrics collection).
+     *
+     * @return the underlying ExecutorService instance
+     */
+    public ExecutorService getExecutor() {
+        return executor;
     }
 
     /**

@@ -11,8 +11,8 @@ import com.selfdevelopment.chatengine.service.ChatEngineStateMachineService;
  */
 public class EndingGraceMonitor extends AbstractTimeoutMonitor {
 
-    public EndingGraceMonitor(ChatEngineStateMachineService ChatEngineStateMachineService) {
-        super(ChatEngineStateMachineService);
+    public EndingGraceMonitor(ChatEngineStateMachineService chatEngineStateMachineService) {
+        super(chatEngineStateMachineService);
     }
 
     @Override

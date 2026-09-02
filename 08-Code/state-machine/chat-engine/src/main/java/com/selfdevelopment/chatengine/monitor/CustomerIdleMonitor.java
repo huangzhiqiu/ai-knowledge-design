@@ -9,7 +9,7 @@ import java.util.Set;
 
 /**
  * Monitors customer idle time and fires SYS_CUSTOMER_IDLE when the threshold is exceeded.
- * Applies to all non-terminal states (INITIATED, ACTIVE, TRANSFERRED).
+ * Applies to all non-terminal states (INITIATED, IN_PROGRESS, TRANSFERRED).
  */
 public class CustomerIdleMonitor extends AbstractTimeoutMonitor {
 
@@ -19,8 +19,8 @@ public class CustomerIdleMonitor extends AbstractTimeoutMonitor {
             ConversationState.TRANSFERRED
     );
 
-    public CustomerIdleMonitor(ChatEngineStateMachineService ChatEngineStateMachineService) {
-        super(ChatEngineStateMachineService);
+    public CustomerIdleMonitor(ChatEngineStateMachineService chatEngineStateMachineService) {
+        super(chatEngineStateMachineService);
     }
 
     @Override

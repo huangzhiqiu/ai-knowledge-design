@@ -8,6 +8,7 @@ import com.selfdevelopment.chatengine.statemachine.factory.ConversationStateMach
 
 import com.selfdevelopment.statemachine.core.StateContext;
 import com.selfdevelopment.statemachine.api.StateMachine;
+import com.selfdevelopment.statemachine.exception.StateMachineException;
 import com.selfdevelopment.statemachine.persistence.OptimisticLockException;
 import com.selfdevelopment.statemachine.persistence.StateRepository;
 import com.selfdevelopment.statemachine.persistence.VersionedState;
@@ -183,8 +184,7 @@ public class ChatEngineStateMachineService {
                     "State machine transition failed: conversationId=%s, from=%s, fact=%s, traceId=%s: %s",
                     conversationId, from, fact, ctx.traceContext().traceId(), ex.getMessage());
             log.error(message, ex);
-            throw new com.selfdevelopment.statemachine.exception.StateMachineException(
-                    message, ex);
+            throw new StateMachineException(message, ex);
         } finally {
             TraceMdcHelper.clear();
         }
