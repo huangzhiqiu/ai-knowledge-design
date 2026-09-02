@@ -5,6 +5,7 @@ import com.selfdevelopment.agentconnector.enums.InteractionFact;
 import com.selfdevelopment.agentconnector.enums.InteractionState;
 import com.selfdevelopment.agentconnector.model.InteractionInstance;
 import com.selfdevelopment.agentconnector.service.AgentConnectorStateMachineService;
+import com.selfdevelopment.agentconnector.statemachine.factory.InteractionStateMachineFactory;
 import com.selfdevelopment.statemachine.core.StateContext;
 
 import java.util.UUID;
@@ -40,6 +41,10 @@ public class AgentConnectorDemo {
 
     public static void main(String[] args) {
         System.out.println("=== Agent Connector Interaction State Machine Demo ===\n");
+
+        // Build and register the interaction state machine (must be done before creating service)
+        InteractionStateMachineFactory.build();
+        System.out.println("State machine registered: " + InteractionStateMachineFactory.MACHINE_ID + "\n");
 
         runBasicConnectionFlow();
         System.out.println();

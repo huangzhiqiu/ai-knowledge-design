@@ -9,6 +9,7 @@ import com.selfdevelopment.chatengine.enums.EndReason;
 import com.selfdevelopment.chatengine.model.ConversationInstance;
 import com.selfdevelopment.chatengine.model.InteractionInstance;
 import com.selfdevelopment.chatengine.service.ChatEngineStateMachineService;
+import com.selfdevelopment.chatengine.statemachine.factory.ConversationStateMachineFactory;
 import com.selfdevelopment.statemachine.core.StateContext;
 
 /**
@@ -38,6 +39,10 @@ public class ChatEngineDemo {
 
     public static void main(String[] args) {
         System.out.println("=== Chat Engine State Machine Demo ===\n");
+
+        // Build and register the conversation state machine (must be done before creating service)
+        ConversationStateMachineFactory.build();
+        System.out.println("State machine registered: " + ConversationStateMachineFactory.MACHINE_ID + "\n");
 
         runBasicConversationFlow();
         System.out.println();
