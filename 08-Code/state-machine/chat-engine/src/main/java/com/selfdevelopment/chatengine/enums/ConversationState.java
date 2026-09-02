@@ -11,21 +11,29 @@ package com.selfdevelopment.chatengine.enums;
  * initialized), but is waiting for customer connection or agent assignment. Also used
  * as the fallback state after a transfer failure (re-routing).
  * <p>
- * SURVEY_IN_PROGRESS is treated as an "in-progress" state: the conversation
- * has ended from a messaging perspective, but the customer is still active
- * completing a post-conversation survey. The survey flow is controlled by
- * the state machine (SURVEY_START → SURVEY_IN_PROGRESS → SURVEY_COMPLETE/SYS_SURVEY_TIMEOUT → ENDING).
+ * IN_PROGRESS: the conversation is actively in progress. This state encompasses both
+ * the messaging phase (chatting, receiving messages) and the survey phase. The survey
+ * is NOT a separate state — it is a sub-phase within IN_PROGRESS, triggered by the
+ * SURVEY_START event (internal transition, state remains IN_PROGRESS). When the survey
+ * completes (SURVEY_COMPLETE) or times out (SYS_SURVEY_TIMEOUT), the conversation
+ * transitions directly to ENDING.
+ * <p>
+ * ENDING: the conversation is in the ending grace period. All active communication has
+ * ceased, but the system is waiting for any final cleanup or delayed messages before
+ * closing permanently.
  * <p>
  * ERROR is a failover state: entered when an action throws an unhandled exception
  * (SYS_ACTION_FAILED). From ERROR, the system can retry (SYS_RETRY), abort (SYS_ABORT),
  * or be recovered by an operator.
+ * <p>
+ * CLOSED: the conversation is permanently closed. No further state transitions are
+ * possible from this state.
  */
 public enum ConversationState {
     NEW,
     INITIATED,
-    ACTIVE,
+    IN_PROGRESS,
     TRANSFERRED,
-    SURVEY_IN_PROGRESS,
     ENDING,
     ERROR,
     CLOSED

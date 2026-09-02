@@ -62,14 +62,14 @@ class ConversationStateMachineTest {
     void testInitToActive() {
         StateContext<ConversationState, ConversationFact, CbolStateContext> result =
                 service.fire(buildCtx(ConversationState.INITIATED), ConversationFact.CUSTOMER_CONNECT);
-        assertEquals(ConversationState.ACTIVE, result.getTargetState());
+        assertEquals(ConversationState.IN_PROGRESS, result.getTargetState());
         assertTrue(result.isTransitionAccepted());
     }
 
     @Test
     void testActiveToTransferred() {
         assertEquals(ConversationState.TRANSFERRED,
-                service.fireAndGetState(buildCtx(ConversationState.ACTIVE), ConversationFact.TRANSFER_REQUEST));
+                service.fireAndGetState(buildCtx(ConversationState.IN_PROGRESS), ConversationFact.TRANSFER_REQUEST));
     }
 
     @Test
@@ -87,13 +87,13 @@ class ConversationStateMachineTest {
     @Test
     void testActiveToEnding() {
         assertEquals(ConversationState.ENDING,
-                service.fireAndGetState(buildCtx(ConversationState.ACTIVE), ConversationFact.CUSTOMER_CLOSE));
+                service.fireAndGetState(buildCtx(ConversationState.IN_PROGRESS), ConversationFact.CUSTOMER_CLOSE));
     }
 
     @Test
     void testCustomerIdleToEnding() {
         assertEquals(ConversationState.ENDING,
-                service.fireAndGetState(buildCtx(ConversationState.ACTIVE), ConversationFact.SYS_CUSTOMER_IDLE));
+                service.fireAndGetState(buildCtx(ConversationState.IN_PROGRESS), ConversationFact.SYS_CUSTOMER_IDLE));
     }
 
     @Test

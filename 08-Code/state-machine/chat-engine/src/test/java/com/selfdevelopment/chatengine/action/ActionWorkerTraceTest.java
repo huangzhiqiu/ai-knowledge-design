@@ -38,7 +38,7 @@ class ActionWorkerTraceTest {
                 .build();
         stateCtx = StateContext.<ConversationState, ConversationFact, CbolStateContext>builder()
                 .sourceState(ConversationState.INITIATED)
-                .targetState(ConversationState.ACTIVE)
+                .targetState(ConversationState.IN_PROGRESS)
                 .event(ConversationFact.CUSTOMER_CONNECT)
                 .businessContext(businessCtx)
                 .transitionAccepted(true)

@@ -62,15 +62,15 @@ class SurveyStateFlowTest {
     @Test
     void shouldEnterSurveyFromActive() {
         StateContext<ConversationState, ConversationFact, CbolStateContext> result =
-                service.fire(buildCtx(ConversationState.ACTIVE, true), ConversationFact.SURVEY_START);
+                service.fire(buildCtx(ConversationState.IN_PROGRESS, true), ConversationFact.SURVEY_START);
 
-        assertEquals(ConversationState.SURVEY_IN_PROGRESS, result.getTargetState());
+        assertEquals(ConversationState.IN_PROGRESS, result.getTargetState());
         assertTrue(result.isTransitionAccepted());
     }
 
     @Test
     void shouldEnterSurveyFromTransferred() {
-        assertEquals(ConversationState.SURVEY_IN_PROGRESS,
+        assertEquals(ConversationState.IN_PROGRESS,
                 service.fireAndGetState(buildCtx(ConversationState.TRANSFERRED, true),
                         ConversationFact.SURVEY_START));
     }
@@ -86,14 +86,8 @@ class SurveyStateFlowTest {
     @Test
     void shouldCompleteSurveyToEnding() {
         assertEquals(ConversationState.ENDING,
-                service.fireAndGetState(buildCtx(ConversationState.SURVEY_IN_PROGRESS, true),
+                service.fireAndGetState(buildCtx(ConversationState.IN_PROGRESS, true),
                         ConversationFact.SURVEY_COMPLETE));
-    }
-
-    @Test
-    void shouldNotCompleteSurveyFromActive() {
-        assertThrows(StateMachineException.class, () ->
-                service.fire(buildCtx(ConversationState.ACTIVE, true), ConversationFact.SURVEY_COMPLETE));
     }
 
     // ===== SYS_SURVEY_TIMEOUT transitions =====
@@ -101,7 +95,7 @@ class SurveyStateFlowTest {
     @Test
     void shouldTimeoutSurveyToEnding() {
         assertEquals(ConversationState.ENDING,
-                service.fireAndGetState(buildCtx(ConversationState.SURVEY_IN_PROGRESS, true),
+                service.fireAndGetState(buildCtx(ConversationState.IN_PROGRESS, true),
                         ConversationFact.SYS_SURVEY_TIMEOUT));
     }
 
@@ -110,7 +104,7 @@ class SurveyStateFlowTest {
     @Test
     void shouldCustomerIdleDuringSurveyToEnding() {
         assertEquals(ConversationState.ENDING,
-                service.fireAndGetState(buildCtx(ConversationState.SURVEY_IN_PROGRESS, true),
+                service.fireAndGetState(buildCtx(ConversationState.IN_PROGRESS, true),
                         ConversationFact.SYS_CUSTOMER_IDLE));
     }
 
@@ -119,7 +113,7 @@ class SurveyStateFlowTest {
     @Test
     void shouldCustomerCloseDuringSurveyToEnding() {
         assertEquals(ConversationState.ENDING,
-                service.fireAndGetState(buildCtx(ConversationState.SURVEY_IN_PROGRESS, true),
+                service.fireAndGetState(buildCtx(ConversationState.IN_PROGRESS, true),
                         ConversationFact.CUSTOMER_CLOSE));
     }
 
@@ -128,16 +122,16 @@ class SurveyStateFlowTest {
     @Test
     void shouldCloseConversationWithSurveyEnabled() {
         StateContext<ConversationState, ConversationFact, CbolStateContext> result =
-                service.closeConversation(buildCtx(ConversationState.ACTIVE, true));
+                service.closeConversation(buildCtx(ConversationState.IN_PROGRESS, true));
 
-        assertEquals(ConversationState.SURVEY_IN_PROGRESS, result.getTargetState());
+        assertEquals(ConversationState.IN_PROGRESS, result.getTargetState());
         assertTrue(result.isTransitionAccepted());
     }
 
     @Test
     void shouldCloseConversationWithoutSurveyEnabled() {
         StateContext<ConversationState, ConversationFact, CbolStateContext> result =
-                service.closeConversation(buildCtx(ConversationState.ACTIVE, false));
+                service.closeConversation(buildCtx(ConversationState.IN_PROGRESS, false));
 
         assertEquals(ConversationState.ENDING, result.getTargetState());
         assertTrue(result.isTransitionAccepted());
@@ -145,7 +139,7 @@ class SurveyStateFlowTest {
 
     @Test
     void shouldCloseConversationFromTransferredWithSurvey() {
-        assertEquals(ConversationState.SURVEY_IN_PROGRESS,
+        assertEquals(ConversationState.IN_PROGRESS,
                 service.closeConversation(buildCtx(ConversationState.TRANSFERRED, true)).getTargetState());
     }
 
@@ -154,7 +148,7 @@ class SurveyStateFlowTest {
     @Test
     void shouldCompleteSurveyViaConvenienceMethod() {
         StateContext<ConversationState, ConversationFact, CbolStateContext> result =
-                service.completeSurvey(buildCtx(ConversationState.SURVEY_IN_PROGRESS, true));
+                service.completeSurvey(buildCtx(ConversationState.IN_PROGRESS, true));
 
         assertEquals(ConversationState.ENDING, result.getTargetState());
         assertTrue(result.isTransitionAccepted());
@@ -166,16 +160,16 @@ class SurveyStateFlowTest {
     void shouldCompleteFullSurveyFlow() {
         // 1. Connect → ACTIVE
         CbolStateContext ctx = buildCtx(ConversationState.INITIATED, true);
-        assertEquals(ConversationState.ACTIVE,
+        assertEquals(ConversationState.IN_PROGRESS,
                 service.fireAndGetState(ctx, ConversationFact.CUSTOMER_CONNECT));
 
         // 2. Close with survey enabled → SURVEY_IN_PROGRESS
-        CbolStateContext activeCtx = buildCtx(ConversationState.ACTIVE, true);
-        assertEquals(ConversationState.SURVEY_IN_PROGRESS,
+        CbolStateContext activeCtx = buildCtx(ConversationState.IN_PROGRESS, true);
+        assertEquals(ConversationState.IN_PROGRESS,
                 service.closeConversation(activeCtx).getTargetState());
 
         // 3. Complete survey → ENDING
-        CbolStateContext surveyCtx = buildCtx(ConversationState.SURVEY_IN_PROGRESS, true);
+        CbolStateContext surveyCtx = buildCtx(ConversationState.IN_PROGRESS, true);
         assertEquals(ConversationState.ENDING,
                 service.completeSurvey(surveyCtx).getTargetState());
 
@@ -188,7 +182,7 @@ class SurveyStateFlowTest {
     @Test
     void shouldCompleteSurveyFlowWithTimeout() {
         // SURVEY_IN_PROGRESS → SYS_SURVEY_TIMEOUT → ENDING → SYS_ENDING_GRACE_TIMEOUT → CLOSED
-        CbolStateContext surveyCtx = buildCtx(ConversationState.SURVEY_IN_PROGRESS, true);
+        CbolStateContext surveyCtx = buildCtx(ConversationState.IN_PROGRESS, true);
         assertEquals(ConversationState.ENDING,
                 service.fireAndGetState(surveyCtx, ConversationFact.SYS_SURVEY_TIMEOUT));
 
@@ -197,19 +191,12 @@ class SurveyStateFlowTest {
                 service.fireAndGetState(endingCtx, ConversationFact.SYS_ENDING_GRACE_TIMEOUT));
     }
 
-    // ===== Invalid transitions from SURVEY_IN_PROGRESS =====
+    // ===== Invalid transitions from IN_PROGRESS =====
 
     @Test
-    void shouldNotTransferFromSurvey() {
+    void shouldNotConnectFromInProgress() {
         assertThrows(StateMachineException.class, () ->
-                service.fire(buildCtx(ConversationState.SURVEY_IN_PROGRESS, true),
-                        ConversationFact.TRANSFER_REQUEST));
-    }
-
-    @Test
-    void shouldNotConnectFromSurvey() {
-        assertThrows(StateMachineException.class, () ->
-                service.fire(buildCtx(ConversationState.SURVEY_IN_PROGRESS, true),
+                service.fire(buildCtx(ConversationState.IN_PROGRESS, true),
                         ConversationFact.CUSTOMER_CONNECT));
     }
 }

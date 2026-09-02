@@ -54,8 +54,8 @@ class ChatEngineStateMachineServicePersistenceTest {
                 service.fire(ctx, ConversationFact.CUSTOMER_CONNECT);
 
         // Then
-        assertEquals(ConversationState.ACTIVE, result.getTargetState());
-        assertEquals(ConversationState.ACTIVE, repository.load("conv-1").state());
+        assertEquals(ConversationState.IN_PROGRESS, result.getTargetState());
+        assertEquals(ConversationState.IN_PROGRESS, repository.load("conv-1").state());
     }
 
     @Test
@@ -108,10 +108,10 @@ class ChatEngineStateMachineServicePersistenceTest {
         // INITIATED -> ACTIVE
         service.fire(buildContext("conv-1", ConversationState.INITIATED),
                 ConversationFact.CUSTOMER_CONNECT);
-        assertEquals(ConversationState.ACTIVE, repository.load("conv-1").state());
+        assertEquals(ConversationState.IN_PROGRESS, repository.load("conv-1").state());
 
         // ACTIVE -> TRANSFERRED
-        service.fire(buildContext("conv-1", ConversationState.ACTIVE),
+        service.fire(buildContext("conv-1", ConversationState.IN_PROGRESS),
                 ConversationFact.TRANSFER_REQUEST);
         assertEquals(ConversationState.TRANSFERRED, repository.load("conv-1").state());
 

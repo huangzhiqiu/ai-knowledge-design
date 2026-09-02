@@ -42,10 +42,10 @@ class ConversationRepositoryTest {
         long initialVersion = repository.saveState("conv-1", ConversationState.INITIATED);
 
         long newVersion = repository.compareAndSetState(
-                "conv-1", initialVersion, ConversationState.ACTIVE);
+                "conv-1", initialVersion, ConversationState.IN_PROGRESS);
 
         assertTrue(newVersion >= 0);
-        assertEquals(ConversationState.ACTIVE, repository.loadState("conv-1").state());
+        assertEquals(ConversationState.IN_PROGRESS, repository.loadState("conv-1").state());
     }
 
     @Test
@@ -54,7 +54,7 @@ class ConversationRepositoryTest {
 
         // Use wrong version
         long result = repository.compareAndSetState(
-                "conv-1", initialVersion + 999, ConversationState.ACTIVE);
+                "conv-1", initialVersion + 999, ConversationState.IN_PROGRESS);
 
         assertEquals(-1, result);
         // State should remain unchanged
@@ -64,7 +64,7 @@ class ConversationRepositoryTest {
     @Test
     void shouldIncrementVersionOnEachSave() {
         long v1 = repository.saveState("conv-1", ConversationState.INITIATED);
-        long v2 = repository.saveState("conv-1", ConversationState.ACTIVE);
+        long v2 = repository.saveState("conv-1", ConversationState.IN_PROGRESS);
 
         assertTrue(v2 > v1);
     }
@@ -111,9 +111,9 @@ class ConversationRepositoryTest {
                 .build();
 
         repository.saveConversation(conversation);
-        repository.saveState("conv-1", ConversationState.ACTIVE);
+        repository.saveState("conv-1", ConversationState.IN_PROGRESS);
 
-        assertEquals(ConversationState.ACTIVE,
+        assertEquals(ConversationState.IN_PROGRESS,
                 repository.findConversation("conv-1").get().state());
     }
 
@@ -127,16 +127,16 @@ class ConversationRepositoryTest {
 
         repository.saveConversation(conversation);
         long version = repository.loadState("conv-1").version();
-        repository.compareAndSetState("conv-1", version, ConversationState.ACTIVE);
+        repository.compareAndSetState("conv-1", version, ConversationState.IN_PROGRESS);
 
-        assertEquals(ConversationState.ACTIVE,
+        assertEquals(ConversationState.IN_PROGRESS,
                 repository.findConversation("conv-1").get().state());
     }
 
     @Test
     void shouldClearRepository() {
         repository.saveState("conv-1", ConversationState.INITIATED);
-        repository.saveState("conv-2", ConversationState.ACTIVE);
+        repository.saveState("conv-2", ConversationState.IN_PROGRESS);
 
         repository.clear();
 

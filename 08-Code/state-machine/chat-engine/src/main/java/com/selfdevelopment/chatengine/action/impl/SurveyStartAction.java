@@ -8,14 +8,19 @@ import com.selfdevelopment.statemachine.core.StateContext;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Action executed when a survey starts (ACTIVE → SURVEY_IN_PROGRESS).
+ * Action executed when a survey starts (IN_PROGRESS → IN_PROGRESS, internal transition).
  * <p>
+ * The survey is NOT a separate state — it is a sub-phase within IN_PROGRESS.
  * This action handles the actual business logic of starting a post-conversation survey:
  * <ul>
  *   <li>Creates a survey record</li>
  *   <li>Sends survey invitation to customer</li>
  *   <li>Sets survey timeout for monitoring</li>
  * </ul>
+ * <p>
+ * After this action completes, the conversation remains in IN_PROGRESS state,
+ * but enters the survey sub-phase. When the survey completes (SURVEY_COMPLETE)
+ * or times out (SYS_SURVEY_TIMEOUT), the conversation transitions to ENDING.
  */
 @Slf4j
 public class SurveyStartAction implements Action<ConversationState, ConversationFact, CbolStateContext> {

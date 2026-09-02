@@ -33,7 +33,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * VersionedState<ConversationState> current = repository.loadState("conv-123");
  *
  * // Update with optimistic lock
- * long newVersion = repository.compareAndSetState("conv-123", current.version(), ConversationState.ACTIVE);
+ * long newVersion = repository.compareAndSetState("conv-123", current.version(), ConversationState.IN_PROGRESS);
  * }</pre>
  */
 public class ConversationRepository {

@@ -15,7 +15,7 @@ public class CustomerIdleMonitor extends AbstractTimeoutMonitor {
 
     private static final Set<ConversationState> APPLICABLE_STATES = Set.of(
             ConversationState.INITIATED,
-            ConversationState.ACTIVE,
+            ConversationState.IN_PROGRESS,
             ConversationState.TRANSFERRED
     );
 

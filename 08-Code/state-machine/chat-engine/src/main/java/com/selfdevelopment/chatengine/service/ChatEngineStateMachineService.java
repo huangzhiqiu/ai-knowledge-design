@@ -247,7 +247,9 @@ public class ChatEngineStateMachineService {
     /**
      * Completes the survey and transitions to ENDING.
      * <p>
-     * Only valid when the conversation is in {@link ConversationState#SURVEY_IN_PROGRESS}.
+     * The survey is a sub-phase within IN_PROGRESS, not a separate state.
+     * This method is valid when the conversation is in {@link ConversationState#IN_PROGRESS}
+     * and the survey sub-phase has been started (via SURVEY_START).
      *
      * @param ctx the conversation context
      * @return the state context after the transition

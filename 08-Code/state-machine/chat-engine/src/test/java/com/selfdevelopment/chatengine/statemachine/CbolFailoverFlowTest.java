@@ -79,8 +79,8 @@ class CbolFailoverFlowTest {
     @Test
     void shouldRouteActiveToErrorOnActionFailed() {
         assertEquals(ConversationState.ERROR,
-                failoverMachine.fireEvent(ConversationState.ACTIVE,
-                        ConversationFact.SYS_ACTION_FAILED, buildCtx(ConversationState.ACTIVE)).getTargetState());
+                failoverMachine.fireEvent(ConversationState.IN_PROGRESS,
+                        ConversationFact.SYS_ACTION_FAILED, buildCtx(ConversationState.IN_PROGRESS)).getTargetState());
     }
 
     @Test
@@ -93,8 +93,8 @@ class CbolFailoverFlowTest {
     @Test
     void shouldRouteSurveyInProgressToErrorOnActionFailed() {
         assertEquals(ConversationState.ERROR,
-                failoverMachine.fireEvent(ConversationState.SURVEY_IN_PROGRESS,
-                        ConversationFact.SYS_ACTION_FAILED, buildCtx(ConversationState.SURVEY_IN_PROGRESS)).getTargetState());
+                failoverMachine.fireEvent(ConversationState.IN_PROGRESS,
+                        ConversationFact.SYS_ACTION_FAILED, buildCtx(ConversationState.IN_PROGRESS)).getTargetState());
     }
 
     // ===== ERROR state recovery paths =====
@@ -105,7 +105,7 @@ class CbolFailoverFlowTest {
                 failoverMachine.fireEvent(ConversationState.ERROR,
                         ConversationFact.SYS_RETRY, buildCtx(ConversationState.ERROR));
 
-        assertEquals(ConversationState.ACTIVE, result.getTargetState());
+        assertEquals(ConversationState.IN_PROGRESS, result.getTargetState());
         assertTrue(result.isTransitionAccepted());
     }
 
@@ -128,15 +128,15 @@ class CbolFailoverFlowTest {
                 failoverMachine.fireEvent(ConversationState.INITIATED,
                         ConversationFact.CUSTOMER_CONNECT, buildCtx(ConversationState.INITIATED));
 
-        assertEquals(ConversationState.ACTIVE, result.getTargetState());
+        assertEquals(ConversationState.IN_PROGRESS, result.getTargetState());
     }
 
     @Test
     void shouldNotFailoverOnLogicalError() {
         // No transition for CUSTOMER_CONNECT from ACTIVE → StateMachineException (logical, not action error)
         assertThrows(Exception.class, () ->
-                failoverMachine.fireEvent(ConversationState.ACTIVE,
-                        ConversationFact.CUSTOMER_CONNECT, buildCtx(ConversationState.ACTIVE)));
+                failoverMachine.fireEvent(ConversationState.IN_PROGRESS,
+                        ConversationFact.CUSTOMER_CONNECT, buildCtx(ConversationState.IN_PROGRESS)));
     }
 
     @Test
@@ -144,8 +144,8 @@ class CbolFailoverFlowTest {
         // SYS_ACTION_FAILED is a fail event — if its action throws, no further failover
         // (In the base CBOL machine, SYS_ACTION_FAILED has no action, so this just routes to ERROR)
         StateContext<ConversationState, ConversationFact, CbolStateContext> result =
-                failoverMachine.fireEvent(ConversationState.ACTIVE,
-                        ConversationFact.SYS_ACTION_FAILED, buildCtx(ConversationState.ACTIVE));
+                failoverMachine.fireEvent(ConversationState.IN_PROGRESS,
+                        ConversationFact.SYS_ACTION_FAILED, buildCtx(ConversationState.IN_PROGRESS));
 
         assertEquals(ConversationState.ERROR, result.getTargetState());
     }
@@ -157,24 +157,24 @@ class CbolFailoverFlowTest {
         CbolStateContext ctx = buildCtx(ConversationState.INITIATED);
 
         // 1. Connect → ACTIVE
-        assertEquals(ConversationState.ACTIVE,
+        assertEquals(ConversationState.IN_PROGRESS,
                 failoverMachine.fireEvent(ConversationState.INITIATED,
                         ConversationFact.CUSTOMER_CONNECT, ctx).getTargetState());
 
         // 2. Simulate action failure → SYS_ACTION_FAILED → ERROR
         //    (In production, FailoverStateMachine catches the action exception and fires SYS_ACTION_FAILED)
         assertEquals(ConversationState.ERROR,
-                failoverMachine.fireEvent(ConversationState.ACTIVE,
+                failoverMachine.fireEvent(ConversationState.IN_PROGRESS,
                         ConversationFact.SYS_ACTION_FAILED, ctx).getTargetState());
 
         // 3. Retry → ACTIVE
-        assertEquals(ConversationState.ACTIVE,
+        assertEquals(ConversationState.IN_PROGRESS,
                 failoverMachine.fireEvent(ConversationState.ERROR,
                         ConversationFact.SYS_RETRY, ctx).getTargetState());
 
         // 4. Another failure → ERROR
         assertEquals(ConversationState.ERROR,
-                failoverMachine.fireEvent(ConversationState.ACTIVE,
+                failoverMachine.fireEvent(ConversationState.IN_PROGRESS,
                         ConversationFact.SYS_ACTION_FAILED, ctx).getTargetState());
 
         // 5. Abort → CLOSED

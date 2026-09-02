@@ -8,8 +8,9 @@ import com.selfdevelopment.statemachine.core.StateContext;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Action executed when a survey is completed (SURVEY_IN_PROGRESS → ENDING).
+ * Action executed when a survey is completed (IN_PROGRESS → ENDING).
  * <p>
+ * The survey is a sub-phase within IN_PROGRESS, not a separate state.
  * This action handles the actual business logic of completing a survey:
  * <ul>
  *   <li>Saves survey results</li>

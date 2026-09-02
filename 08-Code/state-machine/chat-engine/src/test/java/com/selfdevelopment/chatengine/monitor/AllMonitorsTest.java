@@ -64,7 +64,7 @@ class AllMonitorsTest {
     @Test
     void customerIdleMonitor_shouldTriggerWhenIdleExceeded() {
         CustomerIdleMonitor monitor = new CustomerIdleMonitor(service);
-        CbolStateContext ctx = buildCtx(ConversationState.ACTIVE, 100, 100, 100);
+        CbolStateContext ctx = buildCtx(ConversationState.IN_PROGRESS, 100, 100, 100);
         long lastActivity = System.currentTimeMillis() - 200 * 1000; // 200s ago > 100s threshold
         // Should fire SYS_CUSTOMER_IDLE -> ENDING without exception
         assertDoesNotThrow(() -> monitor.check(ctx, lastActivity));
@@ -73,7 +73,7 @@ class AllMonitorsTest {
     @Test
     void customerIdleMonitor_shouldNotTriggerWhenIdleNotExceeded() {
         CustomerIdleMonitor monitor = new CustomerIdleMonitor(service);
-        CbolStateContext ctx = buildCtx(ConversationState.ACTIVE, 100, 100, 100);
+        CbolStateContext ctx = buildCtx(ConversationState.IN_PROGRESS, 100, 100, 100);
         long lastActivity = System.currentTimeMillis() - 50 * 1000; // 50s ago < 100s threshold
         // Should not fire (no transition), but should not throw
         assertDoesNotThrow(() -> monitor.check(ctx, lastActivity));
@@ -109,7 +109,7 @@ class AllMonitorsTest {
     @Test
     void transferMonitor_shouldSkipWhenNotInTransferredState() {
         TransferMonitor monitor = new TransferMonitor(service);
-        CbolStateContext ctx = buildCtx(ConversationState.ACTIVE, 100, 100, 100);
+        CbolStateContext ctx = buildCtx(ConversationState.IN_PROGRESS, 100, 100, 100);
         long transferStart = System.currentTimeMillis() - 200 * 1000;
         // Should skip entirely (no state check), should not throw
         assertDoesNotThrow(() -> monitor.check(ctx, transferStart));
@@ -145,7 +145,7 @@ class AllMonitorsTest {
     @Test
     void endingGraceMonitor_shouldSkipWhenNotInEndingState() {
         EndingGraceMonitor monitor = new EndingGraceMonitor(service);
-        CbolStateContext ctx = buildCtx(ConversationState.ACTIVE, 100, 100, 100);
+        CbolStateContext ctx = buildCtx(ConversationState.IN_PROGRESS, 100, 100, 100);
         long enterEnding = System.currentTimeMillis() - 200 * 1000;
         assertDoesNotThrow(() -> monitor.check(ctx, enterEnding));
     }

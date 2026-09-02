@@ -17,7 +17,7 @@ import com.selfdevelopment.statemachine.exception.StateMachineException;
  * Demonstrates the complete conversation lifecycle with action execution:
  * <ul>
  *   <li>Basic flow: INITIATED → ACTIVE → TRANSFERRED → ACTIVE → ENDING → CLOSED</li>
- *   <li>Survey flow: ACTIVE → SURVEY_IN_PROGRESS → ENDING → CLOSED</li>
+ *   <li>Survey flow: IN_PROGRESS (messaging) → IN_PROGRESS (survey, internal) → ENDING → CLOSED</li>
  *   <li>Multi-market configuration (HK, SG, UK)</li>
  *   <li>Transfer failure flow with TransferFailedAction execution</li>
  *   <li>Action failure handling: action failure prevents state transition</li>
@@ -35,8 +35,8 @@ import com.selfdevelopment.statemachine.exception.StateMachineException;
  *   <li>ACTIVE → TRANSFERRED: {@code TransferRequestAction} (route to agent queue)</li>
  *   <li>TRANSFERRED → INITIATED: {@code TransferFailedAction} (cleanup, re-route)</li>
  *   <li>ACTIVE → ENDING: {@code CustomerCloseAction} (close conversation, release resources)</li>
- *   <li>ACTIVE → SURVEY_IN_PROGRESS: {@code SurveyStartAction} (send survey invitation)</li>
- *   <li>SURVEY_IN_PROGRESS → ENDING: {@code SurveyCompleteAction} (save results, calculate score)</li>
+ *   <li>IN_PROGRESS → IN_PROGRESS (internal): {@code SurveyStartAction} (send survey invitation)</li>
+ *   <li>IN_PROGRESS → ENDING: {@code SurveyCompleteAction} (save results, calculate score)</li>
  * </ul>
  *
  * <h3>Usage</h3>
@@ -135,7 +135,7 @@ public class ChatEngineDemo {
     /**
      * Demo 2: Survey flow with action execution.
      * <p>
-     * ACTIVE → SURVEY_IN_PROGRESS → ENDING → CLOSED
+     * IN_PROGRESS (messaging) → IN_PROGRESS (survey, internal) → ENDING → CLOSED
      * <p>
      * Actions:
      * <ul>
@@ -153,7 +153,7 @@ public class ChatEngineDemo {
                 .conversationId("conv-002")
                 .market("SG")
                 .tenantId("tenant-sg-001")
-                .state(ConversationState.ACTIVE)
+                .state(ConversationState.IN_PROGRESS)
                 .surveyEnabled(true)
                 .surveyCompleted(false)
                 .build();
@@ -247,7 +247,7 @@ public class ChatEngineDemo {
                 .conversationId("conv-004")
                 .market("HK")
                 .tenantId("tenant-hk-001")
-                .state(ConversationState.ACTIVE)
+                .state(ConversationState.IN_PROGRESS)
                 .surveyEnabled(false)
                 .build();
 
@@ -296,7 +296,7 @@ public class ChatEngineDemo {
                 .conversationId("conv-005")
                 .market("HK")
                 .tenantId("tenant-hk-001")
-                .state(ConversationState.ACTIVE)
+                .state(ConversationState.IN_PROGRESS)
                 .surveyEnabled(false)
                 .build();
 
@@ -312,7 +312,7 @@ public class ChatEngineDemo {
             System.out.printf("  SURVEY_COMPLETE → %s (unexpected, should have failed)%n", result.getTargetState());
         } catch (StateMachineException e) {
             System.out.printf("  SURVEY_COMPLETE → StateMachineException: %s%n", e.getMessage());
-            System.out.println("  State remains: ACTIVE (no transition, no state change)");
+            System.out.println("  State remains: IN_PROGRESS (no transition, no state change)");
         }
 
         System.out.println();

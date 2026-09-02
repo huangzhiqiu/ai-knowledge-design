@@ -53,13 +53,13 @@ public class ConversationStateMachineFactory {
         builder.transition()
                 .from(ConversationState.INITIATED)
                 .on(ConversationFact.CUSTOMER_CONNECT)
-                .to(ConversationState.ACTIVE)
+                .to(ConversationState.IN_PROGRESS)
                 .perform(CUSTOMER_CONNECT_ACTION)
                 .and();
 
         // ACTIVE → TRANSFERRED: transfer requested, execute TransferRequestAction
         builder.transition()
-                .from(ConversationState.ACTIVE)
+                .from(ConversationState.IN_PROGRESS)
                 .on(ConversationFact.TRANSFER_REQUEST)
                 .to(ConversationState.TRANSFERRED)
                 .perform(TRANSFER_REQUEST_ACTION)
@@ -67,9 +67,9 @@ public class ConversationStateMachineFactory {
 
         // Agent attached (internal transition, stays in ACTIVE)
         builder.transition()
-                .from(ConversationState.ACTIVE)
+                .from(ConversationState.IN_PROGRESS)
                 .on(ConversationFact.AGENT_ATTACHED)
-                .to(ConversationState.ACTIVE)
+                .to(ConversationState.IN_PROGRESS)
                 .internal()
                 .and();
 
@@ -77,7 +77,7 @@ public class ConversationStateMachineFactory {
         builder.transition()
                 .from(ConversationState.TRANSFERRED)
                 .on(ConversationFact.TRANSFER_CONNECTED)
-                .to(ConversationState.ACTIVE)
+                .to(ConversationState.IN_PROGRESS)
                 .and();
 
         // v6: transfer failed -> INITIATED (no rollback), execute TransferFailedAction
@@ -97,35 +97,40 @@ public class ConversationStateMachineFactory {
 
         // ACTIVE → ENDING: customer closes, execute CustomerCloseAction
         builder.transition()
-                .from(ConversationState.ACTIVE)
+                .from(ConversationState.IN_PROGRESS)
                 .on(ConversationFact.CUSTOMER_CLOSE)
                 .to(ConversationState.ENDING)
                 .perform(CUSTOMER_CLOSE_ACTION)
                 .and();
 
-        // ===== SURVEY FLOW (survey as in-progress state, controlled by state machine) =====
-        // When a conversation ends but survey is enabled, fire SURVEY_START instead of CUSTOMER_CLOSE.
-        // The business layer (ChatEngineStateMachineService.closeConversation) decides which event to fire
-        // based on conversation.surveyEnabled().
+        // ===== SURVEY FLOW (survey is a sub-phase within IN_PROGRESS, NOT a separate state) =====
+        // The IN_PROGRESS state encompasses both messaging and survey phases.
+        // SURVEY_START is an INTERNAL transition: state remains IN_PROGRESS, but
+        // the conversation enters the survey sub-phase (SurveyStartAction executes).
+        // When survey completes (SURVEY_COMPLETE) or times out (SYS_SURVEY_TIMEOUT),
+        // the conversation transitions directly from IN_PROGRESS to ENDING.
 
-        // ACTIVE → SURVEY_IN_PROGRESS: survey starts, execute SurveyStartAction
+        // IN_PROGRESS → IN_PROGRESS (internal): survey starts, execute SurveyStartAction
+        // State does NOT change — survey is a sub-phase within IN_PROGRESS
         builder.transition()
-                .from(ConversationState.ACTIVE)
+                .from(ConversationState.IN_PROGRESS)
                 .on(ConversationFact.SURVEY_START)
-                .to(ConversationState.SURVEY_IN_PROGRESS)
+                .to(ConversationState.IN_PROGRESS)
+                .internal()
                 .perform(SURVEY_START_ACTION)
                 .and();
 
+        // TRANSFERRED → IN_PROGRESS: survey starts after transfer, execute SurveyStartAction
         builder.transition()
                 .from(ConversationState.TRANSFERRED)
                 .on(ConversationFact.SURVEY_START)
-                .to(ConversationState.SURVEY_IN_PROGRESS)
+                .to(ConversationState.IN_PROGRESS)
                 .perform(SURVEY_START_ACTION)
                 .and();
 
         // Survey completes normally → ENDING, execute SurveyCompleteAction
         builder.transition()
-                .from(ConversationState.SURVEY_IN_PROGRESS)
+                .from(ConversationState.IN_PROGRESS)
                 .on(ConversationFact.SURVEY_COMPLETE)
                 .to(ConversationState.ENDING)
                 .perform(SURVEY_COMPLETE_ACTION)
@@ -133,22 +138,8 @@ public class ConversationStateMachineFactory {
 
         // Survey timeout → ENDING (system-driven)
         builder.transition()
-                .from(ConversationState.SURVEY_IN_PROGRESS)
+                .from(ConversationState.IN_PROGRESS)
                 .on(ConversationFact.SYS_SURVEY_TIMEOUT)
-                .to(ConversationState.ENDING)
-                .and();
-
-        // Customer leaves during survey → ENDING
-        builder.transition()
-                .from(ConversationState.SURVEY_IN_PROGRESS)
-                .on(ConversationFact.SYS_CUSTOMER_IDLE)
-                .to(ConversationState.ENDING)
-                .and();
-
-        // Customer explicitly closes during survey → ENDING
-        builder.transition()
-                .from(ConversationState.SURVEY_IN_PROGRESS)
-                .on(ConversationFact.CUSTOMER_CLOSE)
                 .to(ConversationState.ENDING)
                 .and();
 
@@ -166,7 +157,7 @@ public class ConversationStateMachineFactory {
                 .and();
 
         builder.transition()
-                .from(ConversationState.ACTIVE)
+                .from(ConversationState.IN_PROGRESS)
                 .on(ConversationFact.SYS_CUSTOMER_IDLE)
                 .to(ConversationState.ENDING)
                 .and();
@@ -208,7 +199,7 @@ public class ConversationStateMachineFactory {
                 .and();
 
         builder.transition()
-                .from(ConversationState.ACTIVE)
+                .from(ConversationState.IN_PROGRESS)
                 .on(ConversationFact.SYS_ACTION_FAILED)
                 .to(ConversationState.ERROR)
                 .and();
@@ -220,7 +211,7 @@ public class ConversationStateMachineFactory {
                 .and();
 
         builder.transition()
-                .from(ConversationState.SURVEY_IN_PROGRESS)
+                .from(ConversationState.IN_PROGRESS)
                 .on(ConversationFact.SYS_ACTION_FAILED)
                 .to(ConversationState.ERROR)
                 .and();
@@ -229,7 +220,7 @@ public class ConversationStateMachineFactory {
         builder.transition()
                 .from(ConversationState.ERROR)
                 .on(ConversationFact.SYS_RETRY)
-                .to(ConversationState.ACTIVE)
+                .to(ConversationState.IN_PROGRESS)
                 .and();
 
         builder.transition()
