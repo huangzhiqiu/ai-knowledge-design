@@ -1,4 +1,4 @@
-# 05 — Advanced Features
+﻿# 05 — Advanced Features
 
 > Production-ready capabilities: persistence, validation, idempotency, observability, event sourcing, resilience, timeouts, and diagram generation.
 
@@ -38,7 +38,7 @@ public class OptimisticLockException extends RuntimeException {
 ### Usage with Auto-Retry
 
 ```java
-CbolStateMachineService service = new CbolStateMachineService(machine, repository);
+ChatEngineStateMachineService service = new ChatEngineStateMachineService(machine, repository);
 
 // fireWithLock automatically retries on version conflict (default 3 retries)
 StateContext<ConversationState, ConversationFact, CbolStateContext> result =

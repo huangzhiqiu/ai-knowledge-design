@@ -1,8 +1,17 @@
 # State Machine Core Framework Design
 
-> Version: 1.0 | Last Updated: 2026-09-01
+> Version: 2.0 | Last Updated: 2026-09-02
 
 ## 1. Core Abstractions
+
+### Package Structure
+
+The core framework is organized into two main packages:
+
+| Package | Responsibility |
+|---------|----------------|
+| `com.selfdevelopment.statemachine.api` | Public interfaces: `StateMachine`, `Action`, `Guard`, `StateMachineListener`, `StateMachineRegistry` |
+| `com.selfdevelopment.statemachine.core` | Core implementations: `SimpleStateMachine`, `Transition`, `StateDef`, `StateContext`, `ExtendedState`, `TransitionKind` |
 
 ### 1.1 StateMachine Interface
 
@@ -23,6 +32,7 @@ public interface StateMachine<S, E, C> {
     boolean hasTransition(S sourceState, E event);
     boolean canFire(S sourceState, E event, C context);
     int getTransitionCount();
+    Collection<Transition<S, E, C>> getAllTransitions();
     String getMachineId();
     S getInitialState();
     Collection<S> getEndStates();
@@ -37,6 +47,29 @@ public interface StateMachine<S, E, C> {
 - `S` — State type (typically an enum)
 - `E` — Event type (typically an enum)
 - `C` — Business context type (carries domain data)
+
+### 1.2 Two Firing Modes
+
+`SimpleStateMachine` supports two firing modes:
+
+| Mode | Method | Behavior on Rejection | Use Case |
+|------|--------|----------------------|----------|
+| **Strict** | `fireEvent()` | Throws `StateMachineException` | When failures should propagate (with ResilientStateMachine / FailoverStateMachine) |
+| **Lenient** | `tryFireEvent()` | Returns rejected `StateContext` (`transitionAccepted=false`) | When "event not applicable" should be handled gracefully |
+
+Both modes still throw on action execution failures (those are real errors, not "not applicable").
+
+```java
+// Strict mode — throws on rejection
+StateContext<S, E, C> result = machine.fireEvent(state, event, ctx);
+
+// Lenient mode — returns rejected context instead of throwing
+StateContext<S, E, C> result = machine.tryFireEvent(state, event, ctx, null);
+if (!result.isTransitionAccepted()) {
+    log.warn("Event not applicable: {}", event);
+    return;
+}
+```
 
 ### 1.2 SimpleStateMachine Implementation
 
@@ -54,6 +87,11 @@ private final Map<S, StateDef<S, E, C>> stateDefs;
 // Listeners: CopyOnWriteArrayList for thread-safe iteration
 private final List<StateMachineListener<S, E, C>> listeners = new CopyOnWriteArrayList<>();
 
+// Machine metadata
+private final String machineId;
+private final S initialState;
+private final Set<S> endStates;
+
 // Lifecycle
 private volatile boolean started = false;
 ```
@@ -65,6 +103,25 @@ private record TransitionKey<S, E>(S sourceState, E event) {
     static <S, E> TransitionKey<S, E> of(S sourceState, E event) {
         return new TransitionKey<>(sourceState, event);
     }
+}
+```
+
+**Two firing methods:**
+
+```java
+// Strict mode: throws StateMachineException on rejection
+public StateContext<S, E, C> fireEvent(S sourceState, E event, C context, ExtendedState extendedState) {
+    StateContext<S, E, C> result = tryFireEvent(sourceState, event, context, extendedState);
+    if (!result.isTransitionAccepted()) {
+        throw new StateMachineException(reason);
+    }
+    return result;
+}
+
+// Lenient mode: returns rejected context instead of throwing
+public StateContext<S, E, C> tryFireEvent(S sourceState, E event, C context, ExtendedState extendedState) {
+    // ... lookup transitions, evaluate guards, execute actions ...
+    // Returns StateContext with transitionAccepted=false on rejection
 }
 ```
 
@@ -180,7 +237,7 @@ public interface Action<S, E, C> {
 
 ## 2. Event Processing Flow
 
-### 2.1 fireEvent Sequence Diagram
+### 2.1 fireEvent / tryFireEvent Sequence Diagram
 
 ```mermaid
 sequenceDiagram
@@ -191,10 +248,15 @@ sequenceDiagram
     participant L as Listener
 
     Caller->>SM: fireEvent(sourceState, event, context)
+    SM->>SM: tryFireEvent(sourceState, event, context)
     SM->>SM: Lookup transitions by (sourceState, event)
     alt No transition found
         SM->>L: transitionDenied("No transition found")
-        SM-->>Caller: throw StateMachineException
+        alt fireEvent (strict mode)
+            SM-->>Caller: throw StateMachineException
+        else tryFireEvent (lenient mode)
+            SM-->>Caller: return rejected StateContext
+        end
     end
 
     loop For each candidate transition
@@ -207,7 +269,7 @@ sequenceDiagram
             SM->>T: executeAction(preCtx)
             alt Action fails
                 SM->>L: transitionError(errorCtx)
-                SM-->>Caller: throw StateMachineException
+                SM-->>Caller: throw StateMachineException (both modes)
             end
             SM->>SD: enter(targetState) [best-effort]
             SM->>L: transitionEnded(transition, resultCtx)
@@ -220,7 +282,11 @@ sequenceDiagram
 
     alt All guards failed
         SM->>L: transitionDenied("All guard conditions failed")
-        SM-->>Caller: throw StateMachineException
+        alt fireEvent (strict mode)
+            SM-->>Caller: throw StateMachineException
+        else tryFireEvent (lenient mode)
+            SM-->>Caller: return rejected StateContext
+        end
     end
 ```
 

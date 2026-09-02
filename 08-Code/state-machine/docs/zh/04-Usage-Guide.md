@@ -1,17 +1,42 @@
 # 使用指南
 
-> 版本：1.0 | 最后更新：2026-09-01
+> 版本：2.0 | 最后更新：2026-09-02
 
 ## 1. 快速开始
 
-### 1.1 添加依赖
+### 1.1 项目结构
 
-这是一个本地模块。添加到你的 `pom.xml`：
+这是一个多模块 Maven 项目，包含三个模块：
+
+| 模块 | ArtifactId | 包名 | 职责 |
+|------|-----------|------|------|
+| **statemachine-core** | `statemachine-core` | `com.selfdevelopment.statemachine` | 通用状态机引擎 + 高级特性 |
+| **chat-engine** | `chat-engine` | `com.selfdevelopment.chatengine` | 会话状态机（业务层） |
+| **agent-connector** | `agent-connector` | `com.selfdevelopment.agentconnector` | 交互状态机（通道层） |
+
+### 1.2 添加依赖
+
+将相应的模块添加到你的 `pom.xml`：
 
 ```xml
+<!-- 核心状态机引擎（始终需要） -->
 <dependency>
-    <groupId>com.selfdevelopment.ai</groupId>
-    <artifactId>hub-statemachine-core</artifactId>
+    <groupId>com.selfdevelopment</groupId>
+    <artifactId>statemachine-core</artifactId>
+    <version>1.0.0</version>
+</dependency>
+
+<!-- 会话状态机（chat-engine） -->
+<dependency>
+    <groupId>com.selfdevelopment</groupId>
+    <artifactId>chat-engine</artifactId>
+    <version>1.0.0</version>
+</dependency>
+
+<!-- 交互状态机（agent-connector） -->
+<dependency>
+    <groupId>com.selfdevelopment</groupId>
+    <artifactId>agent-connector</artifactId>
     <version>1.0.0</version>
 </dependency>
 ```

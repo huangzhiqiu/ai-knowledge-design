@@ -1,4 +1,4 @@
-# Multi-Market State Machine Design
+﻿# Multi-Market State Machine Design
 
 > Version: 1.0 | Last Updated: 2026-09-01
 > Status: Design Proposal (for review)
@@ -346,7 +346,7 @@ extensions.forEach(ext -> ext.registerTransitions(builder));
 ### 3.4 Market-Aware Service Layer
 
 ```java
-public class CbolStateMachineService {
+public class ChatEngineStateMachineService {
     private final StateMachine<ConversationState, ConversationFact, CbolStateContext> machine;
     private final MarketConfigProvider configProvider;
 

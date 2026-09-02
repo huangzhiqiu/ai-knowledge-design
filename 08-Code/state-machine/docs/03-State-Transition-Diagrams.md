@@ -1,4 +1,4 @@
-# State Transition Diagrams & Tables
+﻿# State Transition Diagrams & Tables
 
 > Version: 1.0 | Last Updated: 2026-09-01
 
@@ -248,7 +248,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[CbolStateMachineService.fire] --> B[Load conversation from DB]
+    A[ChatEngineStateMachineService.fire] --> B[Load conversation from DB]
     B --> C[Resolve market config]
     C --> D[fireEvent sourceState, event, context]
 

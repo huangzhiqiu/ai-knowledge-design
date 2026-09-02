@@ -1,17 +1,24 @@
-# CBOL Business Layer Design
+﻿# Business Layer Design (Chat Engine + Agent Connector)
 
-> Version: 1.0 | Last Updated: 2026-09-01
+> Version: 2.0 | Last Updated: 2026-09-02
 
 ## 1. Overview
 
-The CBOL (AI Messaging Hub) business layer implements conversation lifecycle management using the core state machine framework. It models the flow of a customer conversation from initial connection through AI processing, agent transfer, and final closure.
+The business layer implements conversation lifecycle management using the core state machine framework. It is organized into **two separate modules** with clear system boundaries:
+
+| Module | Package | Responsibility | External Systems |
+|--------|---------|----------------|------------------|
+| **chat-engine** | `com.selfdevelopment.chatengine` | Conversation state machine (business-level): 7 states, multi-market config, monitors, async actions | AIBot API, Chat History ODS |
+| **agent-connector** | `com.selfdevelopment.agentconnector` | Interaction state machine (channel-level): 6 states, connector management | Genesys Cloud, Customer WebSocket |
 
 **Key Characteristics:**
-- **Dual-state model**: Conversation (business-level) + Interaction (channel-level, reserved)
+- **Dual-state model**: Conversation (business-level) + Interaction (channel-level), each in its own module
 - **Multi-market support**: Per-market configuration for timeouts and feature flags
 - **Full-chain tracing**: TraceId propagation via SLF4J MDC across async boundaries
 - **v6 design**: Transfer failures/timeouts return to INITIATED (no rollback to ACTIVE)
 - **Automated monitors**: Three time-based monitors for idle detection, transfer timeout, and ending grace
+- **Survey as in-progress**: SURVEY_IN_PROGRESS is a sub-state of active flow, controlled by flow
+- **Failover mechanism**: Unhandled exceptions trigger FAIL event, routed to fail branch
 
 ## 2. Conversation State Model
 
@@ -250,7 +257,7 @@ Base class for all time-based monitors.
 
 ```java
 public abstract class AbstractTimeoutMonitor {
-    protected final CbolStateMachineService cbolStateMachineService;
+    protected final ChatEngineStateMachineService ChatEngineStateMachineService;
 
     protected abstract boolean isApplicable(ConversationState state);
     protected abstract long timeoutSeconds(CbolStateContext ctx);
@@ -261,7 +268,7 @@ public abstract class AbstractTimeoutMonitor {
         long timeoutMs = TimeUnit.SECONDS.toMillis(timeoutSeconds(ctx));
         long elapsedMs = System.currentTimeMillis() - referenceTs;
         if (elapsedMs >= timeoutMs) {
-            cbolStateMachineService.fire(ctx, timeoutEvent());
+            ChatEngineStateMachineService.fire(ctx, timeoutEvent());
         }
     }
 }
@@ -352,15 +359,15 @@ sequenceDiagram
     Pool->>MDC: remove("traceId") [finally]
 ```
 
-## 8. CbolStateMachineService
+## 8. ChatEngineStateMachineService
 
 ### 8.1 Main Entry Point
 
 ```java
-public class CbolStateMachineService {
+public class ChatEngineStateMachineService {
     private final StateMachine<ConversationState, ConversationFact, CbolStateContext> convSm;
 
-    public CbolStateMachineService() {
+    public ChatEngineStateMachineService() {
         this.convSm = CbolStateMachineRegistry.get(ConversationStateMachineFactory.MACHINE_ID);
     }
 
@@ -467,7 +474,7 @@ public final class CbolStateMachineRegistry {
 ```mermaid
 sequenceDiagram
     participant API as REST/WebSocket API
-    participant Svc as CbolStateMachineService
+    participant Svc as ChatEngineStateMachineService
     participant SM as StateMachine
     participant Repo as Conversation Repository
     participant Log as Audit Log
@@ -487,7 +494,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant Svc as CbolStateMachineService
+    participant Svc as ChatEngineStateMachineService
     participant SM as StateMachine
     participant Repo as Repository
 

@@ -1,41 +1,66 @@
-# Usage Guide
+﻿# Usage Guide
 
-> Version: 1.0 | Last Updated: 2026-09-01
+> Version: 2.0 | Last Updated: 2026-09-02
 
 ## 1. Quick Start
 
-### 1.1 Add Dependency
+### 1.1 Project Structure
 
-This is a local module. Add to your `pom.xml`:
+This is a multi-module Maven project with three modules:
+
+| Module | ArtifactId | Package | Responsibility |
+|--------|-----------|---------|----------------|
+| **statemachine-core** | `statemachine-core` | `com.selfdevelopment.statemachine` | Generic state machine engine + advanced features |
+| **chat-engine** | `chat-engine` | `com.selfdevelopment.chatengine` | Conversation state machine (business layer) |
+| **agent-connector** | `agent-connector` | `com.selfdevelopment.agentconnector` | Interaction state machine (channel layer) |
+
+### 1.2 Add Dependency
+
+Add the appropriate module to your `pom.xml`:
 
 ```xml
+<!-- Core state machine engine (always needed) -->
 <dependency>
-    <groupId>com.selfdevelopment.ai</groupId>
-    <artifactId>hub-statemachine-core</artifactId>
+    <groupId>com.selfdevelopment</groupId>
+    <artifactId>statemachine-core</artifactId>
+    <version>1.0.0</version>
+</dependency>
+
+<!-- Conversation state machine (chat-engine) -->
+<dependency>
+    <groupId>com.selfdevelopment</groupId>
+    <artifactId>chat-engine</artifactId>
+    <version>1.0.0</version>
+</dependency>
+
+<!-- Interaction state machine (agent-connector) -->
+<dependency>
+    <groupId>com.selfdevelopment</groupId>
+    <artifactId>agent-connector</artifactId>
     <version>1.0.0</version>
 </dependency>
 ```
 
-### 1.2 Build and Register the State Machine
+### 1.3 Build and Register the State Machine
 
 ```java
-import com.selfdevelopment.ai.messaging.cbol.statemachine.ConversationStateMachineFactory;
-import com.selfdevelopment.ai.messaging.statemachine.core.StateMachine;
+import com.selfdevelopment.chatengine.statemachine.factory.ConversationStateMachineFactory;
+import com.selfdevelopment.statemachine.api.StateMachine;
 
 // Build and register (call once at application startup)
 StateMachine<ConversationState, ConversationFact, CbolStateContext> machine =
     ConversationStateMachineFactory.build();
 ```
 
-### 1.3 Fire an Event
+### 1.4 Fire an Event
 
 ```java
-import com.selfdevelopment.ai.messaging.cbol.statemachine.CbolStateMachineService;
-import com.selfdevelopment.ai.messaging.cbol.context.CbolStateContext;
-import com.selfdevelopment.ai.messaging.cbol.context.TraceContext;
-import com.selfdevelopment.ai.messaging.cbol.config.StateMachineMarketConfig;
-import com.selfdevelopment.ai.messaging.cbol.model.ConversationInstance;
-import com.selfdevelopment.ai.messaging.statemachine.core.StateContext;
+import com.selfdevelopment.chatengine.service.ChatEngineStateMachineService;
+import com.selfdevelopment.chatengine.context.CbolStateContext;
+import com.selfdevelopment.chatengine.context.TraceContext;
+import com.selfdevelopment.chatengine.config.StateMachineMarketConfig;
+import com.selfdevelopment.chatengine.model.ConversationInstance;
+import com.selfdevelopment.statemachine.core.StateContext;
 
 // 1. Build context
 CbolStateContext ctx = CbolStateContext.builder()
@@ -50,7 +75,7 @@ CbolStateContext ctx = CbolStateContext.builder()
     .build();
 
 // 2. Fire event
-CbolStateMachineService service = new CbolStateMachineService();
+ChatEngineStateMachineService service = new ChatEngineStateMachineService();
 StateContext<ConversationState, ConversationFact, CbolStateContext> result =
     service.fire(ctx, ConversationFact.CUSTOMER_CONNECT);
 
@@ -235,7 +260,7 @@ CbolStateContext ctx = CbolStateContext.builder()
 ### 6.1 Setting Up Monitors
 
 ```java
-CbolStateMachineService service = new CbolStateMachineService();
+ChatEngineStateMachineService service = new ChatEngineStateMachineService();
 
 CustomerIdleMonitor idleMonitor = new CustomerIdleMonitor(service);
 TransferMonitor transferMonitor = new TransferMonitor(service);
@@ -344,7 +369,7 @@ if (machine.canFire(conversation.getState(), event, context)) {
 void shouldTransitionFromInitiatedToActiveOnCustomerConnect() {
     // Given
     ConversationStateMachineFactory.build();
-    CbolStateMachineService service = new CbolStateMachineService();
+    ChatEngineStateMachineService service = new ChatEngineStateMachineService();
     CbolStateContext ctx = buildTestContext(ConversationState.INITIATED);
 
     // When
@@ -358,7 +383,7 @@ void shouldTransitionFromInitiatedToActiveOnCustomerConnect() {
 
 @Test
 void shouldThrowWhenNoTransitionExists() {
-    CbolStateMachineService service = new CbolStateMachineService();
+    ChatEngineStateMachineService service = new ChatEngineStateMachineService();
     CbolStateContext ctx = buildTestContext(ConversationState.CLOSED);
 
     assertThrows(StateMachineException.class,
@@ -412,8 +437,8 @@ public class StateMachineConfig {
     }
 
     @Bean
-    public CbolStateMachineService cbolStateMachineService() {
-        return new CbolStateMachineService();
+    public ChatEngineStateMachineService ChatEngineStateMachineService() {
+        return new ChatEngineStateMachineService();
     }
 
     @Bean
@@ -470,7 +495,7 @@ StateRepository<ConversationState> repository = new InMemoryStateRepository<>();
 repository.save("conv-123", ConversationState.INITIATED, 0);
 
 // Load and transition with optimistic lock
-CbolStateMachineService service = new CbolStateMachineService(machine, repository);
+ChatEngineStateMachineService service = new ChatEngineStateMachineService(machine, repository);
 StateContext<...> result = service.fireWithLock("conv-123", ConversationFact.USER_MESSAGE, ctx);
 // Automatically retries up to 3 times on version conflict
 ```
