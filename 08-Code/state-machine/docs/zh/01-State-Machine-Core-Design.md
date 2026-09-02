@@ -1,6 +1,29 @@
 # 状态机核心框架设计
 
-> 版本：1.0 | 最后更新：2026-09-01
+> 版本：2.1 | 最后更新：2026-09-03
+
+## 0. 设计原则
+
+### Action-First 状态迁移（核心原则）
+
+状态机遵循 **action-first 状态迁移** 原则：
+
+> **Action 在状态变更之前执行。如果 action 失败，状态不会变更。**
+
+这确保了业务逻辑（action）是状态迁移的守门人。从状态 A 到状态 B 的迁移只有在关联的 action 成功执行后才会完成。
+
+**EXTERNAL 迁移的执行顺序：**
+1. 源状态的 exit action（尽力而为，失败 → 仅通知 listener）
+2. **迁移 action（失败 → `StateMachineException`，状态不会变更）**
+3. 目标状态的 entry action（尽力而为，失败 → 仅通知 listener）
+
+**关键点：**
+- 迁移 action 是唯一可以阻止状态迁移的 action
+- Exit/entry action 是尽力而为的，因为它们是副作用，不是核心业务逻辑
+- 当迁移 action 失败时，源状态会被保留，异常会传播
+- 使用 `FailoverStateMachine` 装饰器实现 action 失败时的自动故障转移
+
+详见 [第 2.2 节](#22-action-执行顺序external-迁移) 了解详细的执行顺序和失败处理。
 
 ## 1. 核心抽象
 

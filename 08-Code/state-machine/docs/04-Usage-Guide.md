@@ -1,6 +1,6 @@
 ﻿# Usage Guide
 
-> Version: 2.0 | Last Updated: 2026-09-02
+> Version: 2.1 | Last Updated: 2026-09-03
 
 ## 1. Quick Start
 
@@ -299,25 +299,41 @@ ActionWorker worker = new ActionWorker();  // Default: core=CPU, max=CPU*2, queu
 // Or with custom configuration
 ActionWorker customWorker = new ActionWorker(4, 8, 60, 500);
 
-// Submit async action
-CbolAction sendNotification = ctx -> {
-    notificationService.send(ctx.conversation().customerId(), "Your conversation is active");
+// Submit async action (implement core Action interface)
+Action<ConversationState, ConversationFact, CbolStateContext> sendNotification = ctx -> {
+    CbolStateContext businessCtx = ctx.getBusinessContext();
+    notificationService.send(businessCtx.conversation().tenantId(), "Your conversation is active");
 };
 
-worker.submit(sendNotification, ctx);
+// Create StateContext wrapper
+StateContext<ConversationState, ConversationFact, CbolStateContext> stateCtx = 
+    StateContext.<ConversationState, ConversationFact, CbolStateContext>builder()
+        .sourceState(ConversationState.ACTIVE)
+        .targetState(ConversationState.ACTIVE)
+        .event(ConversationFact.AGENT_ATTACHED)
+        .businessContext(ctx)
+        .build();
+
+worker.submit(sendNotification, stateCtx);
 
 // Shutdown at application exit
 worker.shutdown();
 ```
 
-### 7.2 CbolAction Interface
+### 7.2 Core Action Interface
+
+Actions directly implement the core `Action<S, E, C>` interface from `statemachine-core`:
 
 ```java
 @FunctionalInterface
-public interface CbolAction {
-    void execute(CbolStateContext ctx);
+public interface Action<S, E, C> {
+    void execute(StateContext<S, E, C> context);
 }
 ```
+
+**Action-First Transition Principle**: Action executes BEFORE state change. If action fails, state does NOT change.
+
+See [Concrete Action Implementations](../02-CBOL-Business-Layer-Design.md#75-concrete-action-implementations) for the 6 built-in actions in chat-engine.
 
 ## 8. Error Handling Patterns
 

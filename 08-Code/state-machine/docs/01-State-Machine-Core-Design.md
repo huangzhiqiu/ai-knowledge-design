@@ -1,6 +1,29 @@
 # State Machine Core Framework Design
 
-> Version: 2.0 | Last Updated: 2026-09-02
+> Version: 2.1 | Last Updated: 2026-09-03
+
+## 0. Design Principles
+
+### Action-First Transition (Core Principle)
+
+The state machine follows the **action-first transition** principle:
+
+> **Action executes BEFORE state change. If action fails, state does NOT change.**
+
+This ensures that business logic (action) is the gatekeeper for state transitions. A transition from state A to state B only completes if the associated action executes successfully.
+
+**Execution order for EXTERNAL transitions:**
+1. Exit action of source state (best-effort, failure → listener only)
+2. **Transition action (failure → `StateMachineException`, state does NOT change)**
+3. Entry action of target state (best-effort, failure → listener only)
+
+**Key points:**
+- Transition action is the only action that can block a state transition
+- Exit/entry actions are best-effort because they are side effects, not core business logic
+- When transition action fails, the source state is preserved and the exception propagates
+- Use `FailoverStateMachine` decorator for automatic failover on action failure
+
+See [Section 2.2](#22-action-execution-order-external-transition) for detailed execution order and failure handling.
 
 ## 1. Core Abstractions
 

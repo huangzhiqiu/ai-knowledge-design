@@ -1,6 +1,6 @@
 ﻿# Business Layer Design (Chat Engine + Agent Connector)
 
-> Version: 2.0 | Last Updated: 2026-09-02
+> Version: 2.1 | Last Updated: 2026-09-03
 
 ## 1. Overview
 
@@ -316,7 +316,8 @@ public class ActionWorker {
              1000);  // queue capacity
     }
 
-    public void submit(CbolAction action, CbolStateContext ctx) {
+    public void submit(Action<ConversationState, ConversationFact, CbolStateContext> action,
+                       StateContext<ConversationState, ConversationFact, CbolStateContext> ctx) {
         executor.submit(() -> {
             try {
                 TraceMdcHelper.set(ctx.traceContext());  // MDC propagation
@@ -357,6 +358,86 @@ sequenceDiagram
     Pool->>Pool: action.execute(ctx)
     Note over Pool: All logs in this thread carry traceId
     Pool->>MDC: remove("traceId") [finally]
+```
+
+## 7.5 Concrete Action Implementations
+
+The chat-engine module provides **6 concrete action implementations** that directly implement the core `Action<ConversationState, ConversationFact, CbolStateContext>` interface. Each action encapsulates the business logic for a specific state transition.
+
+> **Design principle**: Actions are the gatekeepers of state transitions. A transition from state A to state B only completes if the associated action executes successfully (action-first transition).
+
+### 7.5.1 Action Overview
+
+| Action Class | Transition | Business Logic |
+|-------------|-----------|----------------|
+| `CustomerConnectAction` | INITIATED → ACTIVE | Create conversation record, send welcome message, initialize session, notify AI bot |
+| `TransferRequestAction` | ACTIVE → TRANSFERRED | Check agent availability, request routing to Genesys queue, notify customer, record transfer start |
+| `TransferFailedAction` | TRANSFERRED → INITIATED | Record failure reason, cleanup transfer state, notify customer, trigger re-routing |
+| `CustomerCloseAction` | ACTIVE → ENDING | Mark conversation ending, send closing confirmation, release agent resources, record ending start |
+| `SurveyStartAction` | ACTIVE → SURVEY_IN_PROGRESS | Create survey record, send survey invitation, set survey timeout |
+| `SurveyCompleteAction` | SURVEY_IN_PROGRESS → ENDING | Save survey results, calculate NPS/CSAT score, cancel survey timeout, trigger ending grace |
+
+### 7.5.2 Action Implementation Pattern
+
+All actions follow the same implementation pattern:
+
+```java
+@Slf4j
+public class CustomerConnectAction 
+    implements Action<ConversationState, ConversationFact, CbolStateContext> {
+
+    @Override
+    public void execute(StateContext<ConversationState, ConversationFact, CbolStateContext> context) {
+        CbolStateContext ctx = context.getBusinessContext();
+        
+        // 1. Extract data from context
+        String conversationId = ctx.conversation().conversationId();
+        
+        // 2. Execute business logic (simulated in demo, real implementation calls services)
+        createConversationRecord(ctx);
+        sendWelcomeMessage(ctx);
+        
+        // 3. Log completion
+        log.info("CustomerConnectAction completed: conversationId={}", conversationId);
+    }
+}
+```
+
+### 7.5.3 Binding Actions to Transitions
+
+Actions are bound to transitions in `ConversationStateMachineFactory` using the `.perform(action)` method:
+
+```java
+// Action instances (stateless, can be shared)
+private static final CustomerConnectAction CUSTOMER_CONNECT_ACTION = new CustomerConnectAction();
+
+// Bind action to transition
+builder.transition()
+    .from(ConversationState.INITIATED)
+    .on(ConversationFact.CUSTOMER_CONNECT)
+    .to(ConversationState.ACTIVE)
+    .perform(CUSTOMER_CONNECT_ACTION)  // Action executes before state change
+    .and();
+```
+
+### 7.5.4 Action Failure Handling
+
+When an action throws an unhandled `RuntimeException`:
+1. The state does **NOT** change (source state is preserved)
+2. `StateMachineException` is thrown with the cause
+3. The caller can catch and handle (retry, escalate, or trigger failover)
+4. Use `FailoverStateMachine` decorator for automatic failover (triggers `SYS_ACTION_FAILED` event → ERROR state)
+
+```java
+try {
+    StateContext<...> result = machine.fireEvent(state, event, ctx);
+} catch (StateMachineException e) {
+    // Action failed, state unchanged
+    log.error("Transition failed: {}", e.getMessage());
+    // Option 1: Retry
+    // Option 2: Trigger failover (use FailoverStateMachine)
+    // Option 3: Escalate to human
+}
 ```
 
 ## 8. ChatEngineStateMachineService
