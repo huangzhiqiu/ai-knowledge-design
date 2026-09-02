@@ -284,7 +284,34 @@ cd 08-Code/state-machine
 ./mvnw.cmd package
 ```
 
-**Current stats:** 291+ test cases across all modules (219 core + 72 chat-engine), BUILD SUCCESS
+**Current stats:** 305+ test cases across all modules (219 core + 86 chat-engine), BUILD SUCCESS
+
+## Changelog
+
+### v2.3 (2026-09-03)
+- **Code quality fixes (P0)**:
+  - Fixed parameter naming in 3 Monitor classes: `ChatEngineStateMachineService` → `chatEngineStateMachineService`
+  - Fixed outdated Javadoc in CustomerIdleMonitor: `ACTIVE` → `IN_PROGRESS`
+  - Fixed fully qualified class name usage in ChatEngineStateMachineService
+- **ActionWorker improvements (P1)**:
+  - Added `submitWithResult()` method returning `CompletableFuture<Void>` for result tracking
+  - Added `submitWithCallback()` method with success/failure callbacks
+  - Added `getExecutor()` method for advanced configuration and monitoring
+  - Refactored original `submit()` to use `submitWithResult()` internally (backward compatible)
+  - Added 15 new ActionWorker test cases
+- **Code duplication elimination**:
+  - Extracted `AbstractEventDispatcher<C>` to statemachine-core
+  - Refactored ChatEngineEventDispatcher and AgentConnectorEventDispatcher to extend AbstractEventDispatcher
+  - Eliminated ~30% duplicate code in event dispatchers
+
+### v2.2 (2026-09-03)
+- **State rename**: `ACTIVE` → `IN_PROGRESS`
+- **Removed state**: `SURVEY_IN_PROGRESS` — survey is now an internal sub-phase within `IN_PROGRESS`
+- **New state**: `NEW` — initial state, conversation record created but not initialized
+- **New transition**: `NEW → INITIATED` via `CONVERSATION_INITIATED` event
+- **New action**: `ConversationInitAction` — validates config, allocates resources, sets up routing
+- **Survey redesign**: `SURVEY_START` is now an internal transition; `SURVEY_COMPLETE` transitions directly to `ENDING`
+- **Architecture boundary**: Removed `InteractionInstance` from chat-engine — Conversation and Interaction are independent state machines
 
 ## Quality Gates
 

@@ -17,6 +17,22 @@
 
 ## Changelog
 
+### v2.3 (2026-09-03)
+- **Code quality fixes (P0)**:
+  - Fixed parameter naming in 3 Monitor classes: `ChatEngineStateMachineService` → `chatEngineStateMachineService`
+  - Fixed outdated Javadoc in CustomerIdleMonitor: `ACTIVE` → `IN_PROGRESS`
+  - Fixed fully qualified class name usage in ChatEngineStateMachineService (added import for StateMachineException)
+- **ActionWorker improvements (P1)**:
+  - Added `submitWithResult()` method returning `CompletableFuture<Void>` for result tracking
+  - Added `submitWithCallback()` method with success/failure callbacks
+  - Added `getExecutor()` method for advanced configuration and monitoring
+  - Refactored original `submit()` to use `submitWithResult()` internally (backward compatible)
+  - Added 15 new ActionWorker test cases
+- **Code duplication elimination**:
+  - Extracted `AbstractEventDispatcher<C>` to statemachine-core
+  - Refactored ChatEngineEventDispatcher and AgentConnectorEventDispatcher to extend AbstractEventDispatcher
+  - Eliminated ~30% duplicate code in event dispatchers
+
 ### v2.2 (2026-09-03)
 - **State rename**: `ACTIVE` → `IN_PROGRESS`
 - **Removed state**: `SURVEY_IN_PROGRESS` — survey is now an internal sub-phase within `IN_PROGRESS`

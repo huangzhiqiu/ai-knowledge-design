@@ -17,6 +17,22 @@
 
 ## 更新日志
 
+### v2.3 (2026-09-03)
+- **代码质量修复 (P0)**：
+  - 修复了 3 个 Monitor 类的参数命名：`ChatEngineStateMachineService` → `chatEngineStateMachineService`
+  - 修复了 CustomerIdleMonitor 中过时的 Javadoc：`ACTIVE` → `IN_PROGRESS`
+  - 修复了 ChatEngineStateMachineService 中的全限定类名使用（添加了 StateMachineException 的 import）
+- **ActionWorker 改进 (P1)**：
+  - 新增 `submitWithResult()` 方法，返回 `CompletableFuture<Void>` 用于结果跟踪
+  - 新增 `submitWithCallback()` 方法，支持成功/失败回调
+  - 新增 `getExecutor()` 方法，用于高级配置和监控
+  - 重构原有的 `submit()` 方法，内部使用 `submitWithResult()`（向后兼容）
+  - 新增 15 个 ActionWorker 测试用例
+- **代码重复消除**：
+  - 将 `AbstractEventDispatcher<C>` 提取到 statemachine-core
+  - 重构 ChatEngineEventDispatcher 和 AgentConnectorEventDispatcher 继承 AbstractEventDispatcher
+  - 消除了事件分发器中约 30% 的重复代码
+
 ### v2.2 (2026-09-03)
 - **状态重命名**：`ACTIVE` → `IN_PROGRESS`
 - **移除状态**：`SURVEY_IN_PROGRESS` — 调查现在是 `IN_PROGRESS` 内的内部子阶段

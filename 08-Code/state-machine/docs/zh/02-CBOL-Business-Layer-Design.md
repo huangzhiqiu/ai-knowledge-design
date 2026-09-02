@@ -359,6 +359,77 @@ sequenceDiagram
     Pool->>MDC: remove("traceId") [finally]
 ```
 
+### 7.4 提交模式
+
+ActionWorker 支持三种提交模式，适用于不同的使用场景：
+
+#### 7.4.1 即发即忘（`submit`）
+
+原始模式，适用于不需要执行结果的简单场景。异常仅被捕获并记录日志。
+
+```java
+// 即发即忘：异常仅记录日志
+worker.submit(action, stateContext);
+```
+
+**适用场景**：非关键的后台任务，失败是可接受的（例如审计日志、指标收集）。
+
+#### 7.4.2 结果跟踪（`submitWithResult`）
+
+返回一个 `CompletableFuture<Void>`，在动作完成时完成。调用方可以跟踪执行结果并处理异常。
+
+```java
+// 结果跟踪：获取 CompletableFuture 用于结果跟踪
+CompletableFuture<Void> future = worker.submitWithResult(action, stateContext);
+
+// 链式操作
+future.thenRun(() -> log.info("动作执行成功"))
+      .exceptionally(ex -> {
+          log.error("动作执行失败", ex);
+          // 处理失败（例如重试、告警、降级）
+          return null;
+      });
+
+// 或者阻塞等待
+try {
+    future.get(3, TimeUnit.SECONDS);
+} catch (ExecutionException e) {
+    // 处理动作异常
+}
+```
+
+**适用场景**：需要处理失败的关键业务操作（例如支付处理、需要确认的状态迁移）。
+
+#### 7.4.3 基于回调（`submitWithCallback`）
+
+支持成功和失败回调，适用于事件驱动的编程风格。
+
+```java
+// 基于回调：成功/失败回调
+worker.submitWithCallback(action, stateContext,
+    ctx -> {
+        // 成功回调
+        log.info("会话动作执行完成: {}", ctx.getBusinessContext().conversation().conversationId());
+        // 触发工作流中的下一步
+    },
+    ex -> {
+        // 失败回调
+        log.error("动作执行失败", ex);
+        // 触发错误处理工作流
+        alertService.notify("动作执行失败: " + ex.getMessage());
+    });
+```
+
+**适用场景**：下一步取决于执行结果的工作流编排（例如 Saga 模式、事件驱动架构）。
+
+#### 7.4.4 模式对比
+
+| 模式 | 返回值 | 异常处理 | 适用场景 |
+|------|--------|---------|----------|
+| `submit` | void | 仅记录日志 | 非关键后台任务 |
+| `submitWithResult` | `CompletableFuture<Void>` | 通过 Future 传播 | 需要结果跟踪的关键操作 |
+| `submitWithCallback` | void | 通过 onFailure 回调 | 事件驱动工作流编排 |
+
 ## 8. ChatEngineStateMachineService
 
 ### 8.1 主入口

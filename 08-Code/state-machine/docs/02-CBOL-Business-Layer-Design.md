@@ -360,7 +360,78 @@ sequenceDiagram
     Pool->>MDC: remove("traceId") [finally]
 ```
 
-## 7.5 Concrete Action Implementations
+### 7.4 Submission Modes
+
+ActionWorker supports three submission modes for different use cases:
+
+#### 7.4.1 Fire-and-Forget (`submit`)
+
+Original mode for simple use cases where execution result is not needed. Exceptions are caught and logged only.
+
+```java
+// Fire-and-forget: exceptions are logged only
+worker.submit(action, stateContext);
+```
+
+**Use case**: Non-critical background tasks where failure is acceptable (e.g., audit logging, metrics collection).
+
+#### 7.4.2 Result Tracking (`submitWithResult`)
+
+Returns a `CompletableFuture<Void>` that completes when the action finishes. Callers can track execution result and handle exceptions.
+
+```java
+// Result tracking: get CompletableFuture for result tracking
+CompletableFuture<Void> future = worker.submitWithResult(action, stateContext);
+
+// Chain operations
+future.thenRun(() -> log.info("Action completed successfully"))
+      .exceptionally(ex -> {
+          log.error("Action failed", ex);
+          // Handle failure (e.g., retry, alert, fallback)
+          return null;
+      });
+
+// Or block and wait
+try {
+    future.get(3, TimeUnit.SECONDS);
+} catch (ExecutionException e) {
+    // Handle action exception
+}
+```
+
+**Use case**: Critical business operations where failure needs to be handled (e.g., payment processing, state transitions that require confirmation).
+
+#### 7.4.3 Callback-based (`submitWithCallback`)
+
+Supports success and failure callbacks for event-driven programming style.
+
+```java
+// Callback-based: success/failure callbacks
+worker.submitWithCallback(action, stateContext,
+    ctx -> {
+        // Success callback
+        log.info("Action completed for conversation: {}", ctx.getBusinessContext().conversation().conversationId());
+        // Trigger next step in workflow
+    },
+    ex -> {
+        // Failure callback
+        log.error("Action failed", ex);
+        // Trigger error handling workflow
+        alertService.notify("Action failed: " + ex.getMessage());
+    });
+```
+
+**Use case**: Workflow orchestration where the next step depends on the execution result (e.g., saga pattern, event-driven architecture).
+
+#### 7.4.4 Mode Comparison
+
+| Mode | Return Value | Exception Handling | Use Case |
+|------|-------------|-------------------|----------|
+| `submit` | void | Logged only | Non-critical background tasks |
+| `submitWithResult` | `CompletableFuture<Void>` | Propagated via Future | Critical operations needing result tracking |
+| `submitWithCallback` | void | Via onFailure callback | Event-driven workflow orchestration |
+
+### 7.5 Concrete Action Implementations
 
 The chat-engine module provides **6 concrete action implementations** that directly implement the core `Action<ConversationState, ConversationFact, CbolStateContext>` interface. Each action encapsulates the business logic for a specific state transition.
 
