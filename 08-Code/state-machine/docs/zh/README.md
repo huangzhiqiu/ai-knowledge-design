@@ -1,23 +1,57 @@
 # 状态机文档
 
-> CBOL 状态机项目的设计文档和使用指南。
+> 多模块状态机项目的设计文档和使用指南。
 
 ## 文档索引
 
 | # | 文档 | 描述 |
 |---|------|------|
-| 00 | [架构概览](./00-Architecture-Overview.md) | 高层架构、设计原则、包结构、关键决策 |
+| 00 | [架构概览](./00-Architecture-Overview.md) | 高层架构、多模块结构、设计原则、包结构、关键决策 |
 | 01 | [状态机核心设计](./01-State-Machine-Core-Design.md) | 核心框架：StateMachine 接口、SimpleStateMachine、Transition、StateDef、Builder DSL、监听器、注册表、性能特性 |
-| 02 | [CBOL 业务层设计](./02-CBOL-Business-Layer-Design.md) | CBOL 特定：会话状态/事件、CbolStateContext、多市场配置、监控器、ActionWorker、服务层、错误处理 |
+| 02 | [业务层设计](./02-CBOL-Business-Layer-Design.md) | chat-engine（会话状态机）+ agent-connector（交互状态机）：状态/事件、上下文、多市场配置、监控器、服务、连接器 |
 | 03 | [状态迁移图](./03-State-Transition-Diagrams.md) | Mermaid 状态图、迁移表、监控流程图、事件分类、默认配置 |
-| 04 | [使用指南](./04-Usage-Guide.md) | 快速开始、Builder DSL、Configurer 适配器、监听器、扩展状态、多市场、监控器、异步动作、错误处理、测试、最佳实践、Spring Boot 集成 |
+| 04 | [使用指南](./04-Usage-Guide.md) | 快速开始、Builder DSL、Configurer 适配器、监听器、扩展状态、多市场、监控器、异步动作、错误处理、测试、最佳实践、Spring Boot 集成、Demo 使用 |
 | 05 | [高级特性](./05-Advanced-Features.md) | 持久化与乐观锁、构建时校验、幂等性、指标、事件溯源、弹性/失败处理、超时事件、图生成、故障转移、装饰器组合 |
 | 06 | [多市场设计](./06-Multi-Market-Design.md) | 多市场架构：配置控制 vs 每市场 vs 混合方案、市场感知的 guard/action/扩展点、实施路线图、风险评估 |
 | 07 | [多市场最佳实践](./07-Multi-Market-Best-Practices/README.md) | 8 份详细最佳实践指南：三层配置继承、市场差异可视化、路由与隔离、配置即代码 GitOps、灰度发布、熔断与降级、Schema 校验、测试矩阵 |
 
+## 多模块结构
+
+```
+state-machine/
+├── pom.xml                          # 父 POM (packaging=pom)
+├── statemachine-core/               # 共享核心状态机引擎
+│   └── com.selfdevelopment.statemachine
+├── chat-engine/                     # 会话状态机（业务层）
+│   └── com.selfdevelopment.chatengine
+├── agent-connector/                 # 交互状态机（通道层）
+│   └── com.selfdevelopment.agentconnector
+└── docs/                            # 本文档
+```
+
+### 模块职责
+
+| 模块 | 包名 | 职责 |
+|------|------|------|
+| **statemachine-core** | `com.selfdevelopment.statemachine` | 通用状态机引擎、Builder、ConfigurerAdapter、持久化、事件溯源、幂等性、超时、弹性、指标、校验、图生成、Connector 通用接口 |
+| **chat-engine** | `com.selfdevelopment.chatengine` | 会话状态机（7 个状态）、Aibot 连接器、ChatHistory ODS 连接器、监控器、市场配置、Trace 上下文、异步动作执行器 |
+| **agent-connector** | `com.selfdevelopment.agentconnector` | 交互状态机（6 个状态）、Genesys 连接器、WebSocket 连接器、事件归一化器 |
+
+### 模块依赖
+
+```
+chat-engine ──► statemachine-core
+agent-connector ──► statemachine-core
+```
+
+`chat-engine` 和 `agent-connector` 之间**没有直接依赖**。这种分离确保：
+- 通道层关注点（连接、保持、转接）与业务层关注点（会话生命周期）隔离
+- 每个模块可以独立开发、测试和部署
+- 清晰的系统边界：chat-engine 连接 AIBot 和 ChatHistory；agent-connector 连接 Genesys 和 WebSocket
+
 ## 快速参考
 
-### 核心框架
+### 核心框架 (statemachine-core)
 - **无状态引擎** — 每次调用注入当前状态
 - **表驱动** — 通过 ConcurrentHashMap 实现 O(1) 迁移查找
 - **零依赖** — 仅 JDK（Micrometer 为可选指标依赖）
@@ -28,7 +62,7 @@
 - **扩展状态** — 跨迁移共享的键值变量
 - **迁移类型** — EXTERNAL（外部）和 INTERNAL（内部）
 
-### 高级特性
+### 高级特性 (statemachine-core)
 - **持久化** — StateRepository 带乐观锁（基于版本）、自动重试
 - **校验** — 8 条构建时规则（ERROR/WARNING 级别），构建时校验
 - **幂等性** — 事件 ID 去重，缓存结果
@@ -38,42 +72,77 @@
 - **超时** — 进入状态时自动调度、退出时自动取消、单次/重复
 - **图生成** — 从配置自动生成 Mermaid、PlantUML、迁移表
 
-### CBOL 业务层
-- **7 个状态** — INITIATED, ACTIVE, TRANSFERRED, SURVEY_IN_PROGRESS, ENDING, ERROR, CLOSED
+### Chat Engine (chat-engine)
+- **7 个会话状态** — INITIATED, ACTIVE, TRANSFERRED, SURVEY_IN_PROGRESS, ENDING, ERROR, CLOSED
 - **18 个事件** — 生命周期、转接、满意度调查、结束、系统、故障转移
 - **23 条迁移** — 包括 v6 转接失败重置、满意度调查流程、故障转移流程
-- **3 个监控器** — CustomerIdle（客户空闲）、TransferTimeout（转接超时）、EndingGrace（结束宽限）（可被超时特性替代）
+- **3 个监控器** — CustomerIdle（客户空闲）、TransferTimeout（转接超时）、EndingGrace（结束宽限）
 - **多市场** — 每市场超时、特性开关、动作映射、扩展点
 - **TraceId** — 通过 SLF4J MDC 全链路传播
 - **异步动作** — 有界线程池 + MDC 传播
 - **故障转移** — 动作错误 → SYS_ACTION_FAILED → ERROR → 重试/中止
-- **事件驱动** — StandardEvent、EventNormalizer、EventDispatcher、4 个连接器
+- **连接器** — AibotConnector、ChatHistoryOdsConnector
 
-### 构建与测试
+### Agent Connector (agent-connector)
+- **6 个交互状态** — CONNECTING, CONNECTED, RECONNECTING, HELD, TRANSFERRING, DISCONNECTED
+- **14 个事件** — 连接生命周期、保持、转接
+- **连接器** — GenesysConnector、CbolWebsocketConnector
+- **事件归一化器** — GenesysEventNormalizer
+
+### Demo 代码
+- **ChatEngineDemo** — 4 个演示：基础流程、满意度调查流程、多市场配置、转接失败
+- **AgentConnectorDemo** — 6 个演示：连接、保持、重连、重连耗尽、转接、连接失败
+
+## 构建与测试
+
 ```bash
 cd 08-Code/state-machine
-./mvnw.cmd clean test          # 运行所有测试
-./mvnw.cmd jacoco:report       # 生成覆盖率报告
+
+# 构建所有模块
+./mvnw.cmd clean install
+
+# 编译所有模块
+./mvnw.cmd clean compile
+
+# 运行所有测试
+./mvnw.cmd clean test
+
+# 运行指定模块的测试
+./mvnw.cmd clean test -pl statemachine-core
+./mvnw.cmd clean test -pl chat-engine
+./mvnw.cmd clean test -pl agent-connector
+
+# 生成覆盖率报告
+./mvnw.cmd test jacoco:report
+
+# 运行 Demo
+./mvnw.cmd exec:java -pl chat-engine -Dexec.mainClass="com.selfdevelopment.chatengine.demo.ChatEngineDemo"
+./mvnw.cmd exec:java -pl agent-connector -Dexec.mainClass="com.selfdevelopment.agentconnector.demo.AgentConnectorDemo"
 ```
 
-**当前统计：** 327 个测试用例，83% 行覆盖率 / 71% 分支覆盖率
+**当前统计：** 270+ 个测试用例，全部模块 BUILD SUCCESS
 
-### 包结构
+## 包结构 (statemachine-core)
+
 ```
-statemachine/
-├── core/           # StateMachine, SimpleStateMachine, Transition, StateContext, ExtendedState, StateDef
-├── builder/        # StateMachineBuilder DSL
-├── config/         # StateMachineConfigurerAdapter
-├── listener/       # StateMachineListener (8 个回调)
-├── registry/       # StateMachineRegistry
-├── exception/      # StateMachineException
-├── persistence/    # StateRepository, InMemoryStateRepository, VersionedState, OptimisticLockException
-├── validation/     # StateMachineValidator, ValidationError
-├── idempotency/    # ProcessedEventStore, IdempotentStateMachineDecorator
-├── metrics/        # StateMachineMetrics, MonitoredStateMachine (Micrometer 可选)
-├── eventsourcing/  # StateTransitionEvent, StateTransitionStore, EventSourcedStateMachine
-├── resilience/     # FailureHandler, Throw/ReturnSource/Fallback/Retry 处理器, ResilientStateMachine, FailoverStateMachine, FailoverContext
-├── timeout/        # TimeoutConfig, StateMachineTimeoutScheduler, InMemoryTimeoutScheduler, TimeoutAwareStateMachine
-├── event/          # StandardEvent, EventNormalizer, EventDispatcher (事件驱动基础设施)
-└── diagram/        # StateMachineDiagramGenerator (Mermaid/PlantUML/表)
+com.selfdevelopment.statemachine/
+├── api/              # 核心接口 (StateMachine, Action, Guard, Listener, Registry)
+├── core/             # 核心实现 (SimpleStateMachine, Transition, StateDef, StateContext, ExtendedState)
+├── builder/          # StateMachineBuilder DSL
+├── config/           # StateMachineConfigurerAdapter (Spring 风格)
+├── connector/        # 通用 Connector 接口
+├── event/            # StandardEvent, EventNormalizer, EventDispatcher
+├── persistence/      # StateRepository, InMemoryStateRepository, VersionedState, OptimisticLockException
+├── validation/       # StateMachineValidator, ValidationError
+├── idempotency/      # ProcessedEventStore, IdempotentStateMachineDecorator
+├── metrics/          # StateMachineMetrics, MonitoredStateMachine (Micrometer 可选)
+├── eventsourcing/    # StateTransitionEvent, StateTransitionStore, EventSourcedStateMachine
+├── resilience/       # FailureHandler, Throw/ReturnSource/Fallback/Retry 处理器, ResilientStateMachine, FailoverStateMachine
+├── timeout/          # TimeoutConfig, StateMachineTimeoutScheduler, TimeoutAwareStateMachine
+├── diagram/          # StateMachineDiagramGenerator (Mermaid/PlantUML/表)
+└── exception/        # StateMachineException
 ```
+
+---
+
+*最后更新：2026-09-02*
