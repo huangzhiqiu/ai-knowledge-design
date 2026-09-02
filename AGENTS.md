@@ -6,12 +6,12 @@
 
 **CBOL Refactor (Self-Development)** — An AI Messaging Hub for instant messaging: message reception, message management, message forwarding, and related IM features.
 
-- **Language**: Java 17+
+- **Language**: Java 21
 - **Framework**: Spring Boot 3.x
 - **Network**: Netty 4.1.x (WebSocket/TCP)
 - **Database**: MySQL 8.0 / MongoDB
 - **Cache**: Redis 6.x (cluster)
-- **Build**: Maven
+- **Build**: Maven (multi-module)
 - **Knowledge base**: This repository (Markdown, English folder names)
 
 ## How to Work With This Project
@@ -28,6 +28,8 @@ Before writing any code, read relevant knowledge base documents:
 | Code standards | `04-Coding-Guidelines/` (all) |
 | Open source references | `05-References/` |
 | Workflow skills | `06-Skills/` |
+| Workflow definitions | `07-Workflows/` |
+| State machine code | `08-Code/state-machine/` |
 
 ### 2. Follow the AI Development Pipeline
 
@@ -56,7 +58,11 @@ The pipeline enforces:
 - **Files**: English, kebab-case, `.md` extension
 - **Branches**: `feat/CBOL-XXX-{short-desc}` / `fix/CBOL-XXX-{short-desc}`
 - **Commits**: Conventional Commits: `{type}({scope}): {subject} (CBOL-XXX)`
-- **Java packages**: `com.selfdevelopment.ai.messaging.{module}`
+- **Java packages**:
+  - State machine core: `com.selfdevelopment.statemachine.*`
+  - Chat engine: `com.selfdevelopment.chatengine.*`
+  - Agent connector: `com.selfdevelopment.agentconnector.*`
+  - Other modules: `com.selfdevelopment.ai.messaging.{module}`
 
 ### 5. Code Quality Gates
 
@@ -67,17 +73,22 @@ Before submitting any code:
 - [ ] Follows `04-Coding-Guidelines/` (all documents)
 - [ ] Security guidelines followed (`04-Coding-Guidelines/security-guidelines.md`)
 - [ ] Concurrency guidelines followed (`04-Coding-Guidelines/concurrency-guidelines.md`)
+- [ ] Multi-module dependency rules: no circular dependencies
 
 ### 6. State Machine
 
-This project uses a custom lightweight state machine (see `01-CBOL-Domain-Knowledge/state-machine/`):
+This project uses a custom lightweight state machine (see `08-Code/state-machine/`):
+- Multi-module Maven project: `statemachine-core`, `chat-engine`, `agent-connector`
 - Stateless engine (only stores transition rules, current state injected by business layer)
 - Table-driven (ConcurrentHashMap O(1) lookup)
-- Zero external dependencies
+- Zero external core dependencies
 - Generic type-safe
+- Spring-style `StateMachineConfigurerAdapter` configuration
 - Reference: COLA StateMachine design philosophy (but no code import)
 
-**Conversation states**: INIT, AI_PROCESSING, TRANSFERRING, AGENT_CONNECTED, AGENT_HANDLING, TRANSFER_FAILED, CLOSED, ERROR, TIMEOUT
+**Conversation states** (chat-engine): INITIATED, ACTIVE, TRANSFERRED, SURVEY_IN_PROGRESS, ENDING, ERROR, CLOSED
+
+**Interaction states** (agent-connector): CONNECTING, CONNECTED, RECONNECTING, HELD, TRANSFERRING, DISCONNECTED
 
 ### 7. Key Architecture Decisions
 
@@ -86,17 +97,22 @@ This project uses a custom lightweight state machine (see `01-CBOL-Domain-Knowle
 - **MongoDB sharding**: Message index = sending time + recipient ID
 - **Session ID**: user ID + device type
 - **Minimal architecture**: Avoid over-engineering (Turms philosophy)
+- **Multi-market support**: Configuration-driven per-market behavior (HK, SG, UK, etc.)
+- **Failover mechanism**: Unhandled exceptions trigger FAIL event, routed to fail branch
+- **Survey as in-progress**: SURVEY_IN_PROGRESS is a sub-state of active flow, controlled by flow
 
 ### 8. What NOT to Do
 
 - ❌ Don't write production code before a failing test exists (TDD)
 - ❌ Don't skip knowledge base reading — always inject relevant knowledge
 - ❌ Don't commit secrets/tokens to git
-- ❌ Don't use `com.hsbc.*` package — use `com.selfdevelopment.ai.messaging.*`
+- ❌ Don't use `com.hsbc.*` package — use `com.selfdevelopment.*`
 - ❌ Don't create Chinese folder/file names — use English
 - ❌ Don't auto-merge PRs — human peer review required
 - ❌ Don't claim completion without evidence (command + output + exit code)
 - ❌ Don't bypass the 3-strike escalation — if 3 retries fail, stop and ask human
+- ❌ Don't create circular dependencies between Maven modules
+- ❌ Don't put business-specific code in `statemachine-core` — it must stay generic
 
 ### 9. Project Structure
 
@@ -106,12 +122,22 @@ ai-knowledge-design/
 ├── 01-CBOL-Domain-Knowledge/     # CBOL-specific domain (to be filled by team)
 ├── 02-Chat-Domain-Knowledge/     # Generic IM knowledge + Java implementation refs
 ├── 03-Design-Guidelines/         # Design principles, API guidelines, architecture
-├── 04-Coding-Guidelines/         # Java standards, security, quality, concurrency
+├── 04-Coding-Guidelines/         # Java/Spring/WebSocket/DB/Cache/Queue/API/HTTP/Security/Quality/StateMachine/Testing standards
 ├── 05-References/                 # Open source projects, AI dev references
-├── 06-Skills/                     # OpenCode-compatible skills
+├── 06-Skills/                     # OpenCode-compatible skills (categorized)
 │   ├── 01-ai-development-pipeline/
 │   ├── 02-code-analysis/
-│   └── 03-knowledge-collection/
+│   ├── 03-knowledge-collection/
+│   ├── 04-domain-skills/
+│   └── 05-external-skills/
+├── 07-Workflows/                  # Workflow definitions + POC workflow
+│   ├── reference-workflows/       # Analyzed reference workflows
+│   └── poc-workflow/              # POC implementation with skills
+├── 08-Code/                       # Project code
+│   └── state-machine/             # Multi-module state machine project
+│       ├── statemachine-core/     # Shared core engine
+│       ├── chat-engine/           # Conversation state machine
+│       └── agent-connector/       # Interaction state machine
 ├── .ai-workflow/                  # Pipeline config (gitignored actual config)
 ├── AGENTS.md                      # This file
 ├── QUICKSTART.md                  # Quick start guide
@@ -120,4 +146,4 @@ ai-knowledge-design/
 
 ---
 
-*Last updated: 2026-08-19*
+*Last updated: 2026-09-02*

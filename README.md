@@ -42,7 +42,7 @@
 | **Message Forwarding** | Real-time delivery, offline messages, multi-device sync, push-pull mechanism |
 | **AI Processing** | AI-powered conversation handling, intent recognition, automated responses |
 | **Agent Transfer** | Human agent escalation, transfer workflow, session handoff |
-| **State Management** | Custom state machine: INIT → AI_PROCESSING → TRANSFERRING → AGENT_CONNECTED → CLOSED |
+| **State Management** | Custom multi-module state machine: Conversation (7 states) + Interaction (6 states) |
 
 ---
 
@@ -78,7 +78,7 @@ A curated collection of **executable skills** (SKILL.md with YAML frontmatter) t
 
 | Layer | Technology | Version | Notes |
 |-------|-----------|---------|-------|
-| **Language** | Java | 17+ (LTS) | Records, sealed classes, pattern matching |
+| **Language** | Java | 21 (LTS) | Records, sealed classes, pattern matching, virtual threads |
 | **Framework** | Spring Boot | 3.x | Reactive + MVC hybrid |
 | **Network** | Netty | 4.1.x | WebSocket/TCP, zero-copy, event-driven |
 | **Relational DB** | MySQL | 8.0 | Core business data, transactions |
@@ -273,6 +273,14 @@ ai-knowledge-design/
                 ├── code-generation/                     # Stage 5: Code generation (TDD GREEN)
                 ├── pr-review/                           # Stage 6: PR creation & auto-review
                 └── deployment/                          # Stage 7: Deployment & verification
+│
+└── 08-Code/                                          # Project code implementations
+    └── state-machine/                                 # Multi-module state machine project
+        ├── pom.xml                                    # Parent POM (packaging=pom)
+        ├── statemachine-core/                         # Shared core engine (com.selfdevelopment.statemachine)
+        ├── chat-engine/                               # Conversation state machine (com.selfdevelopment.chatengine)
+        ├── agent-connector/                           # Interaction state machine (com.selfdevelopment.agentconnector)
+        └── docs/                                      # Design documents (EN + ZH)
 ```
 
 ---
@@ -820,5 +828,5 @@ This knowledge base is for internal use by the CBOL Refactor (Self-Development) 
 
 ---
 
-*Last updated: 2026-08-24*
+*Last updated: 2026-09-02*
 *Repository: https://github.com/huangzhiqiu/ai-knowledge-design*

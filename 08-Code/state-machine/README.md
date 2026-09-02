@@ -1,7 +1,7 @@
 # state-machine — Self-Developed Lightweight State Machine Engine
 
 > A production-ready, stateless, table-driven state machine framework with zero core dependencies.
-> Based on the design documents in [01-CBOL-Domain-Knowledge/state-machine/](../../01-CBOL-Domain-Knowledge/state-machine/).
+> Multi-module Maven project: `statemachine-core` (shared engine), `chat-engine` (Conversation SM), `agent-connector` (Interaction SM).
 
 ## Design Principles
 
@@ -14,20 +14,52 @@
 | **Type-safe** | Generic Java types with compile-time checking for State/Event/Context |
 | **Testable** | DSL-style configuration is living documentation, naturally unit-testable |
 | **Decorator-based** | All advanced features are composable decorators — use only what you need |
+| **Multi-module** | Clean separation: shared core vs. business-specific state machines |
 
 ## Tech Stack
 
-- Java 17+
-- Maven 3.8+ (with Maven Wrapper)
+- Java 21
+- Maven 3.8+ (with Maven Wrapper, multi-module)
 - JUnit 5 (testing)
 - SLF4J (logging API)
 - Micrometer (optional, for metrics)
 - Lombok (provided, for business model records)
+- JaCoCo (code coverage)
 - Zero runtime core dependencies
+
+## Modules
+
+```
+state-machine/
+├── pom.xml                          # Parent POM (packaging=pom)
+├── statemachine-core/               # Shared core state machine engine
+│   └── com.selfdevelopment.statemachine
+├── chat-engine/                     # Conversation state machine (business layer)
+│   └── com.selfdevelopment.chatengine
+└── agent-connector/                 # Interaction state machine (channel layer)
+    └── com.selfdevelopment.agentconnector
+```
+
+### Module Responsibilities
+
+| Module | Package | Responsibility |
+|--------|---------|----------------|
+| **statemachine-core** | `com.selfdevelopment.statemachine` | Generic state machine engine, Builder, ConfigurerAdapter, persistence, event sourcing, idempotency, timeout, resilience, metrics, validation, diagram generation, Connector generic interface |
+| **chat-engine** | `com.selfdevelopment.chatengine` | Conversation state machine (7 states), Aibot connector, ChatHistory ODS connector, monitors, market configuration, trace context, async action worker |
+| **agent-connector** | `com.selfdevelopment.agentconnector` | Interaction state machine (6 states), Genesys connector, WebSocket connector, event normalizers |
+
+### Module Dependencies
+
+```
+chat-engine ──► statemachine-core
+agent-connector ──► statemachine-core
+```
+
+`chat-engine` and `agent-connector` have **no direct dependency** on each other.
 
 ## Features
 
-### Core Engine
+### Core Engine (statemachine-core)
 - `StateMachine` interface with lifecycle (start/stop)
 - `SimpleStateMachine` — thread-safe, immutable after construction
 - `Transition` with guard conditions, actions, and EXTERNAL/INTERNAL kinds
@@ -51,20 +83,29 @@
 | **Timeouts** | `timeout` | `TimeoutAwareStateMachine` | Auto-schedule on state entry, auto-cancel on exit, one-shot/repeating |
 | **Diagrams** | `diagram` | `StateMachineDiagramGenerator` | Auto-generate Mermaid, PlantUML, transition tables from config |
 
-### CBOL Business Layer
-- 5 conversation states: INITIATED, ACTIVE, TRANSFERRED, ENDING, CLOSED
-- 13 events across lifecycle, transfer, ending, and system categories
-- 10 transitions including v6 transfer-failure-reset-to-INITIATED
-- Multi-market configuration with per-market timeouts and feature flags
+### Chat Engine (chat-engine)
+- **7 conversation states**: INITIATED, ACTIVE, TRANSFERRED, SURVEY_IN_PROGRESS, ENDING, ERROR, CLOSED
+- 13+ events across lifecycle, transfer, ending, survey, and system categories
+- 10+ transitions including v6 transfer-failure-reset-to-INITIATED
+- Multi-market configuration with per-market timeouts and feature flags (HK, SG, UK, etc.)
 - TraceId full-chain propagation via SLF4J MDC
 - Async actions with bounded thread pool and MDC propagation
-- 3 monitors: CustomerIdle, TransferTimeout, EndingGrace (replaceable by timeout feature)
+- 3 monitors: CustomerIdle, TransferTimeout, EndingGrace
+- Aibot connector, ChatHistory ODS connector
+- Conversation repository with optimistic locking
+
+### Agent Connector (agent-connector)
+- **6 interaction states**: CONNECTING, CONNECTED, RECONNECTING, HELD, TRANSFERRING, DISCONNECTED
+- 14 channel-level events (connection lifecycle, hold, transfer)
+- Genesys connector, WebSocket connector
+- Genesys event normalizer
+- Agent connector state machine service with audit logging
 
 ## Project Structure
 
 ```
 state-machine/
-├── pom.xml
+├── pom.xml                              # Parent POM
 ├── README.md
 ├── docs/
 │   ├── 00-Architecture-Overview.md
@@ -72,26 +113,57 @@ state-machine/
 │   ├── 02-CBOL-Business-Layer-Design.md
 │   ├── 03-State-Transition-Diagrams.md
 │   ├── 04-Usage-Guide.md
-│   └── 05-Advanced-Features.md
-└── src/
-    ├── main/java/com/selfdevelopment/ai/messaging/
-    │   ├── statemachine/
-    │   │   ├── core/           # StateMachine, SimpleStateMachine, Transition, StateContext, etc.
-    │   │   ├── builder/        # StateMachineBuilder DSL
-    │   │   ├── config/         # StateMachineConfigurerAdapter
-    │   │   ├── listener/       # StateMachineListener
-    │   │   ├── registry/       # StateMachineRegistry
-    │   │   ├── exception/      # StateMachineException
-    │   │   ├── persistence/    # StateRepository, optimistic locking
-    │   │   ├── validation/     # StateMachineValidator (8 rules)
-    │   │   ├── idempotency/    # IdempotentStateMachineDecorator
-    │   │   ├── metrics/        # MonitoredStateMachine (Micrometer)
-    │   │   ├── eventsourcing/  # EventSourcedStateMachine
-    │   │   ├── resilience/     # ResilientStateMachine + 4 failure handlers
-    │   │   ├── timeout/        # TimeoutAwareStateMachine + scheduler
-    │   │   └── diagram/        # StateMachineDiagramGenerator
-    │   └── cbol/               # CBOL business layer (conversation state machine)
-    └── test/java/              # 229 test cases
+│   ├── 05-Advanced-Features.md
+│   ├── multi-market-design/             # Multi-market design documents
+│   └── zh/                              # Chinese translations
+├── statemachine-core/
+│   ├── pom.xml
+│   └── src/
+│       ├── main/java/com/selfdevelopment/statemachine/
+│       │   ├── api/                     # Core interfaces
+│       │   ├── core/                    # Core implementations
+│       │   ├── builder/                 # Builder DSL
+│       │   ├── config/                  # ConfigurerAdapter
+│       │   ├── connector/               # Generic Connector interface
+│       │   ├── event/                   # Event dispatcher/normalizer
+│       │   ├── persistence/             # State repository + optimistic lock
+│       │   ├── validation/              # Build-time validator
+│       │   ├── idempotency/             # Idempotent decorator
+│       │   ├── metrics/                 # Micrometer integration
+│       │   ├── eventsourcing/           # Event sourcing
+│       │   ├── resilience/              # Resilience + failure handlers
+│       │   ├── timeout/                 # Timeout scheduler
+│       │   ├── diagram/                 # Mermaid/PlantUML generator
+│       │   └── exception/               # StateMachineException
+│       └── test/java/                   # 219+ test cases
+├── chat-engine/
+│   ├── pom.xml
+│   └── src/
+│       ├── main/java/com/selfdevelopment/chatengine/
+│       │   ├── enums/                   # ConversationState, ConversationFact, etc.
+│       │   ├── model/                   # ConversationInstance, InteractionInstance (simplified)
+│       │   ├── config/                  # Market config provider
+│       │   ├── context/                 # CbolStateContext, TraceContext
+│       │   ├── action/                  # Async action worker
+│       │   ├── monitor/                 # CustomerIdle, Transfer, EndingGrace
+│       │   ├── repository/              # Conversation repository
+│       │   ├── connector/               # Aibot, ChatHistory ODS connectors
+│       │   ├── ingress/                 # Event dispatcher, normalizers
+│       │   ├── service/                 # ChatEngineStateMachineService
+│       │   └── statemachine/            # Factory, Registry
+│       └── test/java/                   # 50+ test cases
+└── agent-connector/
+    ├── pom.xml
+    └── src/
+        ├── main/java/com/selfdevelopment/agentconnector/
+        │   ├── enums/                   # InteractionState, InteractionFact
+        │   ├── model/                   # InteractionInstance
+        │   ├── context/                 # AgentConnectorStateContext
+        │   ├── connector/               # Genesys, WebSocket connectors
+        │   ├── ingress/                 # Event dispatcher, Genesys normalizer
+        │   ├── service/                 # AgentConnectorStateMachineService
+        │   └── statemachine/            # Factory, Registry
+        └── test/java/                   # Test cases
 ```
 
 ## Quick Start
@@ -180,30 +252,39 @@ String table = StateMachineDiagramGenerator.toTransitionTable(machine);
 ```bash
 cd 08-Code/state-machine
 
-# Compile
+# Build all modules
+./mvnw.cmd clean install
+
+# Compile all modules
 ./mvnw.cmd clean compile
 
 # Run all tests
 ./mvnw.cmd clean test
 
+# Run tests for a specific module
+./mvnw.cmd clean test -pl statemachine-core
+./mvnw.cmd clean test -pl chat-engine
+./mvnw.cmd clean test -pl agent-connector
+
 # Generate coverage report
 ./mvnw.cmd test jacoco:report
 
-# Package
+# Package all modules
 ./mvnw.cmd package
 ```
 
-**Current stats:** 229 test cases, 84% line / 71% branch coverage
+**Current stats:** 270+ test cases across all modules, BUILD SUCCESS
 
 ## Quality Gates
 
+- [x] All tests pass (`mvn test`)
 - [x] Line coverage >= 80%
 - [x] Branch coverage >= 70%
-- [x] All tests pass
 - [x] No Sonar critical/blocker issues
-- [x] Follows 04-Coding-Guidelines
+- [x] Follows `04-Coding-Guidelines/` (all documents)
 - [x] Security guidelines followed
 - [x] Concurrency guidelines followed
+- [x] Multi-module dependency rules enforced
 
 ## Security & Compliance
 
@@ -222,9 +303,10 @@ cd 08-Code/state-machine
 - [State Transition Diagrams](./docs/03-State-Transition-Diagrams.md)
 - [Usage Guide](./docs/04-Usage-Guide.md)
 - [Advanced Features](./docs/05-Advanced-Features.md)
+- [Multi-Market Design](./docs/multi-market-design/)
 - [State Machine Design (Domain Knowledge)](../../01-CBOL-Domain-Knowledge/state-machine/README.md)
 - [Event-Driven Orchestration Design](../../01-CBOL-Domain-Knowledge/state-machine/event-driven-orchestration-design.md)
 
 ---
 
-*state-machine — Self-Development AI Messaging Hub — 2026-09-01*
+*state-machine — Self-Development AI Messaging Hub — Multi-Module — 2026-09-02*
