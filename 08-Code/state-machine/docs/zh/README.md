@@ -15,6 +15,22 @@
 | 06 | [多市场设计](./06-Multi-Market-Design.md) | 多市场架构：配置控制 vs 每市场 vs 混合方案、市场感知的 guard/action/扩展点、实施路线图、风险评估 |
 | 07 | [多市场最佳实践](./07-Multi-Market-Best-Practices/README.md) | 8 份详细最佳实践指南：三层配置继承、市场差异可视化、路由与隔离、配置即代码 GitOps、灰度发布、熔断与降级、Schema 校验、测试矩阵 |
 
+## 更新日志
+
+### v2.2 (2026-09-03)
+- **状态重命名**：`ACTIVE` → `IN_PROGRESS`
+- **移除状态**：`SURVEY_IN_PROGRESS` — 调查现在是 `IN_PROGRESS` 内的内部子阶段
+- **新增状态**：`NEW` — 初始状态，会话记录已创建但尚未初始化
+- **新增迁移**：通过 `CONVERSATION_INITIATED` 事件实现 `NEW → INITIATED`
+- **新增动作**：`ConversationInitAction` — 验证配置、分配资源、设置路由
+- **调查重新设计**：`SURVEY_START` 现在是内部迁移（`IN_PROGRESS → IN_PROGRESS`）；`SURVEY_COMPLETE` 直接迁移到 `ENDING`
+- **架构边界**：从 chat-engine 移除 `InteractionInstance` — Conversation 和 Interaction 是独立的状态机
+
+### v2.1 (2026-09-03)
+- 添加 Action-First 状态迁移设计原则
+- 添加 6 个具体的 action 实现
+- 更新所有文档到版本 2.1
+
 ## 多模块结构
 
 ```
@@ -73,7 +89,7 @@ agent-connector ──► statemachine-core
 - **图生成** — 从配置自动生成 Mermaid、PlantUML、迁移表
 
 ### Chat Engine (chat-engine)
-- **7 个会话状态** — INITIATED, ACTIVE, TRANSFERRED, SURVEY_IN_PROGRESS, ENDING, ERROR, CLOSED
+- **7 个会话状态** — INITIATED, IN_PROGRESS, TRANSFERRED, IN_PROGRESS, ENDING, ERROR, CLOSED
 - **18 个事件** — 生命周期、转接、满意度调查、结束、系统、故障转移
 - **23 条迁移** — 包括 v6 转接失败重置、满意度调查流程、故障转移流程
 - **3 个监控器** — CustomerIdle（客户空闲）、TransferTimeout（转接超时）、EndingGrace（结束宽限）

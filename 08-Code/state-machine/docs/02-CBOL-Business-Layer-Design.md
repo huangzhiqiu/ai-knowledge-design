@@ -1,4 +1,4 @@
-﻿# Business Layer Design (Chat Engine + Agent Connector)
+# Business Layer Design (Chat Engine + Agent Connector)
 
 > Version: 2.1 | Last Updated: 2026-09-03
 
@@ -15,9 +15,9 @@ The business layer implements conversation lifecycle management using the core s
 - **Dual-state model**: Conversation (business-level) + Interaction (channel-level), each in its own module
 - **Multi-market support**: Per-market configuration for timeouts and feature flags
 - **Full-chain tracing**: TraceId propagation via SLF4J MDC across async boundaries
-- **v6 design**: Transfer failures/timeouts return to INITIATED (no rollback to ACTIVE)
+- **v6 design**: Transfer failures/timeouts return to INITIATED (no rollback to IN_PROGRESS)
 - **Automated monitors**: Three time-based monitors for idle detection, transfer timeout, and ending grace
-- **Survey as in-progress**: SURVEY_IN_PROGRESS is a sub-state of active flow, controlled by flow
+- **Survey as in-progress**: IN_PROGRESS is a sub-state of IN_PROGRESS flow, controlled by flow
 - **Failover mechanism**: Unhandled exceptions trigger FAIL event, routed to fail branch
 
 ## 2. Conversation State Model
@@ -27,9 +27,9 @@ The business layer implements conversation lifecycle management using the core s
 ```java
 public enum ConversationState {
     INITIATED,          // Conversation created, waiting for customer connection
-    ACTIVE,             // Customer connected, AI or agent actively handling
+    IN_PROGRESS,             // Customer connected, AI or agent actively handling
     TRANSFERRED,        // Transfer to human agent in progress
-    SURVEY_IN_PROGRESS, // Post-conversation survey in progress (controlled by flow)
+    IN_PROGRESS, // Post-conversation survey in progress (controlled by flow)
     ENDING,             // Conversation ending, grace period for cleanup
     ERROR,              // Action failed, failover state (retry or abort)
     CLOSED              // Terminal state, conversation fully closed
@@ -41,9 +41,9 @@ public enum ConversationState {
 | State | Description | Entry Trigger | Exit Trigger |
 |-------|-------------|---------------|--------------|
 | INITIATED | Conversation created but customer not yet connected | System creates conversation | CUSTOMER_CONNECT / SYS_ACTION_FAILED |
-| ACTIVE | Customer connected, active conversation | CUSTOMER_CONNECT / SYS_RETRY | TRANSFER_REQUEST / SURVEY_START / CUSTOMER_CLOSE / SYS_CUSTOMER_IDLE / SYS_ACTION_FAILED |
+| IN_PROGRESS | Customer connected, IN_PROGRESS conversation | CUSTOMER_CONNECT / SYS_RETRY | TRANSFER_REQUEST / SURVEY_START / CUSTOMER_CLOSE / SYS_CUSTOMER_IDLE / SYS_ACTION_FAILED |
 | TRANSFERRED | Transfer to agent in progress | TRANSFER_REQUEST | TRANSFER_CONNECTED / TRANSFER_FAILED / TRANSFER_TIMEOUT / SURVEY_START / SYS_CUSTOMER_IDLE / SYS_ACTION_FAILED |
-| SURVEY_IN_PROGRESS | Post-conversation survey active | SURVEY_START | SURVEY_COMPLETE / SYS_SURVEY_TIMEOUT / SYS_CUSTOMER_IDLE / CUSTOMER_CLOSE / SYS_ACTION_FAILED |
+| IN_PROGRESS | Post-conversation survey IN_PROGRESS | SURVEY_START | SURVEY_COMPLETE / SYS_SURVEY_TIMEOUT / SYS_CUSTOMER_IDLE / CUSTOMER_CLOSE / SYS_ACTION_FAILED |
 | ENDING | Grace period before closure | CUSTOMER_CLOSE / SYS_CUSTOMER_IDLE / SURVEY_COMPLETE / SYS_SURVEY_TIMEOUT | SYS_ENDING_GRACE_TIMEOUT |
 | ERROR | Action failed, failover state | SYS_ACTION_FAILED | SYS_RETRY / SYS_ABORT |
 | CLOSED | Terminal state | SYS_ENDING_GRACE_TIMEOUT / SYS_ABORT | (none) |
@@ -78,7 +78,7 @@ public enum ConversationFact {
 
     // FAILOVER (action error → fail branch)
     SYS_ACTION_FAILED,    // Action threw unhandled exception → enter ERROR
-    SYS_RETRY,            // Retry from ERROR → ACTIVE
+    SYS_RETRY,            // Retry from ERROR → IN_PROGRESS
     SYS_ABORT             // Abort from ERROR → CLOSED
 }
 ```
@@ -89,14 +89,14 @@ public enum ConversationFact {
 stateDiagram-v2
     [*] --> INITIATED : Create conversation
 
-    INITIATED --> ACTIVE : CUSTOMER_CONNECT
+    INITIATED --> IN_PROGRESS : CUSTOMER_CONNECT
     INITIATED --> ENDING : SYS_CUSTOMER_IDLE
 
-    ACTIVE --> TRANSFERRED : TRANSFER_REQUEST
-    ACTIVE --> ENDING : CUSTOMER_CLOSE
-    ACTIVE --> ENDING : SYS_CUSTOMER_IDLE
+    IN_PROGRESS --> TRANSFERRED : TRANSFER_REQUEST
+    IN_PROGRESS --> ENDING : CUSTOMER_CLOSE
+    IN_PROGRESS --> ENDING : SYS_CUSTOMER_IDLE
 
-    TRANSFERRED --> ACTIVE : TRANSFER_CONNECTED (reserved)
+    TRANSFERRED --> IN_PROGRESS : TRANSFER_CONNECTED (reserved)
     TRANSFERRED --> INITIATED : TRANSFER_FAILED
     TRANSFERRED --> INITIATED : TRANSFER_TIMEOUT
     TRANSFERRED --> INITIATED : SYS_TRANSFER_TIMEOUT
@@ -111,14 +111,14 @@ stateDiagram-v2
 
 | # | From | Event | To | Guard | Action | Notes |
 |---|------|-------|-----|-------|--------|-------|
-| 1 | INITIATED | CUSTOMER_CONNECT | ACTIVE | - | - | Customer connects |
-| 2 | ACTIVE | TRANSFER_REQUEST | TRANSFERRED | transferEnabled | - | Request agent transfer |
-| 3 | TRANSFERRED | TRANSFER_FAILED | INITIATED | - | - | v6: no rollback to ACTIVE |
-| 4 | TRANSFERRED | TRANSFER_TIMEOUT | INITIATED | - | - | v6: no rollback to ACTIVE |
+| 1 | INITIATED | CUSTOMER_CONNECT | IN_PROGRESS | - | - | Customer connects |
+| 2 | IN_PROGRESS | TRANSFER_REQUEST | TRANSFERRED | transferEnabled | - | Request agent transfer |
+| 3 | TRANSFERRED | TRANSFER_FAILED | INITIATED | - | - | v6: no rollback to IN_PROGRESS |
+| 4 | TRANSFERRED | TRANSFER_TIMEOUT | INITIATED | - | - | v6: no rollback to IN_PROGRESS |
 | 5 | TRANSFERRED | SYS_TRANSFER_TIMEOUT | INITIATED | - | - | Monitor-driven |
-| 6 | ACTIVE | CUSTOMER_CLOSE | ENDING | - | - | Customer closes |
+| 6 | IN_PROGRESS | CUSTOMER_CLOSE | ENDING | - | - | Customer closes |
 | 7 | INITIATED | SYS_CUSTOMER_IDLE | ENDING | - | - | Monitor-driven |
-| 8 | ACTIVE | SYS_CUSTOMER_IDLE | ENDING | - | - | Monitor-driven |
+| 8 | IN_PROGRESS | SYS_CUSTOMER_IDLE | ENDING | - | - | Monitor-driven |
 | 9 | TRANSFERRED | SYS_CUSTOMER_IDLE | ENDING | - | - | Monitor-driven |
 | 10 | ENDING | SYS_ENDING_GRACE_TIMEOUT | CLOSED | - | - | Monitor-driven, terminal |
 
@@ -278,7 +278,7 @@ public abstract class AbstractTimeoutMonitor {
 
 | Monitor | Applicable States | Timeout Config | Event Fired | Reference Timestamp |
 |---------|-------------------|----------------|-------------|---------------------|
-| CustomerIdleMonitor | INITIATED, ACTIVE, TRANSFERRED | customerIdleSeconds | SYS_CUSTOMER_IDLE | lastActivityTs |
+| CustomerIdleMonitor | INITIATED, IN_PROGRESS, TRANSFERRED | customerIdleSeconds | SYS_CUSTOMER_IDLE | lastActivityTs |
 | TransferMonitor | TRANSFERRED | transferTimeoutSeconds | SYS_TRANSFER_TIMEOUT | transferStartTs |
 | EndingGraceMonitor | ENDING | endingGraceSeconds | SYS_ENDING_GRACE_TIMEOUT | endingStartTs |
 
@@ -370,12 +370,12 @@ The chat-engine module provides **6 concrete action implementations** that direc
 
 | Action Class | Transition | Business Logic |
 |-------------|-----------|----------------|
-| `CustomerConnectAction` | INITIATED → ACTIVE | Create conversation record, send welcome message, initialize session, notify AI bot |
-| `TransferRequestAction` | ACTIVE → TRANSFERRED | Check agent availability, request routing to Genesys queue, notify customer, record transfer start |
+| `CustomerConnectAction` | INITIATED → IN_PROGRESS | Create conversation record, send welcome message, initialize session, notify AI bot |
+| `TransferRequestAction` | IN_PROGRESS → TRANSFERRED | Check agent availability, request routing to Genesys queue, notify customer, record transfer start |
 | `TransferFailedAction` | TRANSFERRED → INITIATED | Record failure reason, cleanup transfer state, notify customer, trigger re-routing |
-| `CustomerCloseAction` | ACTIVE → ENDING | Mark conversation ending, send closing confirmation, release agent resources, record ending start |
-| `SurveyStartAction` | ACTIVE → SURVEY_IN_PROGRESS | Create survey record, send survey invitation, set survey timeout |
-| `SurveyCompleteAction` | SURVEY_IN_PROGRESS → ENDING | Save survey results, calculate NPS/CSAT score, cancel survey timeout, trigger ending grace |
+| `CustomerCloseAction` | IN_PROGRESS → ENDING | Mark conversation ending, send closing confirmation, release agent resources, record ending start |
+| `SurveyStartAction` | IN_PROGRESS → IN_PROGRESS | Create survey record, send survey invitation, set survey timeout |
+| `SurveyCompleteAction` | IN_PROGRESS → ENDING | Save survey results, calculate NPS/CSAT score, cancel survey timeout, trigger ending grace |
 
 ### 7.5.2 Action Implementation Pattern
 
@@ -415,7 +415,7 @@ private static final CustomerConnectAction CUSTOMER_CONNECT_ACTION = new Custome
 builder.transition()
     .from(ConversationState.INITIATED)
     .on(ConversationFact.CUSTOMER_CONNECT)
-    .to(ConversationState.ACTIVE)
+    .to(ConversationState.IN_PROGRESS)
     .perform(CUSTOMER_CONNECT_ACTION)  // Action executes before state change
     .and();
 ```
@@ -513,11 +513,11 @@ public class ConversationStateMachineFactory {
     public static StateMachine<ConversationState, ConversationFact, CbolStateContext> build() {
         StateMachineBuilder<...> builder = StateMachineBuilder.builder(MACHINE_ID);
 
-        // 1. INITIATED -> ACTIVE (customer connects)
-        builder.transition().from(INITIATED).on(CUSTOMER_CONNECT).to(ACTIVE).and();
+        // 1. INITIATED -> IN_PROGRESS (customer connects)
+        builder.transition().from(INITIATED).on(CUSTOMER_CONNECT).to(IN_PROGRESS).and();
 
-        // 2. ACTIVE -> TRANSFERRED (transfer requested)
-        builder.transition().from(ACTIVE).on(TRANSFER_REQUEST).to(TRANSFERRED).and();
+        // 2. IN_PROGRESS -> TRANSFERRED (transfer requested)
+        builder.transition().from(IN_PROGRESS).on(TRANSFER_REQUEST).to(TRANSFERRED).and();
 
         // 3. TRANSFERRED -> INITIATED (transfer failed) [v6: no rollback]
         builder.transition().from(TRANSFERRED).on(TRANSFER_FAILED).to(INITIATED).and();
@@ -565,10 +565,10 @@ sequenceDiagram
     API->>API: Build CbolStateContext (with marketConfig, traceContext)
     API->>Svc: fire(ctx, CUSTOMER_CONNECT)
     Svc->>SM: fireEvent(INITIATED, CUSTOMER_CONNECT, ctx)
-    SM-->>Svc: StateContext(target=ACTIVE)
-    Svc->>Log: info("StateTransitionRecord: INITIATED->ACTIVE")
+    SM-->>Svc: StateContext(target=IN_PROGRESS)
+    Svc->>Log: info("StateTransitionRecord: INITIATED->IN_PROGRESS")
     Svc-->>API: StateContext
-    API->>Repo: save(conversation with state=ACTIVE)
+    API->>Repo: save(conversation with state=IN_PROGRESS)
 ```
 
 ### 10.2 Transfer Fails (v6 Behavior)
@@ -582,7 +582,7 @@ sequenceDiagram
     Note over Svc: Current state = TRANSFERRED
     Svc->>SM: fireEvent(TRANSFERRED, TRANSFER_FAILED, ctx)
     Note over SM: Transition: TRANSFERRED -> INITIATED
-    Note over SM: v6: Does NOT roll back to ACTIVE
+    Note over SM: v6: Does NOT roll back to IN_PROGRESS
     SM-->>Svc: StateContext(target=INITIATED)
     Svc->>Repo: save(state=INITIATED)
     Note over Repo: Conversation returns to initial state<br/>Customer can reconnect or be re-routed

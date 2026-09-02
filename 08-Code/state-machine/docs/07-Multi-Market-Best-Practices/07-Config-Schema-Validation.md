@@ -505,7 +505,7 @@ Status: ❌ FAILED (2 errors, 1 warning)
 
 ─── Reachability ───
   ✓ All non-terminal states have outgoing transitions
-  ⚠ State SURVEY_IN_PROGRESS is not reachable (surveyEnabled=false, but state is defined)
+  ⚠ State IN_PROGRESS is not reachable (surveyEnabled=false, but state is defined)
   ✓ Terminal state CLOSED has no outgoing transitions
 ```
 

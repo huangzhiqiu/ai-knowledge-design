@@ -1,4 +1,4 @@
-﻿# Multi-Market State Machine Design
+# Multi-Market State Machine Design
 
 > Version: 1.0 | Last Updated: 2026-09-01
 > Status: Design Proposal (for review)
@@ -7,7 +7,7 @@
 
 ### 1.1 Problem Statement
 
-The CBOL messaging hub will be deployed to **multiple markets** (HK, UK, SG, etc.). Each market shares a **similar main flow** (connect → active → transfer → survey → ending → closed) but has **differences** in:
+The CBOL messaging hub will be deployed to **multiple markets** (HK, UK, SG, etc.). Each market shares a **similar main flow** (connect → IN_PROGRESS → transfer → survey → ending → closed) but has **differences** in:
 
 - Which features are enabled (survey, transfer, Genesys integration)
 - Timeout thresholds (idle, transfer, ending grace, survey)
@@ -93,7 +93,7 @@ The CBOL messaging hub will be deployed to **multiple markets** (HK, UK, SG, etc
 flowchart TB
     subgraph Core["Core State Machine (shared by all markets)"]
         SM[ConversationStateMachineFactory]
-        STATES[States: INITIATED → ACTIVE → TRANSFERRED → SURVEY → ENDING → CLOSED → ERROR]
+        STATES[States: INITIATED → IN_PROGRESS → TRANSFERRED → SURVEY → ENDING → CLOSED → ERROR]
         EVENTS[Events: CUSTOMER_CONNECT, TRANSFER_REQUEST, SURVEY_START, SYS_ACTION_FAILED, ...]
     end
 
@@ -256,15 +256,15 @@ Transitions are gated by market config via guard conditions:
 ```java
 // Example: SURVEY_START only allowed if surveyEnabled
 builder.transition()
-    .from(ConversationState.ACTIVE)
+    .from(ConversationState.IN_PROGRESS)
     .on(ConversationFact.SURVEY_START)
-    .to(ConversationState.SURVEY_IN_PROGRESS)
+    .to(ConversationState.IN_PROGRESS)
     .guard(ctx -> ctx.marketConfig().surveyEnabled())
     .and();
 
 // Example: TRANSFER_REQUEST only allowed if transferEnabled
 builder.transition()
-    .from(ConversationState.ACTIVE)
+    .from(ConversationState.IN_PROGRESS)
     .on(ConversationFact.TRANSFER_REQUEST)
     .to(ConversationState.TRANSFERRED)
     .guard(ctx -> ctx.marketConfig().transferEnabled())
@@ -299,7 +299,7 @@ public class TransferActionFactory {
 
 // In state machine definition
 builder.transition()
-    .from(ConversationState.ACTIVE)
+    .from(ConversationState.IN_PROGRESS)
     .on(ConversationFact.TRANSFER_REQUEST)
     .to(ConversationState.TRANSFERRED)
     .guard(ctx -> ctx.marketConfig().transferEnabled())
@@ -406,7 +406,7 @@ public class ChatEngineStateMachineService {
 
 - [ ] Config validation tool (validate all market configs on startup)
 - [ ] Config diff tool (compare two market configs)
-- [ ] State machine diagram generator per market (show which transitions are active)
+- [ ] State machine diagram generator per market (show which transitions are IN_PROGRESS)
 - [ ] Config hot-reload support (refresh config without restart)
 - [ ] Monitoring dashboard (per-market state distribution, error rates)
 
@@ -465,7 +465,7 @@ Creating separate state machines would duplicate this shared logic, leading to:
 
 - [ ] New market can be onboarded with config only (no code change) in < 1 day
 - [ ] Global bug fix applies to all markets automatically
-- [ ] Each market's active transitions can be visualized (config-aware diagram)
+- [ ] Each market's IN_PROGRESS transitions can be visualized (config-aware diagram)
 - [ ] Config changes can be validated before deployment
 - [ ] Market-specific behavior is independently testable
 - [ ] No market name appears in core state machine code

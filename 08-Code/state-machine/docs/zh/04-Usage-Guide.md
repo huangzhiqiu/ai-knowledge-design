@@ -80,7 +80,7 @@ StateContext<ConversationState, ConversationFact, CbolStateContext> result =
     service.fire(ctx, ConversationFact.CUSTOMER_CONNECT);
 
 // 3. 使用结果
-System.out.println("New state: " + result.getTargetState());  // ACTIVE
+System.out.println("New state: " + result.getTargetState());  // IN_PROGRESS
 ```
 
 ## 2. 构建自定义状态机
@@ -301,7 +301,7 @@ ActionWorker customWorker = new ActionWorker(4, 8, 60, 500);
 
 // 提交异步动作
 CbolAction sendNotification = ctx -> {
-    notificationService.send(ctx.conversation().customerId(), "Your conversation is active");
+    notificationService.send(ctx.conversation().customerId(), "Your conversation is IN_PROGRESS");
 };
 
 worker.submit(sendNotification, ctx);
@@ -377,7 +377,7 @@ void shouldTransitionFromInitiatedToActiveOnCustomerConnect() {
         service.fire(ctx, ConversationFact.CUSTOMER_CONNECT);
 
     // Then
-    assertEquals(ConversationState.ACTIVE, result.getTargetState());
+    assertEquals(ConversationState.IN_PROGRESS, result.getTargetState());
     assertTrue(result.isTransitionAccepted());
 }
 
@@ -604,8 +604,8 @@ StateMachine<...> resilient = new ResilientStateMachine<>(machine, retry);
 ```java
 // 配置超时
 Map<ConversationState, TimeoutConfig<ConversationState, ConversationFact>> timeouts = Map.of(
-    ConversationState.ACTIVE, TimeoutConfig.<ConversationState, ConversationFact>builder()
-        .state(ConversationState.ACTIVE)
+    ConversationState.IN_PROGRESS, TimeoutConfig.<ConversationState, ConversationFact>builder()
+        .state(ConversationState.IN_PROGRESS)
         .timeoutEvent(ConversationFact.IDLE_TIMEOUT)
         .duration(30).timeUnit(TimeUnit.SECONDS).build(),
     ConversationState.TRANSFERRING, TimeoutConfig.<ConversationState, ConversationFact>builder()
@@ -622,14 +622,14 @@ StateMachineTimeoutScheduler<ConversationState, ConversationFact> scheduler =
 StateMachine<ConversationState, ConversationFact, CbolStateContext> timeoutAware =
     new TimeoutAwareStateMachine<>(machine, scheduler, timeouts, "conv-123");
 
-// 进入 ACTIVE 自动启动 30 秒计时器
+// 进入 IN_PROGRESS 自动启动 30 秒计时器
 timeoutAware.fireEvent(ConversationState.INITIATED, ConversationFact.USER_MESSAGE, ctx);
 
-// 离开 ACTIVE 自动取消计时器
-timeoutAware.fireEvent(ConversationState.ACTIVE, ConversationFact.AGENT_JOIN, ctx);
+// 离开 IN_PROGRESS 自动取消计时器
+timeoutAware.fireEvent(ConversationState.IN_PROGRESS, ConversationFact.AGENT_JOIN, ctx);
 
 // 查询超时状态
-boolean active = timeoutAware.isTimeoutActive();
+boolean IN_PROGRESS = timeoutAware.isTimeoutActive();
 long remainingMs = timeoutAware.getRemainingTimeoutMs();
 timeoutAware.cancelTimeout();  // 手动取消
 ```

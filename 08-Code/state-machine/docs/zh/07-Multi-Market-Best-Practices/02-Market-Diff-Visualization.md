@@ -180,15 +180,15 @@ public class MarketDiffReport {
 
   状态              | 事件               | HK 目标      | UK 目标      | 原因
   -------------------|---------------------|----------------|----------------|---------------------------
-  ACTIVE             | TRANSFER_REQUEST    | TRANSFERRED    | TRANSFERRED    | (相同)
-  ACTIVE             | SURVEY_START        | SURVEY_IN_PROG | SURVEY_IN_PROG | (相同)
-  TRANSFERRED        | TRANSFER_CONNECTED  | ACTIVE         | 不可用    | guard: genesysEnabled=false in UK
+  IN_PROGRESS             | TRANSFER_REQUEST    | TRANSFERRED    | TRANSFERRED    | (相同)
+  IN_PROGRESS             | SURVEY_START        | SURVEY_IN_PROG | SURVEY_IN_PROG | (相同)
+  TRANSFERRED        | TRANSFER_CONNECTED  | IN_PROGRESS         | 不可用    | guard: genesysEnabled=false in UK
   TRANSFERRED        | TRANSFER_FAILED     | INITIATED      | INITIATED      | (相同)
-  SURVEY_IN_PROGRESS | SURVEY_COMPLETE    | ENDING         | ENDING         | (相同)
+  IN_PROGRESS | SURVEY_COMPLETE    | ENDING         | ENDING         | (相同)
 
 ─── 摘要 ───
   配置差异: 12（8 个高影响，4 个低影响）
-  迁移差异: 1（UK 缺少 TRANSFER_CONNECTED → ACTIVE）
+  迁移差异: 1（UK 缺少 TRANSFER_CONNECTED → IN_PROGRESS）
   市场共享: 23 个迁移中的 22 个（95.7% 相似度）
   建议: UK 缺少的 TRANSFER_CONNECTED 是预期的（无 Genesys）。无需操作。
 ```
@@ -206,11 +206,11 @@ public class MarketDiffReport {
 ─── 状态: INITIATED ───
   事件              | HK         | SG         | UK         | US         | JP
   -------------------|------------|------------|------------|------------|------------
-  CUSTOMER_CONNECT   | ACTIVE     | ACTIVE     | ACTIVE     | ACTIVE     | ACTIVE
+  CUSTOMER_CONNECT   | IN_PROGRESS     | IN_PROGRESS     | IN_PROGRESS     | IN_PROGRESS     | IN_PROGRESS
   SYS_CUSTOMER_IDLE  | ENDING     | ENDING     | ENDING     | ENDING     | ENDING
   SYS_ACTION_FAILED  | ERROR      | ERROR      | ERROR      | ERROR      | ERROR
 
-─── 状态: ACTIVE ───
+─── 状态: IN_PROGRESS ───
   事件              | HK         | SG         | UK         | US         | JP
   -------------------|------------|------------|------------|------------|------------
   TRANSFER_REQUEST   | TRANSFERRED| TRANSFERRED| TRANSFERRED| TRANSFERRED| TRANSFERRED
@@ -224,7 +224,7 @@ public class MarketDiffReport {
 ─── 状态: TRANSFERRED ───
   事件              | HK         | SG         | UK         | US         | JP
   -------------------|------------|------------|------------|------------|------------
-  TRANSFER_CONNECTED | ACTIVE     | —          | —          | —          | —
+  TRANSFER_CONNECTED | IN_PROGRESS     | —          | —          | —          | —
   TRANSFER_FAILED    | INITIATED  | INITIATED  | INITIATED  | INITIATED  | INITIATED
   TRANSFER_TIMEOUT   | INITIATED  | INITIATED  | INITIATED  | INITIATED  | INITIATED
   SURVEY_START       | SURVEY     | —          | SURVEY     | SURVEY     | —

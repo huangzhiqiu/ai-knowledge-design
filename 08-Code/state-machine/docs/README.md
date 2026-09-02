@@ -15,6 +15,22 @@
 | 06 | [Multi-Market Design](./06-Multi-Market-Design.md) | Multi-market architecture: config control vs per-market vs hybrid, market-aware guards/actions/extensions, implementation roadmap, risk assessment |
 | 07 | [Multi-Market Best Practices](./07-Multi-Market-Best-Practices/README.md) | 8 detailed best practice guides: three-layer config inheritance, market diff visualization, routing & isolation, config-as-code GitOps, canary release, circuit breaker & degradation, schema validation, test matrix |
 
+## Changelog
+
+### v2.2 (2026-09-03)
+- **State rename**: `ACTIVE` → `IN_PROGRESS`
+- **Removed state**: `SURVEY_IN_PROGRESS` — survey is now an internal sub-phase within `IN_PROGRESS`
+- **New state**: `NEW` — initial state, conversation record created but not initialized
+- **New transition**: `NEW → INITIATED` via `CONVERSATION_INITIATED` event
+- **New action**: `ConversationInitAction` — validates config, allocates resources, sets up routing
+- **Survey redesign**: `SURVEY_START` is now an internal transition (`IN_PROGRESS → IN_PROGRESS`); `SURVEY_COMPLETE` transitions directly to `ENDING`
+- **Architecture boundary**: Removed `InteractionInstance` from chat-engine — Conversation and Interaction are independent state machines
+
+### v2.1 (2026-09-03)
+- Added Action-First Transition design principle
+- Added 6 concrete action implementations
+- Updated all documentation to version 2.1
+
 ## Multi-Module Structure
 
 ```
@@ -70,7 +86,7 @@ agent-connector ──► statemachine-core
 - **Diagrams** — auto-generate Mermaid, PlantUML, transition tables from config
 
 ### Chat Engine (chat-engine)
-- **7 conversation states** — INITIATED, ACTIVE, TRANSFERRED, SURVEY_IN_PROGRESS, ENDING, ERROR, CLOSED
+- **7 conversation states** — INITIATED, IN_PROGRESS, TRANSFERRED, IN_PROGRESS, ENDING, ERROR, CLOSED
 - **18 events** — lifecycle, transfer, survey, ending, system, failover
 - **23 transitions** — including v6 transfer-failure-reset, survey flow, failover flow
 - **3 monitors** — CustomerIdle, TransferTimeout, EndingGrace

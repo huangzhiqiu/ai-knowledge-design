@@ -508,7 +508,7 @@ public class UnifiedConfigValidator {
 
 ─── 可达性 ───
   ✓ 所有非终态都有出向迁移
-  ⚠ 状态 SURVEY_IN_PROGRESS 不可达（surveyEnabled=false，但状态已定义）
+  ⚠ 状态 IN_PROGRESS 不可达（surveyEnabled=false，但状态已定义）
   ✓ 终态 CLOSED 无出向迁移
 ```
 

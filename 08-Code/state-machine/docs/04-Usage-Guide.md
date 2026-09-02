@@ -1,4 +1,4 @@
-﻿# Usage Guide
+# Usage Guide
 
 > Version: 2.1 | Last Updated: 2026-09-03
 
@@ -80,7 +80,7 @@ StateContext<ConversationState, ConversationFact, CbolStateContext> result =
     service.fire(ctx, ConversationFact.CUSTOMER_CONNECT);
 
 // 3. Use result
-System.out.println("New state: " + result.getTargetState());  // ACTIVE
+System.out.println("New state: " + result.getTargetState());  // IN_PROGRESS
 ```
 
 ## 2. Building a Custom State Machine
@@ -302,14 +302,14 @@ ActionWorker customWorker = new ActionWorker(4, 8, 60, 500);
 // Submit async action (implement core Action interface)
 Action<ConversationState, ConversationFact, CbolStateContext> sendNotification = ctx -> {
     CbolStateContext businessCtx = ctx.getBusinessContext();
-    notificationService.send(businessCtx.conversation().tenantId(), "Your conversation is active");
+    notificationService.send(businessCtx.conversation().tenantId(), "Your conversation is IN_PROGRESS");
 };
 
 // Create StateContext wrapper
 StateContext<ConversationState, ConversationFact, CbolStateContext> stateCtx = 
     StateContext.<ConversationState, ConversationFact, CbolStateContext>builder()
-        .sourceState(ConversationState.ACTIVE)
-        .targetState(ConversationState.ACTIVE)
+        .sourceState(ConversationState.IN_PROGRESS)
+        .targetState(ConversationState.IN_PROGRESS)
         .event(ConversationFact.AGENT_ATTACHED)
         .businessContext(ctx)
         .build();
@@ -393,7 +393,7 @@ void shouldTransitionFromInitiatedToActiveOnCustomerConnect() {
         service.fire(ctx, ConversationFact.CUSTOMER_CONNECT);
 
     // Then
-    assertEquals(ConversationState.ACTIVE, result.getTargetState());
+    assertEquals(ConversationState.IN_PROGRESS, result.getTargetState());
     assertTrue(result.isTransitionAccepted());
 }
 
@@ -620,8 +620,8 @@ Automatically trigger events when an entity stays in a state too long:
 ```java
 // Configure timeouts
 Map<ConversationState, TimeoutConfig<ConversationState, ConversationFact>> timeouts = Map.of(
-    ConversationState.ACTIVE, TimeoutConfig.<ConversationState, ConversationFact>builder()
-        .state(ConversationState.ACTIVE)
+    ConversationState.IN_PROGRESS, TimeoutConfig.<ConversationState, ConversationFact>builder()
+        .state(ConversationState.IN_PROGRESS)
         .timeoutEvent(ConversationFact.IDLE_TIMEOUT)
         .duration(30).timeUnit(TimeUnit.SECONDS).build(),
     ConversationState.TRANSFERRING, TimeoutConfig.<ConversationState, ConversationFact>builder()
@@ -638,14 +638,14 @@ StateMachineTimeoutScheduler<ConversationState, ConversationFact> scheduler =
 StateMachine<ConversationState, ConversationFact, CbolStateContext> timeoutAware =
     new TimeoutAwareStateMachine<>(machine, scheduler, timeouts, "conv-123");
 
-// Entering ACTIVE automatically starts 30s timer
+// Entering IN_PROGRESS automatically starts 30s timer
 timeoutAware.fireEvent(ConversationState.INITIATED, ConversationFact.USER_MESSAGE, ctx);
 
-// Leaving ACTIVE automatically cancels the timer
-timeoutAware.fireEvent(ConversationState.ACTIVE, ConversationFact.AGENT_JOIN, ctx);
+// Leaving IN_PROGRESS automatically cancels the timer
+timeoutAware.fireEvent(ConversationState.IN_PROGRESS, ConversationFact.AGENT_JOIN, ctx);
 
 // Query timeout status
-boolean active = timeoutAware.isTimeoutActive();
+boolean IN_PROGRESS = timeoutAware.isTimeoutActive();
 long remainingMs = timeoutAware.getRemainingTimeoutMs();
 timeoutAware.cancelTimeout();  // manual cancel
 ```

@@ -46,7 +46,7 @@ state-machine/
 | Module | Package | Responsibility |
 |--------|---------|----------------|
 | **statemachine-core** | `com.selfdevelopment.statemachine` | Generic state machine engine, Builder, ConfigurerAdapter, persistence, event sourcing, idempotency, timeout, resilience, metrics, validation, diagram generation |
-| **chat-engine** | `com.selfdevelopment.chatengine` | Conversation state machine (7 states), 6 concrete action implementations, monitors, market configuration, trace context, async action worker |
+| **chat-engine** | `com.selfdevelopment.chatengine` | Conversation state machine (7 states), 7 concrete action implementations, monitors, market configuration, trace context, async action worker |
 | **agent-connector** | `com.selfdevelopment.agentconnector` | Interaction state machine (6 states), event normalizers |
 
 ### Module Dependencies
@@ -85,17 +85,20 @@ agent-connector ──► statemachine-core
 | **Diagrams** | `diagram` | `StateMachineDiagramGenerator` | Auto-generate Mermaid, PlantUML, transition tables from config |
 
 ### Chat Engine (chat-engine)
-- **7 conversation states**: INITIATED, ACTIVE, TRANSFERRED, SURVEY_IN_PROGRESS, ENDING, ERROR, CLOSED
-- 13+ events across lifecycle, transfer, ending, survey, and system categories
-- 10+ transitions including v6 transfer-failure-reset-to-INITIATED
-- **6 concrete action implementations** (directly implement core `Action<S, E, C>` interface):
-  - `CustomerConnectAction`: INITIATED → ACTIVE (create record, send welcome, init session)
-  - `TransferRequestAction`: ACTIVE → TRANSFERRED (check availability, route to agent queue)
+- **7 conversation states**: NEW, INITIATED, IN_PROGRESS, TRANSFERRED, ENDING, ERROR, CLOSED
+- 14+ events across lifecycle, transfer, ending, survey, and system categories
+- 12+ transitions including transfer-failure-reset-to-INITIATED
+- **7 concrete action implementations** (directly implement core `Action<S, E, C>` interface):
+  - `ConversationInitAction`: NEW → INITIATED (validate config, allocate resources, setup routing)
+  - `CustomerConnectAction`: INITIATED → IN_PROGRESS (create record, send welcome, init session)
+  - `TransferRequestAction`: IN_PROGRESS → TRANSFERRED (check availability, route to agent queue)
   - `TransferFailedAction`: TRANSFERRED → INITIATED (record failure, cleanup, trigger re-routing)
-  - `CustomerCloseAction`: ACTIVE → ENDING (mark ending, send confirmation, release resources)
-  - `SurveyStartAction`: ACTIVE → SURVEY_IN_PROGRESS (create survey, send invitation, set timeout)
-  - `SurveyCompleteAction`: SURVEY_IN_PROGRESS → ENDING (save results, calculate NPS/CSAT, cancel timeout)
+  - `CustomerCloseAction`: IN_PROGRESS → ENDING (mark ending, send confirmation, release resources)
+  - `SurveyStartAction`: IN_PROGRESS → IN_PROGRESS (internal, create survey, send invitation, set timeout)
+  - `SurveyCompleteAction`: IN_PROGRESS → ENDING (save results, calculate NPS/CSAT, cancel timeout)
+- **Survey as sub-phase**: survey is NOT a separate state — it's an internal sub-phase within IN_PROGRESS. SURVEY_START is an internal transition (state remains IN_PROGRESS), SURVEY_COMPLETE transitions directly to ENDING.
 - **Action-first transition design**: action executes BEFORE state change; action failure throws `StateMachineException` and prevents state transition
+- **Architecture boundary**: Conversation (chat-engine) and Interaction (agent-connector) are independent state machines — no shared context, communicate via events
 - Multi-market configuration with per-market timeouts and feature flags (HK, SG, UK, etc.)
 - TraceId full-chain propagation via SLF4J MDC
 - Async actions with bounded thread pool and MDC propagation (`ActionWorker`)
@@ -151,7 +154,7 @@ state-machine/
 │       │   ├── model/                   # ConversationInstance, InteractionInstance (simplified)
 │       │   ├── config/                  # Market config provider
 │       │   ├── context/                 # CbolStateContext, TraceContext
-│       │   ├── action/                  # Async action worker + 6 concrete action implementations
+│       │   ├── action/                  # Async action worker + 7 concrete action implementations
 │       │   │   └── impl/                # CustomerConnectAction, TransferRequestAction, etc.
 │       │   ├── monitor/                 # CustomerIdle, Transfer, EndingGrace
 │       │   ├── repository/              # Conversation repository

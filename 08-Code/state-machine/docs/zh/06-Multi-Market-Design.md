@@ -93,7 +93,7 @@ CBOL 消息中心将部署到**多个市场**（HK、UK、SG 等）。每个市�
 flowchart TB
     subgraph Core["核心状态机（所有市场共享）"]
         SM[ConversationStateMachineFactory]
-        STATES[状态: INITIATED → ACTIVE → TRANSFERRED → SURVEY → ENDING → CLOSED → ERROR]
+        STATES[状态: INITIATED → IN_PROGRESS → TRANSFERRED → SURVEY → ENDING → CLOSED → ERROR]
         EVENTS[事件: CUSTOMER_CONNECT, TRANSFER_REQUEST, SURVEY_START, SYS_ACTION_FAILED, ...]
     end
 
@@ -256,15 +256,15 @@ connectors:
 ```java
 // 示例：SURVEY_START 仅在 surveyEnabled 时允许
 builder.transition()
-    .from(ConversationState.ACTIVE)
+    .from(ConversationState.IN_PROGRESS)
     .on(ConversationFact.SURVEY_START)
-    .to(ConversationState.SURVEY_IN_PROGRESS)
+    .to(ConversationState.IN_PROGRESS)
     .guard(ctx -> ctx.marketConfig().surveyEnabled())
     .and();
 
 // 示例：TRANSFER_REQUEST 仅在 transferEnabled 时允许
 builder.transition()
-    .from(ConversationState.ACTIVE)
+    .from(ConversationState.IN_PROGRESS)
     .on(ConversationFact.TRANSFER_REQUEST)
     .to(ConversationState.TRANSFERRED)
     .guard(ctx -> ctx.marketConfig().transferEnabled())
@@ -299,7 +299,7 @@ public class TransferActionFactory {
 
 // 在状态机定义中
 builder.transition()
-    .from(ConversationState.ACTIVE)
+    .from(ConversationState.IN_PROGRESS)
     .on(ConversationFact.TRANSFER_REQUEST)
     .to(ConversationState.TRANSFERRED)
     .guard(ctx -> ctx.marketConfig().transferEnabled())

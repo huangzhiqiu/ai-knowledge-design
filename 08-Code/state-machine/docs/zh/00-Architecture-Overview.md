@@ -69,13 +69,13 @@ repository.save(conversation);
 public class ConversationConfig extends StateMachineConfigurerAdapter<ConversationState, ConversationFact, CbolStateContext> {
     @Override
     public void configure(StateConfigurer<...> states) {
-        states.initial(INITIATED).state(ACTIVE).end(CLOSED);
+        states.initial(INITIATED).state(IN_PROGRESS).end(CLOSED);
     }
 
     @Override
     public void configure(TransitionConfigurer<...> transitions) {
         transitions.withExternal()
-            .source(INITIATED).event(CUSTOMER_CONNECT).target(ACTIVE);
+            .source(INITIATED).event(CUSTOMER_CONNECT).target(IN_PROGRESS);
     }
 }
 ```
@@ -269,7 +269,7 @@ com.selfdevelopment.statemachine/
 ```
 com.selfdevelopment.chatengine/
 ├── enums/
-│   ├── ConversationState.java          # 7 个状态：INITIATED、ACTIVE、TRANSFERRED、SURVEY_IN_PROGRESS、ENDING、ERROR、CLOSED
+│   ├── ConversationState.java          # 7 个状态：INITIATED、IN_PROGRESS、TRANSFERRED、IN_PROGRESS、ENDING、ERROR、CLOSED
 │   ├── ConversationFact.java           # 18 个事件（生命周期、转接、满意度调查、结束、系统、故障转移）
 │   ├── EndReason.java
 │   └── TransferOutcome.java

@@ -1,4 +1,4 @@
-﻿# 05 — Advanced Features
+# 05 — Advanced Features
 
 > Production-ready capabilities: persistence, validation, idempotency, observability, event sourcing, resilience, timeouts, and diagram generation.
 
@@ -354,7 +354,7 @@ Need to automatically trigger events when an entity stays in a state too long (i
 ```java
 TimeoutConfig<ConversationState, ConversationFact> idleTimeout =
     TimeoutConfig.<ConversationState, ConversationFact>builder()
-        .state(ConversationState.ACTIVE)
+        .state(ConversationState.IN_PROGRESS)
         .timeoutEvent(ConversationFact.IDLE_TIMEOUT)
         .duration(30)
         .timeUnit(TimeUnit.SECONDS)
@@ -381,18 +381,18 @@ StateMachineTimeoutScheduler<ConversationState, ConversationFact> scheduler =
 
 ```java
 Map<ConversationState, TimeoutConfig<ConversationState, ConversationFact>> timeouts = Map.of(
-    ConversationState.ACTIVE, idleTimeout,
+    ConversationState.IN_PROGRESS, idleTimeout,
     ConversationState.TRANSFERRING, transferTimeout
 );
 
 StateMachine<ConversationState, ConversationFact, CbolStateContext> timeoutAware =
     new TimeoutAwareStateMachine<>(machine, scheduler, timeouts, "conv-123");
 
-// Entering ACTIVE automatically starts 30s timer
+// Entering IN_PROGRESS automatically starts 30s timer
 timeoutAware.fireEvent(ConversationState.INITIATED, ConversationFact.USER_MESSAGE, ctx);
 
-// Leaving ACTIVE automatically cancels the timer
-timeoutAware.fireEvent(ConversationState.ACTIVE, ConversationFact.AGENT_JOIN, ctx);
+// Leaving IN_PROGRESS automatically cancels the timer
+timeoutAware.fireEvent(ConversationState.IN_PROGRESS, ConversationFact.AGENT_JOIN, ctx);
 
 // If 30s pass without leaving, IDLE_TIMEOUT fires automatically
 ```
@@ -400,7 +400,7 @@ timeoutAware.fireEvent(ConversationState.ACTIVE, ConversationFact.AGENT_JOIN, ct
 ### Querying Timeout Status
 
 ```java
-boolean active = timeoutAware.isTimeoutActive();
+boolean IN_PROGRESS = timeoutAware.isTimeoutActive();
 long remainingMs = timeoutAware.getRemainingTimeoutMs();
 timeoutAware.cancelTimeout();  // manual cancel
 ```
@@ -409,7 +409,7 @@ timeoutAware.cancelTimeout();  // manual cancel
 
 | Existing Monitor | Timeout Config |
 |---|---|
-| `CustomerIdleMonitor` | `ACTIVE` → 30s → `IDLE_TIMEOUT` |
+| `CustomerIdleMonitor` | `IN_PROGRESS` → 30s → `IDLE_TIMEOUT` |
 | `TransferMonitor` | `TRANSFERRING` → 60s → `TRANSFER_TIMEOUT` |
 | `EndingGraceMonitor` | `ENDING` → 10s → `END_GRACE_TIMEOUT` |
 
@@ -571,7 +571,7 @@ For the CBOL conversation state machine:
 
 - **Fail event**: `SYS_ACTION_FAILED`
 - **Fail branch**: All non-terminal states → `ERROR`
-- **Recovery**: `ERROR` → `ACTIVE` (`SYS_RETRY`) or `CLOSED` (`SYS_ABORT`)
+- **Recovery**: `ERROR` → `IN_PROGRESS` (`SYS_RETRY`) or `CLOSED` (`SYS_ABORT`)
 
 ```java
 StateMachine<ConversationState, ConversationFact, CbolStateContext> base =

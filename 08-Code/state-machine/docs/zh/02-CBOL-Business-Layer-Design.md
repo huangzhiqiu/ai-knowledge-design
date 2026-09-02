@@ -15,9 +15,9 @@
 - **双状态模型**：Conversation（业务层面）+ Interaction（通道层面），各自在独立模块中
 - **多市场支持**：每市场配置超时和特性开关
 - **全链路追踪**：通过 SLF4J MDC 跨异步边界传播 TraceId
-- **v6 设计**：转接失败/超时返回 INITIATED（不回滚到 ACTIVE）
+- **v6 设计**：转接失败/超时返回 INITIATED（不回滚到 IN_PROGRESS）
 - **自动化监控器**：三个基于时间的监控器，用于空闲检测、转接超时和结束宽限
-- **满意度调查作为进行中状态**：SURVEY_IN_PROGRESS 是活跃流程的子状态，由流程控制
+- **满意度调查作为进行中状态**：IN_PROGRESS 是活跃流程的子状态，由流程控制
 - **故障转移机制**：未处理的异常触发 FAIL 事件，路由到失败分支
 
 ## 2. 会话状态模型
@@ -27,9 +27,9 @@
 ```java
 public enum ConversationState {
     INITIATED,          // 会话已创建，等待客户连接
-    ACTIVE,             // 客户已连接，AI 或人工正在处理
+    IN_PROGRESS,             // 客户已连接，AI 或人工正在处理
     TRANSFERRED,        // 正在转接人工客服
-    SURVEY_IN_PROGRESS, // 会话后满意度调查进行中（由流程控制）
+    IN_PROGRESS, // 会话后满意度调查进行中（由流程控制）
     ENDING,             // 会话结束中，清理宽限期
     ERROR,              // 动作失败，故障转移状态（重试或中止）
     CLOSED              // 终态，会话完全关闭
@@ -41,9 +41,9 @@ public enum ConversationState {
 | 状态 | 描述 | 进入触发 | 退出触发 |
 |------|------|---------|---------|
 | INITIATED | 会话已创建但客户尚未连接 | 系统创建会话 | CUSTOMER_CONNECT / SYS_ACTION_FAILED |
-| ACTIVE | 客户已连接，会话进行中 | CUSTOMER_CONNECT / SYS_RETRY | TRANSFER_REQUEST / SURVEY_START / CUSTOMER_CLOSE / SYS_CUSTOMER_IDLE / SYS_ACTION_FAILED |
+| IN_PROGRESS | 客户已连接，会话进行中 | CUSTOMER_CONNECT / SYS_RETRY | TRANSFER_REQUEST / SURVEY_START / CUSTOMER_CLOSE / SYS_CUSTOMER_IDLE / SYS_ACTION_FAILED |
 | TRANSFERRED | 正在转接客服 | TRANSFER_REQUEST | TRANSFER_CONNECTED / TRANSFER_FAILED / TRANSFER_TIMEOUT / SURVEY_START / SYS_CUSTOMER_IDLE / SYS_ACTION_FAILED |
-| SURVEY_IN_PROGRESS | 会话后满意度调查进行中 | SURVEY_START | SURVEY_COMPLETE / SYS_SURVEY_TIMEOUT / SYS_CUSTOMER_IDLE / CUSTOMER_CLOSE / SYS_ACTION_FAILED |
+| IN_PROGRESS | 会话后满意度调查进行中 | SURVEY_START | SURVEY_COMPLETE / SYS_SURVEY_TIMEOUT / SYS_CUSTOMER_IDLE / CUSTOMER_CLOSE / SYS_ACTION_FAILED |
 | ENDING | 关闭前的宽限期 | CUSTOMER_CLOSE / SYS_CUSTOMER_IDLE / SURVEY_COMPLETE / SYS_SURVEY_TIMEOUT | SYS_ENDING_GRACE_TIMEOUT |
 | ERROR | 动作失败，故障转移状态 | SYS_ACTION_FAILED | SYS_RETRY / SYS_ABORT |
 | CLOSED | 终态 | SYS_ENDING_GRACE_TIMEOUT / SYS_ABORT | （无） |
@@ -78,7 +78,7 @@ public enum ConversationFact {
 
     // 故障转移（动作错误 → 失败分支）
     SYS_ACTION_FAILED,    // 动作抛出未处理异常 → 进入 ERROR
-    SYS_RETRY,            // 从 ERROR 重试 → ACTIVE
+    SYS_RETRY,            // 从 ERROR 重试 → IN_PROGRESS
     SYS_ABORT             // 从 ERROR 中止 → CLOSED
 }
 ```
@@ -89,14 +89,14 @@ public enum ConversationFact {
 stateDiagram-v2
     [*] --> INITIATED : 创建会话
 
-    INITIATED --> ACTIVE : CUSTOMER_CONNECT
+    INITIATED --> IN_PROGRESS : CUSTOMER_CONNECT
     INITIATED --> ENDING : SYS_CUSTOMER_IDLE
 
-    ACTIVE --> TRANSFERRED : TRANSFER_REQUEST
-    ACTIVE --> ENDING : CUSTOMER_CLOSE
-    ACTIVE --> ENDING : SYS_CUSTOMER_IDLE
+    IN_PROGRESS --> TRANSFERRED : TRANSFER_REQUEST
+    IN_PROGRESS --> ENDING : CUSTOMER_CLOSE
+    IN_PROGRESS --> ENDING : SYS_CUSTOMER_IDLE
 
-    TRANSFERRED --> ACTIVE : TRANSFER_CONNECTED
+    TRANSFERRED --> IN_PROGRESS : TRANSFER_CONNECTED
     TRANSFERRED --> INITIATED : TRANSFER_FAILED
     TRANSFERRED --> INITIATED : TRANSFER_TIMEOUT
     TRANSFERRED --> INITIATED : SYS_TRANSFER_TIMEOUT
@@ -111,14 +111,14 @@ stateDiagram-v2
 
 | # | 源状态 | 事件 | 目标状态 | Guard | Action | 说明 |
 |---|--------|------|---------|-------|--------|------|
-| 1 | INITIATED | CUSTOMER_CONNECT | ACTIVE | - | - | 客户连接 |
-| 2 | ACTIVE | TRANSFER_REQUEST | TRANSFERRED | transferEnabled | - | 请求转接客服 |
-| 3 | TRANSFERRED | TRANSFER_FAILED | INITIATED | - | - | v6：不回滚到 ACTIVE |
-| 4 | TRANSFERRED | TRANSFER_TIMEOUT | INITIATED | - | - | v6：不回滚到 ACTIVE |
+| 1 | INITIATED | CUSTOMER_CONNECT | IN_PROGRESS | - | - | 客户连接 |
+| 2 | IN_PROGRESS | TRANSFER_REQUEST | TRANSFERRED | transferEnabled | - | 请求转接客服 |
+| 3 | TRANSFERRED | TRANSFER_FAILED | INITIATED | - | - | v6：不回滚到 IN_PROGRESS |
+| 4 | TRANSFERRED | TRANSFER_TIMEOUT | INITIATED | - | - | v6：不回滚到 IN_PROGRESS |
 | 5 | TRANSFERRED | SYS_TRANSFER_TIMEOUT | INITIATED | - | - | 监控器驱动 |
-| 6 | ACTIVE | CUSTOMER_CLOSE | ENDING | - | - | 客户关闭 |
+| 6 | IN_PROGRESS | CUSTOMER_CLOSE | ENDING | - | - | 客户关闭 |
 | 7 | INITIATED | SYS_CUSTOMER_IDLE | ENDING | - | - | 监控器驱动 |
-| 8 | ACTIVE | SYS_CUSTOMER_IDLE | ENDING | - | - | 监控器驱动 |
+| 8 | IN_PROGRESS | SYS_CUSTOMER_IDLE | ENDING | - | - | 监控器驱动 |
 | 9 | TRANSFERRED | SYS_CUSTOMER_IDLE | ENDING | - | - | 监控器驱动 |
 | 10 | ENDING | SYS_ENDING_GRACE_TIMEOUT | CLOSED | - | - | 监控器驱动，终态 |
 
@@ -278,7 +278,7 @@ public abstract class AbstractTimeoutMonitor {
 
 | 监控器 | 适用状态 | 超时配置 | 触发事件 | 参考时间戳 |
 |--------|---------|---------|---------|-----------|
-| CustomerIdleMonitor | INITIATED, ACTIVE, TRANSFERRED | customerIdleSeconds | SYS_CUSTOMER_IDLE | lastActivityTs |
+| CustomerIdleMonitor | INITIATED, IN_PROGRESS, TRANSFERRED | customerIdleSeconds | SYS_CUSTOMER_IDLE | lastActivityTs |
 | TransferMonitor | TRANSFERRED | transferTimeoutSeconds | SYS_TRANSFER_TIMEOUT | transferStartTs |
 | EndingGraceMonitor | ENDING | endingGraceSeconds | SYS_ENDING_GRACE_TIMEOUT | endingStartTs |
 
@@ -432,11 +432,11 @@ public class ConversationStateMachineFactory {
     public static StateMachine<ConversationState, ConversationFact, CbolStateContext> build() {
         StateMachineBuilder<...> builder = StateMachineBuilder.builder(MACHINE_ID);
 
-        // 1. INITIATED -> ACTIVE（客户连接）
-        builder.transition().from(INITIATED).on(CUSTOMER_CONNECT).to(ACTIVE).and();
+        // 1. INITIATED -> IN_PROGRESS（客户连接）
+        builder.transition().from(INITIATED).on(CUSTOMER_CONNECT).to(IN_PROGRESS).and();
 
-        // 2. ACTIVE -> TRANSFERRED（转接请求）
-        builder.transition().from(ACTIVE).on(TRANSFER_REQUEST).to(TRANSFERRED).and();
+        // 2. IN_PROGRESS -> TRANSFERRED（转接请求）
+        builder.transition().from(IN_PROGRESS).on(TRANSFER_REQUEST).to(TRANSFERRED).and();
 
         // 3. TRANSFERRED -> INITIATED（转接失败）[v6：不回滚]
         builder.transition().from(TRANSFERRED).on(TRANSFER_FAILED).to(INITIATED).and();
@@ -484,10 +484,10 @@ sequenceDiagram
     API->>API: 构建 CbolStateContext（带 marketConfig、traceContext）
     API->>Svc: fire(ctx, CUSTOMER_CONNECT)
     Svc->>SM: fireEvent(INITIATED, CUSTOMER_CONNECT, ctx)
-    SM-->>Svc: StateContext(target=ACTIVE)
-    Svc->>Log: info("StateTransitionRecord: INITIATED->ACTIVE")
+    SM-->>Svc: StateContext(target=IN_PROGRESS)
+    Svc->>Log: info("StateTransitionRecord: INITIATED->IN_PROGRESS")
     Svc-->>API: StateContext
-    API->>Repo: save(会话 state=ACTIVE)
+    API->>Repo: save(会话 state=IN_PROGRESS)
 ```
 
 ### 10.2 转接失败（v6 行为）
@@ -501,7 +501,7 @@ sequenceDiagram
     Note over Svc: 当前状态 = TRANSFERRED
     Svc->>SM: fireEvent(TRANSFERRED, TRANSFER_FAILED, ctx)
     Note over SM: 迁移：TRANSFERRED -> INITIATED
-    Note over SM: v6：不回滚到 ACTIVE
+    Note over SM: v6：不回滚到 IN_PROGRESS
     SM-->>Svc: StateContext(target=INITIATED)
     Svc->>Repo: save(state=INITIATED)
     Note over Repo: 会话返回初始状态<br/>客户可重新连接或重新路由

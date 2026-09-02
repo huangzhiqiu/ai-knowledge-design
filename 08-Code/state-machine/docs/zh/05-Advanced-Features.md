@@ -354,7 +354,7 @@ StateMachine<...> resilient = new ResilientStateMachine<>(machine, retry);
 ```java
 TimeoutConfig<ConversationState, ConversationFact> idleTimeout =
     TimeoutConfig.<ConversationState, ConversationFact>builder()
-        .state(ConversationState.ACTIVE)
+        .state(ConversationState.IN_PROGRESS)
         .timeoutEvent(ConversationFact.IDLE_TIMEOUT)
         .duration(30)
         .timeUnit(TimeUnit.SECONDS)
@@ -381,18 +381,18 @@ StateMachineTimeoutScheduler<ConversationState, ConversationFact> scheduler =
 
 ```java
 Map<ConversationState, TimeoutConfig<ConversationState, ConversationFact>> timeouts = Map.of(
-    ConversationState.ACTIVE, idleTimeout,
+    ConversationState.IN_PROGRESS, idleTimeout,
     ConversationState.TRANSFERRING, transferTimeout
 );
 
 StateMachine<ConversationState, ConversationFact, CbolStateContext> timeoutAware =
     new TimeoutAwareStateMachine<>(machine, scheduler, timeouts, "conv-123");
 
-// 进入 ACTIVE 自动启动 30 秒计时器
+// 进入 IN_PROGRESS 自动启动 30 秒计时器
 timeoutAware.fireEvent(ConversationState.INITIATED, ConversationFact.USER_MESSAGE, ctx);
 
-// 离开 ACTIVE 自动取消计时器
-timeoutAware.fireEvent(ConversationState.ACTIVE, ConversationFact.AGENT_JOIN, ctx);
+// 离开 IN_PROGRESS 自动取消计时器
+timeoutAware.fireEvent(ConversationState.IN_PROGRESS, ConversationFact.AGENT_JOIN, ctx);
 
 // 如果 30 秒内没有离开，IDLE_TIMEOUT 自动触发
 ```
@@ -400,7 +400,7 @@ timeoutAware.fireEvent(ConversationState.ACTIVE, ConversationFact.AGENT_JOIN, ct
 ### 查询超时状态
 
 ```java
-boolean active = timeoutAware.isTimeoutActive();
+boolean IN_PROGRESS = timeoutAware.isTimeoutActive();
 long remainingMs = timeoutAware.getRemainingTimeoutMs();
 timeoutAware.cancelTimeout();  // 手动取消
 ```
@@ -409,7 +409,7 @@ timeoutAware.cancelTimeout();  // 手动取消
 
 | 现有监控器 | 超时配置 |
 |---|---|
-| `CustomerIdleMonitor` | `ACTIVE` → 30s → `IDLE_TIMEOUT` |
+| `CustomerIdleMonitor` | `IN_PROGRESS` → 30s → `IDLE_TIMEOUT` |
 | `TransferMonitor` | `TRANSFERRING` → 60s → `TRANSFER_TIMEOUT` |
 | `EndingGraceMonitor` | `ENDING` → 10s → `END_GRACE_TIMEOUT` |
 
@@ -571,7 +571,7 @@ StateMachine<...> withFailover = new FailoverStateMachine<>(
 
 - **失败事件**：`SYS_ACTION_FAILED`
 - **失败分支**：所有非终态 → `ERROR`
-- **恢复**：`ERROR` → `ACTIVE`（`SYS_RETRY`）或 `CLOSED`（`SYS_ABORT`）
+- **恢复**：`ERROR` → `IN_PROGRESS`（`SYS_RETRY`）或 `CLOSED`（`SYS_ABORT`）
 
 ```java
 StateMachine<ConversationState, ConversationFact, CbolStateContext> base =

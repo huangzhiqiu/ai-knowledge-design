@@ -10,69 +10,69 @@
 stateDiagram-v2
     [*] --> INITIATED : 创建会话
 
-    INITIATED --> ACTIVE : CUSTOMER_CONNECT
+    INITIATED --> IN_PROGRESS : CUSTOMER_CONNECT
     INITIATED --> ENDING : SYS_CUSTOMER_IDLE
 
-    ACTIVE --> TRANSFERRED : TRANSFER_REQUEST
-    ACTIVE --> SURVEY_IN_PROGRESS : SURVEY_START (surveyEnabled)
-    ACTIVE --> ENDING : CUSTOMER_CLOSE (no survey)
-    ACTIVE --> ENDING : SYS_CUSTOMER_IDLE
+    IN_PROGRESS --> TRANSFERRED : TRANSFER_REQUEST
+    IN_PROGRESS --> IN_PROGRESS : SURVEY_START (surveyEnabled)
+    IN_PROGRESS --> ENDING : CUSTOMER_CLOSE (no survey)
+    IN_PROGRESS --> ENDING : SYS_CUSTOMER_IDLE
 
-    TRANSFERRED --> ACTIVE : TRANSFER_CONNECTED (reserved)
+    TRANSFERRED --> IN_PROGRESS : TRANSFER_CONNECTED (reserved)
     TRANSFERRED --> INITIATED : TRANSFER_FAILED
     TRANSFERRED --> INITIATED : TRANSFER_TIMEOUT
     TRANSFERRED --> INITIATED : SYS_TRANSFER_TIMEOUT
-    TRANSFERRED --> SURVEY_IN_PROGRESS : SURVEY_START (surveyEnabled)
+    TRANSFERRED --> IN_PROGRESS : SURVEY_START (surveyEnabled)
     TRANSFERRED --> ENDING : SYS_CUSTOMER_IDLE
 
-    SURVEY_IN_PROGRESS --> ENDING : SURVEY_COMPLETE
-    SURVEY_IN_PROGRESS --> ENDING : SYS_SURVEY_TIMEOUT
-    SURVEY_IN_PROGRESS --> ENDING : SYS_CUSTOMER_IDLE
-    SURVEY_IN_PROGRESS --> ENDING : CUSTOMER_CLOSE
+    IN_PROGRESS --> ENDING : SURVEY_COMPLETE
+    IN_PROGRESS --> ENDING : SYS_SURVEY_TIMEOUT
+    IN_PROGRESS --> ENDING : SYS_CUSTOMER_IDLE
+    IN_PROGRESS --> ENDING : CUSTOMER_CLOSE
 
     ENDING --> CLOSED : SYS_ENDING_GRACE_TIMEOUT
 
     %% 故障转移: 动作错误 → SYS_ACTION_FAILED → ERROR → 重试/中止
     INITIATED --> ERROR : SYS_ACTION_FAILED
-    ACTIVE --> ERROR : SYS_ACTION_FAILED
+    IN_PROGRESS --> ERROR : SYS_ACTION_FAILED
     TRANSFERRED --> ERROR : SYS_ACTION_FAILED
-    SURVEY_IN_PROGRESS --> ERROR : SYS_ACTION_FAILED
-    ERROR --> ACTIVE : SYS_RETRY
+    IN_PROGRESS --> ERROR : SYS_ACTION_FAILED
+    ERROR --> IN_PROGRESS : SYS_RETRY
     ERROR --> CLOSED : SYS_ABORT
 
     CLOSED --> [*]
 ```
 
-> **满意度调查作为进行中状态**：当 `surveyEnabled=true` 时，`closeConversation()` 触发 `SURVEY_START` 进入 `SURVEY_IN_PROGRESS`，而不是直接进入 `ENDING`。满意度调查流程完全由状态机控制。
+> **满意度调查作为进行中状态**：当 `surveyEnabled=true` 时，`closeConversation()` 触发 `SURVEY_START` 进入 `IN_PROGRESS`，而不是直接进入 `ENDING`。满意度调查流程完全由状态机控制。
 
-> **故障转移（动作错误 → 失败事件）**：当动作抛出未处理异常时，`FailoverStateMachine` 自动触发 `SYS_ACTION_FAILED` 进入 `ERROR` 状态。从 `ERROR` 状态，系统可以重试（`SYS_RETRY` → ACTIVE）或中止（`SYS_ABORT` → CLOSED）。失败事件本身不会触发另一次故障转移（循环预防）。
+> **故障转移（动作错误 → 失败事件）**：当动作抛出未处理异常时，`FailoverStateMachine` 自动触发 `SYS_ACTION_FAILED` 进入 `ERROR` 状态。从 `ERROR` 状态，系统可以重试（`SYS_RETRY` → IN_PROGRESS）或中止（`SYS_ABORT` → CLOSED）。失败事件本身不会触发另一次故障转移（循环预防）。
 
 ### 1.2 迁移表
 
 | ID | 源状态 | 事件 | 目标状态 | Guard | Action | 监控器 | v6 说明 |
 |----|--------|------|---------|-------|--------|--------|---------|
-| T01 | INITIATED | CUSTOMER_CONNECT | ACTIVE | - | - | - | 客户建立连接 |
-| T02 | ACTIVE | TRANSFER_REQUEST | TRANSFERRED | transferEnabled | - | - | 请求人工客服 |
-| T03 | TRANSFERRED | TRANSFER_CONNECTED | ACTIVE | - | - | - | 预留未来使用 |
-| T04 | TRANSFERRED | TRANSFER_FAILED | INITIATED | - | - | - | **v6：不回滚到 ACTIVE** |
-| T05 | TRANSFERRED | TRANSFER_TIMEOUT | INITIATED | - | - | - | **v6：不回滚到 ACTIVE** |
-| T06 | ACTIVE | CUSTOMER_CLOSE | ENDING | !surveyEnabled | - | - | 客户关闭，无满意度调查 |
+| T01 | INITIATED | CUSTOMER_CONNECT | IN_PROGRESS | - | - | - | 客户建立连接 |
+| T02 | IN_PROGRESS | TRANSFER_REQUEST | TRANSFERRED | transferEnabled | - | - | 请求人工客服 |
+| T03 | TRANSFERRED | TRANSFER_CONNECTED | IN_PROGRESS | - | - | - | 预留未来使用 |
+| T04 | TRANSFERRED | TRANSFER_FAILED | INITIATED | - | - | - | **v6：不回滚到 IN_PROGRESS** |
+| T05 | TRANSFERRED | TRANSFER_TIMEOUT | INITIATED | - | - | - | **v6：不回滚到 IN_PROGRESS** |
+| T06 | IN_PROGRESS | CUSTOMER_CLOSE | ENDING | !surveyEnabled | - | - | 客户关闭，无满意度调查 |
 | T07 | INITIATED | SYS_CUSTOMER_IDLE | ENDING | - | - | CustomerIdleMonitor | 连接前空闲 |
-| T08 | ACTIVE | SYS_CUSTOMER_IDLE | ENDING | - | - | CustomerIdleMonitor | 客户空闲超时 |
+| T08 | IN_PROGRESS | SYS_CUSTOMER_IDLE | ENDING | - | - | CustomerIdleMonitor | 客户空闲超时 |
 | T09 | TRANSFERRED | SYS_CUSTOMER_IDLE | ENDING | - | - | CustomerIdleMonitor | 转接期间空闲 |
 | T10 | TRANSFERRED | SYS_TRANSFER_TIMEOUT | INITIATED | - | - | TransferMonitor | **v6：不回滚** |
 | T11 | ENDING | SYS_ENDING_GRACE_TIMEOUT | CLOSED | - | - | EndingGraceMonitor | 终态迁移 |
-| T12 | ACTIVE | SURVEY_START | SURVEY_IN_PROGRESS | surveyEnabled | 显示满意度调查 UI | - | **满意度调查作为进行中状态** |
-| T13 | TRANSFERRED | SURVEY_START | SURVEY_IN_PROGRESS | surveyEnabled | 显示满意度调查 UI | - | **满意度调查作为进行中状态** |
-| T14 | SURVEY_IN_PROGRESS | SURVEY_COMPLETE | ENDING | - | 保存满意度调查结果 | - | 满意度调查正常完成 |
-| T15 | SURVEY_IN_PROGRESS | SYS_SURVEY_TIMEOUT | ENDING | - | 保存部分结果 | SurveyTimeoutMonitor | 满意度调查超时 |
-| T16 | SURVEY_IN_PROGRESS | SYS_CUSTOMER_IDLE | ENDING | - | - | CustomerIdleMonitor | 满意度调查期间客户离开 |
-| T17 | SURVEY_IN_PROGRESS | CUSTOMER_CLOSE | ENDING | - | - | - | 客户主动关闭满意度调查 |
+| T12 | IN_PROGRESS | SURVEY_START | IN_PROGRESS | surveyEnabled | 显示满意度调查 UI | - | **满意度调查作为进行中状态** |
+| T13 | TRANSFERRED | SURVEY_START | IN_PROGRESS | surveyEnabled | 显示满意度调查 UI | - | **满意度调查作为进行中状态** |
+| T14 | IN_PROGRESS | SURVEY_COMPLETE | ENDING | - | 保存满意度调查结果 | - | 满意度调查正常完成 |
+| T15 | IN_PROGRESS | SYS_SURVEY_TIMEOUT | ENDING | - | 保存部分结果 | SurveyTimeoutMonitor | 满意度调查超时 |
+| T16 | IN_PROGRESS | SYS_CUSTOMER_IDLE | ENDING | - | - | CustomerIdleMonitor | 满意度调查期间客户离开 |
+| T17 | IN_PROGRESS | CUSTOMER_CLOSE | ENDING | - | - | - | 客户主动关闭满意度调查 |
 | T18 | INITIATED | SYS_ACTION_FAILED | ERROR | - | 记录错误，告警 | FailoverStateMachine | **故障转移：动作错误** |
-| T19 | ACTIVE | SYS_ACTION_FAILED | ERROR | - | 记录错误，告警 | FailoverStateMachine | **故障转移：动作错误** |
+| T19 | IN_PROGRESS | SYS_ACTION_FAILED | ERROR | - | 记录错误，告警 | FailoverStateMachine | **故障转移：动作错误** |
 | T20 | TRANSFERRED | SYS_ACTION_FAILED | ERROR | - | 记录错误，告警 | FailoverStateMachine | **故障转移：动作错误** |
-| T21 | SURVEY_IN_PROGRESS | SYS_ACTION_FAILED | ERROR | - | 记录错误，告警 | FailoverStateMachine | **故障转移：动作错误** |
-| T22 | ERROR | SYS_RETRY | ACTIVE | - | 重新初始化资源 | - | 手动或系统重试 |
+| T21 | IN_PROGRESS | SYS_ACTION_FAILED | ERROR | - | 记录错误，告警 | FailoverStateMachine | **故障转移：动作错误** |
+| T22 | ERROR | SYS_RETRY | IN_PROGRESS | - | 重新初始化资源 | - | 手动或系统重试 |
 | T23 | ERROR | SYS_ABORT | CLOSED | - | 清理，通知 | - | 不可恢复错误 |
 
 ### 1.3 状态进入/退出动作
@@ -80,9 +80,9 @@ stateDiagram-v2
 | 状态 | 进入动作 | 退出动作 |
 |------|---------|---------|
 | INITIATED | （无） | （无） |
-| ACTIVE | 发送欢迎消息（预留） | 通知通道（预留） |
+| IN_PROGRESS | 发送欢迎消息（预留） | 通知通道（预留） |
 | TRANSFERRED | 发起转接请求 | 取消待处理转接（预留） |
-| SURVEY_IN_PROGRESS | 显示满意度调查 UI，启动调查计时器 | 保存满意度调查结果，停止计时器 |
+| IN_PROGRESS | 显示满意度调查 UI，启动调查计时器 | 保存满意度调查结果，停止计时器 |
 | ENDING | 启动宽限期计时器 | （无） |
 | ERROR | 记录错误，告警值班人员，捕获诊断信息 | 清除错误状态 |
 | CLOSED | 清理资源，归档会话 | （无，终态） |
@@ -169,7 +169,7 @@ stateDiagram-v2
 
 ```mermaid
 flowchart LR
-    A[会话处于<br/>INITIATED/ACTIVE/TRANSFERRED] --> B{lastActivityTs<br/>+ customerIdleSeconds<br/>< now?}
+    A[会话处于<br/>INITIATED/IN_PROGRESS/TRANSFERRED] --> B{lastActivityTs<br/>+ customerIdleSeconds<br/>< now?}
     B -->|否| C[无操作]
     B -->|是| D[触发 SYS_CUSTOMER_IDLE]
     D --> E[状态 → ENDING]

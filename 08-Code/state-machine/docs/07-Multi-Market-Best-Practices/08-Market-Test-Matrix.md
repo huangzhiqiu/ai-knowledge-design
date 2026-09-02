@@ -42,7 +42,7 @@ With multiple markets each having different configs, testing becomes a combinato
 │    HK, SG, UK, US, JP, ...                                       │
 │                                                                   │
 │  Dimension 2: State (S)                                           │
-│    INITIATED, ACTIVE, TRANSFERRED, SURVEY_IN_PROGRESS,          │
+│    INITIATED, IN_PROGRESS, TRANSFERRED, IN_PROGRESS,          │
 │    ENDING, ERROR, CLOSED                                          │
 │                                                                   │
 │  Dimension 3: Event (E)                                           │
@@ -84,7 +84,7 @@ With multiple markets each having different configs, testing becomes a combinato
 │                                                                   │
 │  L3: Market Behavior Tests (per market)                           │
 │  ┌───────────────────────────────────────────────────────────┐  │
-│  │ • Active transitions for this market work                    │  │
+│  │ • IN_PROGRESS transitions for this market work                    │  │
 │  │ • Inactive transitions (guard=false) are rejected            │  │
 │  │ • End-to-end conversation flow for this market                │  │
 │  │ • Market-specific error handling                              │  │
@@ -140,8 +140,8 @@ public class MarketTestCaseGenerator {
             for (ConversationFact event : ConversationFact.values()) {
                 TransitionKey key = new TransitionKey(state, event);
                 if (effective.containsKey(key)) {
-                    // Active transition: should succeed
-                    cases.add(MarketTestCase.active(market, state, event, effective.get(key)));
+                    // IN_PROGRESS transition: should succeed
+                    cases.add(MarketTestCase.IN_PROGRESS(market, state, event, effective.get(key)));
                 } else {
                     // Inactive transition: should be rejected
                     // Only generate for non-terminal states (terminal states always reject)
@@ -174,7 +174,7 @@ public record MarketTestCase(
     boolean isActive,
     String description  // auto-generated human-readable description
 ) {
-    public static MarketTestCase active(String market, ConversationState from,
+    public static MarketTestCase IN_PROGRESS(String market, ConversationState from,
                                           ConversationFact event, ConversationState to) {
         return new MarketTestCase(market, from, event, to, true,
                 String.format("[%s] %s --%s--> %s", market, from, event, to));
@@ -246,11 +246,11 @@ public class MarketEndToEndTest {
         String conversationId = "test-" + market + "-" + System.nanoTime();
 
         // 1. Connect
-        assertEquals(ACTIVE, fire(config, INITIATED, CUSTOMER_CONNECT));
+        assertEquals(IN_PROGRESS, fire(config, INITIATED, CUSTOMER_CONNECT));
 
         // 2. Transfer (if enabled)
         if (config.transferEnabled()) {
-            assertEquals(TRANSFERRED, fire(config, ACTIVE, TRANSFER_REQUEST));
+            assertEquals(TRANSFERRED, fire(config, IN_PROGRESS, TRANSFER_REQUEST));
 
             // 3. Transfer outcome
             // (could be CONNECTED, FAILED, or TIMEOUT — test each separately)
@@ -258,10 +258,10 @@ public class MarketEndToEndTest {
 
         // 4. Close
         if (config.surveyEnabled()) {
-            assertEquals(SURVEY_IN_PROGRESS, fire(config, ACTIVE, SURVEY_START));
-            assertEquals(ENDING, fire(config, SURVEY_IN_PROGRESS, SURVEY_COMPLETE));
+            assertEquals(IN_PROGRESS, fire(config, IN_PROGRESS, SURVEY_START));
+            assertEquals(ENDING, fire(config, IN_PROGRESS, SURVEY_COMPLETE));
         } else {
-            assertEquals(ENDING, fire(config, ACTIVE, CUSTOMER_CLOSE));
+            assertEquals(ENDING, fire(config, IN_PROGRESS, CUSTOMER_CLOSE));
         }
 
         // 5. Close grace
@@ -273,8 +273,8 @@ public class MarketEndToEndTest {
     void shouldHandleSurveyTimeout(String market) {
         StateMachineMarketConfig config = loadConfig(market);
 
-        assertEquals(SURVEY_IN_PROGRESS, fire(config, ACTIVE, SURVEY_START));
-        assertEquals(ENDING, fire(config, SURVEY_IN_PROGRESS, SYS_SURVEY_TIMEOUT));
+        assertEquals(IN_PROGRESS, fire(config, IN_PROGRESS, SURVEY_START));
+        assertEquals(ENDING, fire(config, IN_PROGRESS, SYS_SURVEY_TIMEOUT));
     }
 
     @ParameterizedTest
@@ -282,8 +282,8 @@ public class MarketEndToEndTest {
     void shouldHandleGenesysTransferFlow(String market) {
         StateMachineMarketConfig config = loadConfig(market);
 
-        assertEquals(TRANSFERRED, fire(config, ACTIVE, TRANSFER_REQUEST));
-        assertEquals(ACTIVE, fire(config, TRANSFERRED, TRANSFER_CONNECTED));
+        assertEquals(TRANSFERRED, fire(config, IN_PROGRESS, TRANSFER_REQUEST));
+        assertEquals(IN_PROGRESS, fire(config, TRANSFERRED, TRANSFER_CONNECTED));
     }
 
     static Stream<String> allMarkets() {
@@ -417,8 +417,8 @@ Overall: 312 / 350 cases tested (89.1%)
 
 ─── Untested Cases (top priority) ───
   1. [JP] TRANSFERRED --TRANSFER_CONNECTED--> REJECTED (genesysEnabled=false)
-  2. [UK] SURVEY_IN_PROGRESS --SURVEY_COMPLETE--> ENDING
-  3. [SG] ACTIVE --SURVEY_START--> REJECTED (surveyEnabled=false)
+  2. [UK] IN_PROGRESS --SURVEY_COMPLETE--> ENDING
+  3. [SG] IN_PROGRESS --SURVEY_START--> REJECTED (surveyEnabled=false)
   ...
 
 ─── Recommendations ───
@@ -434,12 +434,12 @@ Overall: 312 / 350 cases tested (89.1%)
 
 ### Phase 1: Test Case Generator (1 day)
 - [ ] Implement `MarketTestCase` record
-- [ ] Implement `MarketTestCaseGenerator` (active/inactive transitions)
+- [ ] Implement `MarketTestCaseGenerator` (IN_PROGRESS/inactive transitions)
 - [ ] Integrate with `TransitionResolver` (from doc 02)
 - [ ] Unit tests for generator correctness
 
 ### Phase 2: Parameterized Tests (1 day)
-- [ ] Implement `MarketBehaviorTest` (active/inactive transitions)
+- [ ] Implement `MarketBehaviorTest` (IN_PROGRESS/inactive transitions)
 - [ ] Implement `MarketEndToEndTest` (full lifecycle per market)
 - [ ] Implement market-specific test methods (survey, genesys, transfer)
 - [ ] Verify all generated tests pass
@@ -474,7 +474,7 @@ Overall: 312 / 350 cases tested (89.1%)
 ## 6. Success Criteria
 
 - [ ] Test case generator produces cases for all markets × states × events
-- [ ] Active transition tests assert both acceptance and target state
+- [ ] IN_PROGRESS transition tests assert both acceptance and target state
 - [ ] Inactive transition tests assert rejection
 - [ ] End-to-end lifecycle test exists for every market
 - [ ] Cross-market comparison test verifies consistent behavior for identical configs

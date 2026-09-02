@@ -144,7 +144,7 @@ timeouts:
 ## Impact Analysis (auto-generated)
 
 - HK: 1 config value changed, 0 transitions affected
-- SG: 1 feature toggle changed, 2 transitions now active (SURVEY_START from ACTIVE/TRANSFERRED)
+- SG: 1 feature toggle changed, 2 transitions now IN_PROGRESS (SURVEY_START from IN_PROGRESS/TRANSFERRED)
 - No other markets affected
 
 ## Validation Results (auto-generated)
@@ -371,7 +371,7 @@ StateTransitionRecord record = StateTransitionRecord.builder()
         .build();
 ```
 
-This enables: "At 14:30, conversation X transitioned from ACTIVE to TRANSFERRED using config version abc1234 (which had transferTimeout=180s)."
+This enables: "At 14:30, conversation X transitioned from IN_PROGRESS to TRANSFERRED using config version abc1234 (which had transferTimeout=180s)."
 
 ### 3.6 Rollback Process
 

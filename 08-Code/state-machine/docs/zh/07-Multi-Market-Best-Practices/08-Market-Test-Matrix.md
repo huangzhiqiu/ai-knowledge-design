@@ -45,7 +45,7 @@
 │    HK, SG, UK, US, JP, ...                                       │
 │                                                                   │
 │  维度 2: 状态 (S)                                           │
-│    INITIATED, ACTIVE, TRANSFERRED, SURVEY_IN_PROGRESS,          │
+│    INITIATED, IN_PROGRESS, TRANSFERRED, IN_PROGRESS,          │
 │    ENDING, ERROR, CLOSED                                          │
 │                                                                   │
 │  维度 3: 事件 (E)                                           │
@@ -144,7 +144,7 @@ public class MarketTestCaseGenerator {
                 TransitionKey key = new TransitionKey(state, event);
                 if (effective.containsKey(key)) {
                     // 活跃迁移: 应该成功
-                    cases.add(MarketTestCase.active(market, state, event, effective.get(key)));
+                    cases.add(MarketTestCase.IN_PROGRESS(market, state, event, effective.get(key)));
                 } else {
                     // 非活跃迁移: 应该被拒绝
                     // 仅为非终态生成（终态总是拒绝）
@@ -177,7 +177,7 @@ public record MarketTestCase(
     boolean isActive,
     String description  // 自动生成的人类可读描述
 ) {
-    public static MarketTestCase active(String market, ConversationState from,
+    public static MarketTestCase IN_PROGRESS(String market, ConversationState from,
                                           ConversationFact event, ConversationState to) {
         return new MarketTestCase(market, from, event, to, true,
                 String.format("[%s] %s --%s--> %s", market, from, event, to));
@@ -249,11 +249,11 @@ public class MarketEndToEndTest {
         String conversationId = "test-" + market + "-" + System.nanoTime();
 
         // 1. 连接
-        assertEquals(ACTIVE, fire(config, INITIATED, CUSTOMER_CONNECT));
+        assertEquals(IN_PROGRESS, fire(config, INITIATED, CUSTOMER_CONNECT));
 
         // 2. 转接（如果启用）
         if (config.transferEnabled()) {
-            assertEquals(TRANSFERRED, fire(config, ACTIVE, TRANSFER_REQUEST));
+            assertEquals(TRANSFERRED, fire(config, IN_PROGRESS, TRANSFER_REQUEST));
 
             // 3. 转接结果
             // （可能是 CONNECTED、FAILED 或 TIMEOUT — 分别测试）
@@ -261,10 +261,10 @@ public class MarketEndToEndTest {
 
         // 4. 关闭
         if (config.surveyEnabled()) {
-            assertEquals(SURVEY_IN_PROGRESS, fire(config, ACTIVE, SURVEY_START));
-            assertEquals(ENDING, fire(config, SURVEY_IN_PROGRESS, SURVEY_COMPLETE));
+            assertEquals(IN_PROGRESS, fire(config, IN_PROGRESS, SURVEY_START));
+            assertEquals(ENDING, fire(config, IN_PROGRESS, SURVEY_COMPLETE));
         } else {
-            assertEquals(ENDING, fire(config, ACTIVE, CUSTOMER_CLOSE));
+            assertEquals(ENDING, fire(config, IN_PROGRESS, CUSTOMER_CLOSE));
         }
 
         // 5. 关闭宽限期
@@ -276,8 +276,8 @@ public class MarketEndToEndTest {
     void shouldHandleSurveyTimeout(String market) {
         StateMachineMarketConfig config = loadConfig(market);
 
-        assertEquals(SURVEY_IN_PROGRESS, fire(config, ACTIVE, SURVEY_START));
-        assertEquals(ENDING, fire(config, SURVEY_IN_PROGRESS, SYS_SURVEY_TIMEOUT));
+        assertEquals(IN_PROGRESS, fire(config, IN_PROGRESS, SURVEY_START));
+        assertEquals(ENDING, fire(config, IN_PROGRESS, SYS_SURVEY_TIMEOUT));
     }
 
     @ParameterizedTest
@@ -285,8 +285,8 @@ public class MarketEndToEndTest {
     void shouldHandleGenesysTransferFlow(String market) {
         StateMachineMarketConfig config = loadConfig(market);
 
-        assertEquals(TRANSFERRED, fire(config, ACTIVE, TRANSFER_REQUEST));
-        assertEquals(ACTIVE, fire(config, TRANSFERRED, TRANSFER_CONNECTED));
+        assertEquals(TRANSFERRED, fire(config, IN_PROGRESS, TRANSFER_REQUEST));
+        assertEquals(IN_PROGRESS, fire(config, TRANSFERRED, TRANSFER_CONNECTED));
     }
 
     static Stream<String> allMarkets() {
@@ -420,8 +420,8 @@ public record CoverageReport(
 
 ─── 未测试用例（最高优先级） ───
   1. [JP] TRANSFERRED --TRANSFER_CONNECTED--> REJECTED (genesysEnabled=false)
-  2. [UK] SURVEY_IN_PROGRESS --SURVEY_COMPLETE--> ENDING
-  3. [SG] ACTIVE --SURVEY_START--> REJECTED (surveyEnabled=false)
+  2. [UK] IN_PROGRESS --SURVEY_COMPLETE--> ENDING
+  3. [SG] IN_PROGRESS --SURVEY_START--> REJECTED (surveyEnabled=false)
   ...
 
 ─── 建议 ───

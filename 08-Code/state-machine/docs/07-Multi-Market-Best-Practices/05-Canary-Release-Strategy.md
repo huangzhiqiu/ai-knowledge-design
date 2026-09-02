@@ -95,7 +95,7 @@ public record VersionedConfig(
     String versionId,           // e.g., "2026.09.01-hk-3" or Git commit hash
     String configVersion,       // semantic version "2.1.0"
     StateMachineMarketConfig config,
-    Instant effectiveFrom,      // when this version becomes active
+    Instant effectiveFrom,      // when this version becomes IN_PROGRESS
     String createdBy,           // who created this version
     String changeReason         // why this change was made
 ) {}

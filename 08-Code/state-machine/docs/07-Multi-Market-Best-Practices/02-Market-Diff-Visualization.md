@@ -22,7 +22,7 @@ Differences are invisible until a bug occurs in production.
 
 ### 1.3 Goals
 - Automatically generate structured diff reports between any two markets (or versions)
-- Generate a compatibility matrix showing which transitions are active in each market
+- Generate a compatibility matrix showing which transitions are IN_PROGRESS in each market
 - Auto-generate test cases from the matrix
 - Alert when a base change affects markets unexpectedly
 
@@ -74,14 +74,14 @@ Effective Transition Map (market → (state,event) → targetState)
 
 ### 3.1 Transition Resolver
 
-Given a state machine definition and a market config, resolve which transitions are active:
+Given a state machine definition and a market config, resolve which transitions are IN_PROGRESS:
 
 ```java
 public class TransitionResolver {
 
     /**
      * Resolves all effective transitions for a given market config.
-     * Returns a map: (sourceState, event) → targetState (only for active transitions)
+     * Returns a map: (sourceState, event) → targetState (only for IN_PROGRESS transitions)
      */
     public Map<TransitionKey, ConversationState> resolve(
             StateMachine<ConversationState, ConversationFact, CbolStateContext> machine,
@@ -177,15 +177,15 @@ Generated: 2026-09-01
 
   State              | Event               | HK target      | UK target      | Reason
   -------------------|---------------------|----------------|----------------|---------------------------
-  ACTIVE             | TRANSFER_REQUEST    | TRANSFERRED    | TRANSFERRED    | (same)
-  ACTIVE             | SURVEY_START        | SURVEY_IN_PROG | SURVEY_IN_PROG | (same)
-  TRANSFERRED        | TRANSFER_CONNECTED  | ACTIVE         | UNAVAILABLE    | guard: genesysEnabled=false in UK
+  IN_PROGRESS             | TRANSFER_REQUEST    | TRANSFERRED    | TRANSFERRED    | (same)
+  IN_PROGRESS             | SURVEY_START        | SURVEY_IN_PROG | SURVEY_IN_PROG | (same)
+  TRANSFERRED        | TRANSFER_CONNECTED  | IN_PROGRESS         | UNAVAILABLE    | guard: genesysEnabled=false in UK
   TRANSFERRED        | TRANSFER_FAILED     | INITIATED      | INITIATED      | (same)
-  SURVEY_IN_PROGRESS | SURVEY_COMPLETE    | ENDING         | ENDING         | (same)
+  IN_PROGRESS | SURVEY_COMPLETE    | ENDING         | ENDING         | (same)
 
 ─── Summary ───
   Config differences: 12 (8 high-impact, 4 low-impact)
-  Transition differences: 1 (UK missing TRANSFER_CONNECTED → ACTIVE)
+  Transition differences: 1 (UK missing TRANSFER_CONNECTED → IN_PROGRESS)
   Markets share: 22 of 23 transitions (95.7% similarity)
   Recommendation: UK's missing TRANSFER_CONNECTED is expected (no Genesys). No action needed.
 ```
@@ -203,11 +203,11 @@ Markets: HK, SG, UK, US, JP
 ─── State: INITIATED ───
   Event              | HK         | SG         | UK         | US         | JP
   -------------------|------------|------------|------------|------------|------------
-  CUSTOMER_CONNECT   | ACTIVE     | ACTIVE     | ACTIVE     | ACTIVE     | ACTIVE
+  CUSTOMER_CONNECT   | IN_PROGRESS     | IN_PROGRESS     | IN_PROGRESS     | IN_PROGRESS     | IN_PROGRESS
   SYS_CUSTOMER_IDLE  | ENDING     | ENDING     | ENDING     | ENDING     | ENDING
   SYS_ACTION_FAILED  | ERROR      | ERROR      | ERROR      | ERROR      | ERROR
 
-─── State: ACTIVE ───
+─── State: IN_PROGRESS ───
   Event              | HK         | SG         | UK         | US         | JP
   -------------------|------------|------------|------------|------------|------------
   TRANSFER_REQUEST   | TRANSFERRED| TRANSFERRED| TRANSFERRED| TRANSFERRED| TRANSFERRED
@@ -221,14 +221,14 @@ Markets: HK, SG, UK, US, JP
 ─── State: TRANSFERRED ───
   Event              | HK         | SG         | UK         | US         | JP
   -------------------|------------|------------|------------|------------|------------
-  TRANSFER_CONNECTED | ACTIVE     | —          | —          | —          | —
+  TRANSFER_CONNECTED | IN_PROGRESS     | —          | —          | —          | —
   TRANSFER_FAILED    | INITIATED  | INITIATED  | INITIATED  | INITIATED  | INITIATED
   TRANSFER_TIMEOUT   | INITIATED  | INITIATED  | INITIATED  | INITIATED  | INITIATED
   SURVEY_START       | SURVEY     | —          | SURVEY     | SURVEY     | —
   SYS_ACTION_FAILED  | ERROR      | ERROR      | ERROR      | ERROR      | ERROR
 
 ─── Coverage Summary ───
-  Market | Active Transitions | Total | Coverage | Missing (expected)
+  Market | IN_PROGRESS Transitions | Total | Coverage | Missing (expected)
   -------|-------------------|-------|----------|------------------
   HK     | 23                | 23    | 100%     | —
   SG     | 19                | 23    | 82.6%    | SURVEY_START × 2, TRANSFER_CONNECTED × 2
@@ -322,7 +322,7 @@ jobs:
 ### Phase 3: Compatibility Matrix (0.5 day)
 - [ ] Implement `CompatibilityMatrixGenerator`
 - [ ] Implement markdown matrix generator
-- [ ] Implement coverage summary (active/total per market)
+- [ ] Implement coverage summary (IN_PROGRESS/total per market)
 - [ ] Unit tests for matrix generation
 
 ### Phase 4: Test Generator & CI (1 day)
@@ -349,7 +349,7 @@ jobs:
 
 - [ ] Running `diff HK UK` produces a structured report in < 1 second
 - [ ] Compatibility matrix shows every (state, event) combination for every market
-- [ ] Every active transition in the matrix has a corresponding auto-generated test
+- [ ] Every IN_PROGRESS transition in the matrix has a corresponding auto-generated test
 - [ ] Config PRs automatically include an impact analysis report as a comment
 - [ ] Redundant overrides (market value == base value) are flagged
 - [ ] Missing transitions are explained with guard reasons (e.g., "genesysEnabled=false")
