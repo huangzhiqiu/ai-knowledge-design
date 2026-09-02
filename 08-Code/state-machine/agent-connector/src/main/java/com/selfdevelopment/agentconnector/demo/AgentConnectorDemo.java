@@ -7,34 +7,44 @@ import com.selfdevelopment.agentconnector.model.InteractionInstance;
 import com.selfdevelopment.agentconnector.service.AgentConnectorStateMachineService;
 import com.selfdevelopment.agentconnector.statemachine.factory.InteractionStateMachineFactory;
 import com.selfdevelopment.statemachine.core.StateContext;
+import com.selfdevelopment.statemachine.exception.StateMachineException;
 
 import java.util.UUID;
 
 /**
  * Demo for the Agent Connector Interaction State Machine.
  * <p>
- * Demonstrates the complete channel/connection lifecycle:
+ * Demonstrates the complete channel/connection lifecycle with action execution design:
  * <ul>
  *   <li>Basic connection flow: CONNECTING → CONNECTED → DISCONNECTED</li>
  *   <li>Hold flow: CONNECTED → HELD → CONNECTED</li>
  *   <li>Reconnection flow: CONNECTED → RECONNECTING → CONNECTED</li>
+ *   <li>Reconnection exhausted flow: CONNECTED → RECONNECTING → DISCONNECTED</li>
  *   <li>Transfer flow: CONNECTED → TRANSFERRING → CONNECTED</li>
  *   <li>Connection failure: CONNECTING → DISCONNECTED</li>
+ *   <li>Action failure handling: demonstrates action failure prevents state change</li>
  * </ul>
+ *
+ * <h3>Action Execution Design</h3>
+ * <p>
+ * The state machine framework follows the <b>action-first transition</b> principle:
+ * <ul>
+ *   <li>Action executes BEFORE state change</li>
+ *   <li>If action throws an exception, state does NOT change</li>
+ *   <li>{@link StateMachineException} is propagated to the caller</li>
+ * </ul>
+ * <p>
+ * Currently, agent-connector transitions do not have concrete action implementations bound.
+ * To add actions, implement the core {@code Action<InteractionState, InteractionFact, AgentConnectorStateContext>}
+ * interface and bind them in {@link InteractionStateMachineFactory} using {@code .perform(action)}.
+ * <p>
+ * For action failure handling with automatic failover, use the {@code FailoverStateMachine} decorator
+ * from statemachine-core (see {@code com.selfdevelopment.statemachine.resilience.impl.FailoverStateMachine}).
  *
  * <h3>Usage</h3>
  * <pre>{@code
- * // Run the basic connection flow demo
- * AgentConnectorDemo.runBasicConnectionFlow();
- *
- * // Run the hold flow demo
- * AgentConnectorDemo.runHoldFlow();
- *
- * // Run the reconnection flow demo
- * AgentConnectorDemo.runReconnectionFlow();
- *
- * // Run the transfer flow demo
- * AgentConnectorDemo.runTransferFlow();
+ * // Run all demos
+ * AgentConnectorDemo.main(new String[]{});
  * }</pre>
  */
 public class AgentConnectorDemo {
@@ -44,7 +54,8 @@ public class AgentConnectorDemo {
 
         // Build and register the interaction state machine (must be done before creating service)
         InteractionStateMachineFactory.build();
-        System.out.println("State machine registered: " + InteractionStateMachineFactory.MACHINE_ID + "\n");
+        System.out.println("State machine registered: " + InteractionStateMachineFactory.MACHINE_ID);
+        System.out.println("Action-first transition: action executes before state change\n");
 
         runBasicConnectionFlow();
         System.out.println();
@@ -55,10 +66,16 @@ public class AgentConnectorDemo {
         runReconnectionFlow();
         System.out.println();
 
+        runReconnectionExhaustedFlow();
+        System.out.println();
+
         runTransferFlow();
         System.out.println();
 
         runConnectionFailureFlow();
+        System.out.println();
+
+        runActionFailureDemo();
     }
 
     /**
@@ -246,6 +263,51 @@ public class AgentConnectorDemo {
         fireAndPrint(ctx, InteractionFact.CONNECTION_FAILED, service);
 
         System.out.println("Final state: DISCONNECTED (connection failed)");
+    }
+
+    /**
+     * Demo 7: Action failure handling.
+     * <p>
+     * Demonstrates the action-first transition design principle:
+     * when an action throws an exception, the state does NOT change.
+     * <p>
+     * In this demo, we show that invalid events (no transition defined)
+     * do not change state. For actual action failure testing, use the
+     * FailoverStateMachine decorator from statemachine-core.
+     */
+    public static void runActionFailureDemo() {
+        System.out.println("--- Demo 7: Action Failure Handling (Action-First Transition) ---");
+
+        System.out.println("Core design principle:");
+        System.out.println("  - Action executes BEFORE state change");
+        System.out.println("  - If action throws exception, state does NOT change");
+        System.out.println("  - StateMachineException is propagated to caller");
+        System.out.println();
+
+        AgentConnectorStateMachineService service = new AgentConnectorStateMachineService();
+
+        InteractionInstance interaction = createInteraction("int-007", InteractionState.CONNECTED);
+        AgentConnectorStateContext ctx = createContext(interaction, "HK");
+
+        System.out.println("Initial state: CONNECTED");
+
+        // Try to fire an event that has no transition from CONNECTED
+        // This demonstrates that invalid events don't change state
+        try {
+            StateContext<InteractionState, InteractionFact, AgentConnectorStateContext> result =
+                    service.fire(ctx, InteractionFact.CONNECTION_ESTABLISHED);
+            System.out.printf("  CONNECTION_ESTABLISHED → %s (unexpected, should have failed)%n",
+                    result.getTargetState());
+        } catch (StateMachineException e) {
+            System.out.printf("  CONNECTION_ESTABLISHED → StateMachineException: %s%n",
+                    e.getMessage().length() > 80 ? e.getMessage().substring(0, 80) + "..." : e.getMessage());
+            System.out.println("  State remains: CONNECTED (no transition, no state change)");
+        }
+
+        System.out.println();
+        System.out.println("Note: To test actual action failure, bind an action that throws an exception");
+        System.out.println("      in InteractionStateMachineFactory, or use FailoverStateMachine decorator.");
+        System.out.println("      See statemachine-core/resilience/FailoverStateMachine for details.");
     }
 
     // ========================================================================
