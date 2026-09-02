@@ -1,17 +1,30 @@
 # 状态机架构设计
 
-> 版本：1.0 | 最后更新：2026-09-01
+> 版本：2.0 | 最后更新：2026-09-02
 
 ## 1. 概述
 
 本项目为 CBOL（AI 消息中心）系统实现了一个**轻量级、无状态、表驱动的状态机框架**。该框架受 Spring StateMachine 设计理念启发，但针对简洁性、零外部依赖和高性能进行了优化。
 
-项目由两层组成：
+项目组织为**多模块 Maven 项目**，包含三个模块：
 
-| 层 | 包 | 职责 |
-|----|----|------|
-| **核心框架** | `com.selfdevelopment.ai.messaging.statemachine` | 通用、可复用的状态机引擎 |
-| **CBOL 业务层** | `com.selfdevelopment.ai.messaging.cbol` | CBOL 特定的状态定义、迁移和服务 |
+| 模块 | 包名 | 职责 |
+|------|------|------|
+| **statemachine-core** | `com.selfdevelopment.statemachine` | 通用、可复用的状态机引擎 + 高级特性（持久化、事件溯源、幂等性、弹性、指标、超时、校验、图生成） |
+| **chat-engine** | `com.selfdevelopment.chatengine` | 会话状态机（业务层）：7 个状态、多市场配置、监控器、异步动作、Aibot/ChatHistory 连接器 |
+| **agent-connector** | `com.selfdevelopment.agentconnector` | 交互状态机（通道层）：6 个状态、Genesys/WebSocket 连接器、事件归一化器 |
+
+### 模块依赖
+
+```
+chat-engine ──► statemachine-core
+agent-connector ──► statemachine-core
+```
+
+`chat-engine` 和 `agent-connector` 之间**没有直接依赖**。这种分离确保：
+- 通道层关注点（连接、保持、转接）与业务层关注点（会话生命周期）隔离
+- 每个模块可以独立开发、测试和部署
+- 清晰的系统边界：chat-engine 连接 AIBot 和 ChatHistory；agent-connector 连接 Genesys 和 WebSocket
 
 ## 2. 设计原则
 
@@ -71,67 +84,80 @@ public class ConversationConfig extends StateMachineConfigurerAdapter<Conversati
 
 ```mermaid
 graph TB
-    subgraph "事件接入层"
-        IN1[AibotEventNormalizer]
-        IN2[GenesysEventNormalizer]
-        IN3[CbolEventDispatcher]
-        IN1 --> IN3
-        IN2 --> IN3
+    subgraph "chat-engine 模块 (com.selfdevelopment.chatengine)"
+        subgraph "事件接入层"
+            IN1[AibotEventNormalizer]
+            IN3[ChatEngineEventDispatcher]
+            IN1 --> IN3
+        end
+
+        subgraph "会话状态机"
+            A[ChatEngineStateMachineService] --> B[ConversationStateMachineFactory]
+            A --> C[ActionWorker]
+            D[CustomerIdleMonitor] --> A
+            E[TransferMonitor] --> A
+            F[EndingGraceMonitor] --> A
+            G[MarketConfigProvider] --> A
+            H[CbolStateContext] --> A
+            I[TraceContext / TraceMdcHelper] --> A
+            REPO[ConversationRepository] --> A
+        end
+
+        subgraph "Chat Engine 连接器"
+            CN1[AibotConnector]
+            CN4[ChatHistoryOdsConnector]
+        end
     end
 
-    subgraph "CBOL 业务层"
-        A[CbolStateMachineService] --> B[ConversationStateMachineFactory]
-        A --> C[ActionWorker]
-        D[CustomerIdleMonitor] --> A
-        E[TransferMonitor] --> A
-        F[EndingGraceMonitor] --> A
-        G[MarketConfigProvider] --> A
-        H[CbolStateContext] --> A
-        I[TraceContext / TraceMdcHelper] --> A
-        REPO[ConversationRepository] --> A
+    subgraph "agent-connector 模块 (com.selfdevelopment.agentconnector)"
+        subgraph "交互状态机"
+            AC1[AgentConnectorStateMachineService] --> AC2[InteractionStateMachineFactory]
+            AC3[AgentConnectorStateContext] --> AC1
+        end
+
+        subgraph "Agent 连接器"
+            CN2[GenesysConnector]
+            CN3[CbolWebsocketConnector]
+            IN2[GenesysEventNormalizer]
+        end
     end
 
-    subgraph "连接器层"
-        CN1[AibotConnector]
-        CN2[GenesysConnector]
-        CN3[CbolWebsocketConnector]
-        CN4[ChatHistoryOdsConnector]
-    end
+    subgraph "statemachine-core 模块 (com.selfdevelopment.statemachine)"
+        subgraph "装饰器层（高级特性）"
+            DA[TimeoutAwareStateMachine]
+            DF[FailoverStateMachine]
+            DB[ResilientStateMachine]
+            DC[EventSourcedStateMachine]
+            DD[MonitoredStateMachine]
+            DE[IdempotentStateMachineDecorator]
+            DA --> DF --> DB --> DC --> DD --> DE
+        end
 
-    subgraph "装饰器层（高级特性）"
-        DA[TimeoutAwareStateMachine]
-        DF[FailoverStateMachine]
-        DB[ResilientStateMachine]
-        DC[EventSourcedStateMachine]
-        DD[MonitoredStateMachine]
-        DE[IdempotentStateMachineDecorator]
-        DA --> DF --> DB --> DC --> DD --> DE
-    end
+        subgraph "状态机核心框架"
+            J[StateMachineBuilder] --> K[SimpleStateMachine]
+            K --> L[Transition]
+            K --> M[StateDef]
+            K --> N[StateContext]
+            K --> O[ExtendedState]
+            K --> P[StateMachineListener]
+            Q[StateMachineRegistry] --> K
+            V[StateMachineValidator] --> J
+        end
 
-    subgraph "状态机核心框架"
-        B --> J[StateMachineBuilder]
-        J --> K[SimpleStateMachine]
-        K --> L[Transition]
-        K --> M[StateDef]
-        K --> N[StateContext]
-        K --> O[ExtendedState]
-        K --> P[StateMachineListener]
-        Q[StateMachineRegistry] --> K
-        V[StateMachineValidator] --> J
-    end
+        subgraph "事件驱动基础设施"
+            EV1[StandardEvent]
+            EV2[EventNormalizer]
+            EV3[EventDispatcher]
+        end
 
-    subgraph "事件驱动基础设施"
-        EV1[StandardEvent]
-        EV2[EventNormalizer]
-        EV3[EventDispatcher]
-    end
-
-    subgraph "支撑基础设施"
-        R1[StateRepository]
-        R2[StateTransitionStore]
-        R3[TimeoutScheduler]
-        R4[ProcessedEventStore]
-        R5[MeterRegistry]
+        subgraph "支撑基础设施"
+            R1[StateRepository]
+            R2[StateTransitionStore]
+            R3[TimeoutScheduler]
+            R4[ProcessedEventStore]
+            R5[MeterRegistry]
+            R6[Connector 接口]
+        end
     end
 
     subgraph "外部系统"
@@ -148,131 +174,172 @@ graph TB
     A --> DA
     DE --> K
     A --> CN1
-    A --> CN2
-    A --> CN3
     A --> CN4
+    AC1 --> DA
+    AC1 --> CN2
+    AC1 --> CN3
+    IN2 --> AC1
     DA -.-> R3
     DF -.-> failEventProvider
     DB -.-> R1
     DC -.-> R2
     DD -.-> R5
     DE -.-> R4
+    CN1 -.-> R6
+    CN2 -.-> R6
+    CN3 -.-> R6
+    CN4 -.-> R6
 ```
 
 ## 4. 包结构
 
+### 4.1 statemachine-core 模块 (com.selfdevelopment.statemachine)
+
 ```
-com.selfdevelopment.ai.messaging/
-├── statemachine/                          # 核心框架
-│   ├── core/                              # 核心抽象
-│   │   ├── StateMachine.java              # 接口（生命周期、fireEvent、监听器、getAllTransitions）
-│   │   ├── SimpleStateMachine.java        # 默认实现（无状态、表驱动）
-│   │   ├── Transition.java                # 迁移规则（source、event、target、guard、action、kind）
-│   │   ├── StateDef.java                  # 状态定义（进入/退出动作、初始/结束标志）
-│   │   ├── StateContext.java              # 迁移过程中传递的上下文对象
-│   │   ├── ExtendedState.java             # 跨迁移共享的键值变量
-│   │   ├── Guard.java                     # guard 条件的函数式接口
-│   │   ├── Action.java                    # 迁移动作的函数式接口
-│   │   └── TransitionKind.java            # EXTERNAL / INTERNAL 枚举
-│   ├── builder/
-│   │   └── StateMachineBuilder.java       # 流式 DSL 构建器 + fromConfigurer() 工厂 + build(validate)
-│   ├── config/
-│   │   ├── StateMachineConfigurerAdapter.java  # Spring 风格配置基类
-│   │   ├── StateConfigurer.java           # 状态配置接口
-│   │   ├── DefaultStateConfigurer.java    # 默认实现
-│   │   ├── TransitionConfigurer.java      # 迁移配置接口
-│   │   └── DefaultTransitionConfigurer.java
-│   ├── listener/
-│   │   └── StateMachineListener.java      # 8 个回调钩子（started、stopped、transition*、stateChanged、error）
-│   ├── registry/
-│   │   └── StateMachineRegistry.java      # 用于共享机器的命名注册表
-│   ├── exception/
-│   │   └── StateMachineException.java     # 所有状态机错误的运行时异常
-│   ├── persistence/                       # 带乐观锁的状态持久化
-│   │   ├── StateRepository.java           # 仓库接口（findById、带版本 save）
-│   │   ├── InMemoryStateRepository.java   # 带原子版本的内存实现
-│   │   ├── VersionedState.java            # Record（state、version）
-│   │   └── OptimisticLockException.java   # 版本冲突异常
-│   ├── validation/                        # 构建时校验
-│   │   ├── StateMachineValidator.java     # 8 条校验规则（ERROR/WARNING 级别）
-│   │   └── ValidationError.java           # Record（rule、level、message、state、event）
-│   ├── idempotency/                       # 幂等事件处理
-│   │   ├── ProcessedEventStore.java       # 已处理事件 ID 的存储接口
-│   │   ├── InMemoryProcessedEventStore.java # 内存实现
-│   │   └── IdempotentStateMachineDecorator.java # 事件 ID 去重装饰器
-│   ├── metrics/                           # 可观测性（Micrometer 可选）
-│   │   ├── StateMachineMetrics.java       # 指标收集器（Timer/Counter，5 个指标）
-│   │   └── MonitoredStateMachine.java     # 自动埋点装饰器
-│   ├── eventsourcing/                     # 事件溯源 / 审计追踪
-│   │   ├── StateTransitionEvent.java      # 不可变迁移记录（timestamp、traceId、metadata）
-│   │   ├── StateTransitionStore.java      # 存储接口（append、replay、reconstruct、time-travel）
-│   │   ├── InMemoryStateTransitionStore.java # 线程安全内存实现
-│   │   └── EventSourcedStateMachine.java  # 自动记录装饰器
-│   ├── resilience/                        # 失败处理策略
-│   │   ├── FailureHandler.java            # 策略接口（NO_TRANSITION/GUARD_FAILED/ACTION_ERROR）
-│   │   ├── ThrowFailureHandler.java       # 抛出 StateMachineException（默认）
-│   │   ├── ReturnSourceFailureHandler.java # 返回源状态，accepted=false
-│   │   ├── FallbackStateFailureHandler.java # 迁移到配置的回退状态
-│   │   ├── RetryFailureHandler.java       # 固定/指数退避重试
-│   │   └── ResilientStateMachine.java     # 集成失败处理器的装饰器
-│   ├── timeout/                           # 定时超时事件
-│   │   ├── TimeoutConfig.java             # 状态超时配置（duration、event、repeat）
-│   │   ├── StateMachineTimeoutScheduler.java # 调度器接口
-│   │   ├── InMemoryTimeoutScheduler.java  # 基于 ScheduledExecutorService 的实现
-│   │   └── TimeoutAwareStateMachine.java  # 自动调度/取消装饰器
-│   ├── diagram/                           # 图生成
-│   │   └── StateMachineDiagramGenerator.java # Mermaid / PlantUML / 迁移表
-│   └── event/                             # 标准事件驱动基础设施
-│       ├── StandardEvent.java             # 标准事件契约（eventId、type、source、entityId、payload、traceId）
-│       ├── EventNormalizer.java           # 事件归一化器接口 <SRC, DST>
-│       └── EventDispatcher.java           # 事件分发器（处理器路由、拦截器）
-│
-└── cbol/                                   # CBOL 业务层
-    ├── enums/
-    │   ├── ConversationState.java          # 7 个状态：INITIATED、ACTIVE、TRANSFERRED、SURVEY_IN_PROGRESS、ENDING、ERROR、CLOSED
-    │   ├── ConversationFact.java           # 18 个事件（生命周期、转接、满意度调查、结束、系统、故障转移）
-    │   ├── InteractionState.java           # 通道层面状态
-    │   ├── EndReason.java                  # 会话结束原因
-    │   └── TransferOutcome.java            # 转接结果码
-    ├── model/
-    │   ├── ConversationInstance.java       # 不可变 record（conversationId、state、market、...）
-    │   ├── InteractionInstance.java        # 不可变 record（interactionId、channel、deviceType、...）
-    │   └── StateTransitionRecord.java      # 审计记录（fromState、toState、fact、durationMs、traceId）
-    ├── context/
-    │   ├── CbolStateContext.java           # 聚合上下文（conversation + interaction + marketConfig + trace）
-    │   ├── TraceContext.java               # 追踪标识符（traceId、spanId）
-    │   └── TraceMdcHelper.java             # SLF4J MDC 传播工具
-    ├── config/
-    │   ├── StateMachineMarketConfig.java   # 市场层面配置（超时、阈值）
-    │   └── MarketConfigProvider.java       # 配置提供者接口 + InMemoryProvider
-    ├── ingress/                            # 事件接入层
-    │   ├── AibotEvent.java                 # AIBot 外部事件 record
-    │   ├── GenesysEvent.java               # Genesys 外部事件 record
-    │   ├── AibotEventNormalizer.java       # AIBot → StandardEvent（4 种事件类型映射）
-    │   ├── GenesysEventNormalizer.java     # Genesys → StandardEvent（6 种事件类型映射）
-    │   └── CbolEventDispatcher.java         # 双状态机流水线分发器
-    ├── action/
-    │   ├── CbolAction.java                 # CBOL 动作的函数式接口
-    │   ├── ActionWorker.java               # 有界线程池异步执行器 + MDC 传播
-    │   └── CbolActionDefinition.java       # 动作元数据
-    ├── statemachine/
-    │   ├── ConversationStateMachineFactory.java  # 构建并注册会话状态机
-    │   ├── InteractionStateMachineFactory.java   # 通道层面状态机
-    │   ├── CbolStateMachineService.java    # 主服务入口（fire、审计日志、fireWithLock）
-    │   └── CbolStateMachineRegistry.java   # 共享注册表的单例持有者
-    ├── connector/                          # 业务连接器层
-    │   ├── Connector.java                  # 连接器接口 + 请求/响应 record + 异常
-    │   ├── AibotConnector.java             # AIBot API 连接器（sendMessage、triggerHandoff、endSession）
-    │   ├── GenesysConnector.java           # Genesys Cloud 连接器（routeToQueue、sendAgentMessage、transfer）
-    │   ├── CbolWebsocketConnector.java     # 客户 WebSocket 连接器（pushMessage、typingIndicator、会话管理）
-    │   └── ChatHistoryOdsConnector.java    # 聊天历史 ODS 连接器（saveMessage、saveStateChange、queryHistory）
-    ├── repository/                         # CBOL 持久化实现
-    │   └── ConversationRepository.java     # 会话状态仓库（乐观锁、实例存储）
-    └── monitor/
-        ├── AbstractTimeoutMonitor.java     # 基于时间的监控器基类
-        ├── CustomerIdleMonitor.java        # 空闲阈值超时时触发 SYS_CUSTOMER_IDLE
-        ├── TransferMonitor.java            # 转接耗时过长时触发 SYS_TRANSFER_TIMEOUT
-        └── EndingGraceMonitor.java         # 触发 SYS_ENDING_GRACE_TIMEOUT 关闭会话
+com.selfdevelopment.statemachine/
+├── api/                              # 核心接口
+│   ├── StateMachine.java             # 接口（生命周期、fireEvent、监听器、getAllTransitions）
+│   ├── Action.java                   # 迁移动作的函数式接口
+│   ├── Guard.java                    # guard 条件的函数式接口
+│   ├── StateMachineListener.java     # 8 个回调钩子
+│   └── StateMachineRegistry.java     # 用于共享机器的命名注册表
+├── core/                             # 核心实现
+│   ├── SimpleStateMachine.java       # 默认实现（无状态、表驱动）
+│   ├── Transition.java               # 迁移规则（source、event、target、guard、action、kind）
+│   ├── StateDef.java                 # 状态定义（进入/退出动作、初始/结束标志）
+│   ├── StateContext.java             # 迁移过程中传递的上下文对象
+│   ├── ExtendedState.java            # 跨迁移共享的键值变量
+│   └── TransitionKind.java           # EXTERNAL / INTERNAL 枚举
+├── builder/
+│   └── StateMachineBuilder.java      # 流式 DSL 构建器 + fromConfigurer() 工厂 + build(validate)
+├── config/                            # Spring 风格配置
+│   ├── StateMachineConfigurerAdapter.java
+│   ├── StateConfigurer.java
+│   ├── DefaultStateConfigurer.java
+│   ├── TransitionConfigurer.java
+│   └── DefaultTransitionConfigurer.java
+├── connector/                         # 通用 Connector 接口
+│   └── Connector.java
+├── event/                             # 标准事件驱动基础设施
+│   ├── StandardEvent.java
+│   ├── EventNormalizer.java
+│   └── EventDispatcher.java
+├── persistence/                       # 带乐观锁的状态持久化
+│   ├── StateRepository.java
+│   ├── InMemoryStateRepository.java
+│   ├── VersionedState.java
+│   └── OptimisticLockException.java
+├── validation/                        # 构建时校验
+│   ├── StateMachineValidator.java    # 8 条校验规则（ERROR/WARNING 级别）
+│   └── ValidationError.java
+├── idempotency/                       # 幂等事件处理
+│   ├── ProcessedEventStore.java
+│   ├── InMemoryProcessedEventStore.java
+│   └── IdempotentStateMachineDecorator.java
+├── metrics/                           # 可观测性（Micrometer 可选）
+│   ├── StateMachineMetrics.java
+│   └── MonitoredStateMachine.java
+├── eventsourcing/                     # 事件溯源 / 审计追踪
+│   ├── StateTransitionEvent.java
+│   ├── StateTransitionStore.java
+│   ├── InMemoryStateTransitionStore.java
+│   └── EventSourcedStateMachine.java
+├── resilience/                        # 失败处理策略
+│   ├── FailureHandler.java
+│   ├── ThrowFailureHandler.java
+│   ├── ReturnSourceFailureHandler.java
+│   ├── FallbackStateFailureHandler.java
+│   ├── RetryFailureHandler.java
+│   ├── ResilientStateMachine.java
+│   ├── FailoverStateMachine.java
+│   └── FailoverContext.java
+├── timeout/                           # 定时超时事件
+│   ├── TimeoutConfig.java
+│   ├── StateMachineTimeoutScheduler.java
+│   ├── InMemoryTimeoutScheduler.java
+│   └── TimeoutAwareStateMachine.java
+├── diagram/                           # 图生成
+│   └── StateMachineDiagramGenerator.java
+└── exception/
+    └── StateMachineException.java
+```
+
+### 4.2 chat-engine 模块 (com.selfdevelopment.chatengine)
+
+```
+com.selfdevelopment.chatengine/
+├── enums/
+│   ├── ConversationState.java          # 7 个状态：INITIATED、ACTIVE、TRANSFERRED、SURVEY_IN_PROGRESS、ENDING、ERROR、CLOSED
+│   ├── ConversationFact.java           # 18 个事件（生命周期、转接、满意度调查、结束、系统、故障转移）
+│   ├── EndReason.java
+│   └── TransferOutcome.java
+├── model/
+│   ├── ConversationInstance.java       # 不可变 record（conversationId、state、market、...）
+│   ├── InteractionInstance.java        # 简化的交互 record（用于上下文）
+│   └── StateTransitionRecord.java      # 审计记录
+├── context/
+│   ├── CbolStateContext.java           # 聚合上下文（conversation + interaction + marketConfig + trace）
+│   ├── TraceContext.java               # 追踪标识符（traceId、spanId）
+│   └── TraceMdcHelper.java             # SLF4J MDC 传播工具
+├── config/
+│   ├── StateMachineMarketConfig.java   # 市场层面配置
+│   └── MarketConfigProvider.java       # 配置提供者
+├── ingress/                             # 事件接入层
+│   ├── AibotEvent.java
+│   ├── AibotEventNormalizer.java
+│   └── ChatEngineEventDispatcher.java
+├── action/
+│   ├── CbolAction.java
+│   ├── ActionWorker.java               # 有界线程池异步执行器 + MDC 传播
+│   └── CbolActionDefinition.java
+├── statemachine/
+│   ├── factory/
+│   │   └── ConversationStateMachineFactory.java
+│   └── registry/
+│       └── CbolStateMachineRegistry.java
+├── service/
+│   └── ChatEngineStateMachineService.java  # 主服务入口
+├── connector/                           # Chat Engine 连接器
+│   ├── AibotConnector.java             # AIBot API 连接器
+│   └── ChatHistoryOdsConnector.java    # 聊天历史 ODS 连接器
+├── repository/
+│   └── ConversationRepository.java
+├── monitor/
+│   ├── AbstractTimeoutMonitor.java
+│   ├── CustomerIdleMonitor.java
+│   ├── TransferMonitor.java
+│   └── EndingGraceMonitor.java
+└── demo/
+    └── ChatEngineDemo.java              # 4 个演示场景
+```
+
+### 4.3 agent-connector 模块 (com.selfdevelopment.agentconnector)
+
+```
+com.selfdevelopment.agentconnector/
+├── enums/
+│   ├── InteractionState.java           # 6 个状态：CONNECTING、CONNECTED、RECONNECTING、HELD、TRANSFERRING、DISCONNECTED
+│   └── InteractionFact.java            # 14 个事件（连接生命周期、保持、转接）
+├── model/
+│   └── InteractionInstance.java        # 不可变 record（interactionId、channelType、state、...）
+├── context/
+│   └── AgentConnectorStateContext.java
+├── ingress/
+│   ├── GenesysEvent.java
+│   ├── GenesysEventNormalizer.java
+│   └── AgentConnectorEventDispatcher.java
+├── statemachine/
+│   ├── factory/
+│   │   └── InteractionStateMachineFactory.java
+│   └── registry/
+│       └── AgentConnectorStateMachineRegistry.java
+├── service/
+│   └── AgentConnectorStateMachineService.java
+├── connector/
+│   ├── GenesysConnector.java           # Genesys Cloud 连接器
+│   └── CbolWebsocketConnector.java     # 客户 WebSocket 连接器
+└── demo/
+    └── AgentConnectorDemo.java          # 6 个演示场景
 ```
 
 ## 5. 关键设计决策
@@ -287,10 +354,14 @@ com.selfdevelopment.ai.messaging/
 | ActionWorker 使用有界线程池 | 防止高负载下 OOM | CallerRunsPolicy 提供背压 |
 | 市场层面配置 | 多市场部署需要每市场调优 | InMemoryProvider 需要外部刷新机制 |
 | 通过 SLF4J MDC 传播 TraceId | 零代码改动实现全链路可观测性 | 必须在 finally 块中清除 MDC |
+| **多模块结构** | 清晰的关注点分离：核心 vs chat-engine vs agent-connector | 构建配置稍复杂 |
+| **无循环依赖** | chat-engine 和 agent-connector 仅依赖 statemachine-core | 跨模块通信必须通过明确定义的接口 |
+| **Survey 作为进行中状态** | 满意度调查流程由状态机控制，而非布尔标志 | 会话生命周期中增加了一个状态 |
+| **故障转移机制** | 未处理的异常触发 FAIL 事件，路由到失败分支 | 增加了 ERROR 状态和重试/中止事件 |
 
 ## 6. 相关文档
 
 - [01-State-Machine-Core-Design.md](./01-State-Machine-Core-Design.md) — 核心框架详细设计
-- [02-CBOL-Business-Layer-Design.md](./02-CBOL-Business-Layer-Design.md) — CBOL 业务层详细设计
+- [02-CBOL-Business-Layer-Design.md](./02-CBOL-Business-Layer-Design.md) — Chat Engine 业务层详细设计
 - [03-State-Transition-Diagrams.md](./03-State-Transition-Diagrams.md) — 状态图和迁移表
 - [04-Usage-Guide.md](./04-Usage-Guide.md) — 快速开始和使用示例

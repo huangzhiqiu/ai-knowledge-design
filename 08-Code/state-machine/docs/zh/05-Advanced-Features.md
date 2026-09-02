@@ -38,7 +38,7 @@ public class OptimisticLockException extends RuntimeException {
 ### 自动重试使用
 
 ```java
-CbolStateMachineService service = new CbolStateMachineService(machine, repository);
+ChatEngineStateMachineService service = new ChatEngineStateMachineService(machine, repository);
 
 // fireWithLock 在版本冲突时自动重试（默认 3 次）
 StateContext<ConversationState, ConversationFact, CbolStateContext> result =

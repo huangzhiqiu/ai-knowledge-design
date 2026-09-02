@@ -19,8 +19,8 @@
 ### 1.2 构建并注册状态机
 
 ```java
-import com.selfdevelopment.ai.messaging.cbol.statemachine.ConversationStateMachineFactory;
-import com.selfdevelopment.ai.messaging.statemachine.core.StateMachine;
+import com.selfdevelopment.chatengine.statemachine.ConversationStateMachineFactory;
+import com.selfdevelopment.statemachine.core.StateMachine;
 
 // 构建并注册（在应用启动时调用一次）
 StateMachine<ConversationState, ConversationFact, CbolStateContext> machine =
@@ -30,12 +30,12 @@ StateMachine<ConversationState, ConversationFact, CbolStateContext> machine =
 ### 1.3 触发事件
 
 ```java
-import com.selfdevelopment.ai.messaging.cbol.statemachine.CbolStateMachineService;
-import com.selfdevelopment.ai.messaging.cbol.context.CbolStateContext;
-import com.selfdevelopment.ai.messaging.cbol.context.TraceContext;
-import com.selfdevelopment.ai.messaging.cbol.config.StateMachineMarketConfig;
-import com.selfdevelopment.ai.messaging.cbol.model.ConversationInstance;
-import com.selfdevelopment.ai.messaging.statemachine.core.StateContext;
+import com.selfdevelopment.chatengine.statemachine.ChatEngineStateMachineService;
+import com.selfdevelopment.chatengine.context.CbolStateContext;
+import com.selfdevelopment.chatengine.context.TraceContext;
+import com.selfdevelopment.chatengine.config.StateMachineMarketConfig;
+import com.selfdevelopment.chatengine.model.ConversationInstance;
+import com.selfdevelopment.statemachine.core.StateContext;
 
 // 1. 构建上下文
 CbolStateContext ctx = CbolStateContext.builder()
@@ -50,7 +50,7 @@ CbolStateContext ctx = CbolStateContext.builder()
     .build();
 
 // 2. 触发事件
-CbolStateMachineService service = new CbolStateMachineService();
+ChatEngineStateMachineService service = new ChatEngineStateMachineService();
 StateContext<ConversationState, ConversationFact, CbolStateContext> result =
     service.fire(ctx, ConversationFact.CUSTOMER_CONNECT);
 
@@ -235,7 +235,7 @@ CbolStateContext ctx = CbolStateContext.builder()
 ### 6.1 设置监控器
 
 ```java
-CbolStateMachineService service = new CbolStateMachineService();
+ChatEngineStateMachineService service = new ChatEngineStateMachineService();
 
 CustomerIdleMonitor idleMonitor = new CustomerIdleMonitor(service);
 TransferMonitor transferMonitor = new TransferMonitor(service);
@@ -344,7 +344,7 @@ if (machine.canFire(conversation.getState(), event, context)) {
 void shouldTransitionFromInitiatedToActiveOnCustomerConnect() {
     // Given
     ConversationStateMachineFactory.build();
-    CbolStateMachineService service = new CbolStateMachineService();
+    ChatEngineStateMachineService service = new ChatEngineStateMachineService();
     CbolStateContext ctx = buildTestContext(ConversationState.INITIATED);
 
     // When
@@ -358,7 +358,7 @@ void shouldTransitionFromInitiatedToActiveOnCustomerConnect() {
 
 @Test
 void shouldThrowWhenNoTransitionExists() {
-    CbolStateMachineService service = new CbolStateMachineService();
+    ChatEngineStateMachineService service = new ChatEngineStateMachineService();
     CbolStateContext ctx = buildTestContext(ConversationState.CLOSED);
 
     assertThrows(StateMachineException.class,
@@ -412,8 +412,8 @@ public class StateMachineConfig {
     }
 
     @Bean
-    public CbolStateMachineService cbolStateMachineService() {
-        return new CbolStateMachineService();
+    public ChatEngineStateMachineService ChatEngineStateMachineService() {
+        return new ChatEngineStateMachineService();
     }
 
     @Bean
@@ -470,7 +470,7 @@ StateRepository<ConversationState> repository = new InMemoryStateRepository<>();
 repository.save("conv-123", ConversationState.INITIATED, 0);
 
 // 加载并使用乐观锁迁移
-CbolStateMachineService service = new CbolStateMachineService(machine, repository);
+ChatEngineStateMachineService service = new ChatEngineStateMachineService(machine, repository);
 StateContext<...> result = service.fireWithLock("conv-123", ConversationFact.USER_MESSAGE, ctx);
 // 版本冲突时自动重试最多 3 次
 ```

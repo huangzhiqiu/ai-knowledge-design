@@ -248,7 +248,7 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    A[CbolStateMachineService.fire] --> B[从 DB 加载会话]
+    A[ChatEngineStateMachineService.fire] --> B[从 DB 加载会话]
     B --> C[解析市场配置]
     C --> D[fireEvent sourceState, event, context]
 

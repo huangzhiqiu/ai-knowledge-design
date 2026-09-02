@@ -44,4 +44,4 @@
 
 - [06-Multi-Market-Design.md](../06-Multi-Market-Design.md) — 高层架构决策（混合方法）
 - 本文件夹 — 每个最佳实践的详细实施设计
-- [02-CBOL-Business-Layer-Design.md](../02-CBOL-Business-Layer-Design.md) — 带基础市场配置的当前 CBOL 业务层
+- [02-CBOL-Business-Layer-Design.md](../02-CBOL-Business-Layer-Design.md) — 带基础市场配置的当前 Chat Engine 业务层

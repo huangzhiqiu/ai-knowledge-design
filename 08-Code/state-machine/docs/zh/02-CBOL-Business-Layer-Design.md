@@ -1,4 +1,4 @@
-# CBOL 业务层设计
+# Chat Engine 业务层设计
 
 > 版本：1.0 | 最后更新：2026-09-01
 
@@ -250,7 +250,7 @@ public interface MarketConfigProvider {
 
 ```java
 public abstract class AbstractTimeoutMonitor {
-    protected final CbolStateMachineService cbolStateMachineService;
+    protected final ChatEngineStateMachineService ChatEngineStateMachineService;
 
     protected abstract boolean isApplicable(ConversationState state);
     protected abstract long timeoutSeconds(CbolStateContext ctx);
@@ -261,7 +261,7 @@ public abstract class AbstractTimeoutMonitor {
         long timeoutMs = TimeUnit.SECONDS.toMillis(timeoutSeconds(ctx));
         long elapsedMs = System.currentTimeMillis() - referenceTs;
         if (elapsedMs >= timeoutMs) {
-            cbolStateMachineService.fire(ctx, timeoutEvent());
+            ChatEngineStateMachineService.fire(ctx, timeoutEvent());
         }
     }
 }
@@ -352,15 +352,15 @@ sequenceDiagram
     Pool->>MDC: remove("traceId") [finally]
 ```
 
-## 8. CbolStateMachineService
+## 8. ChatEngineStateMachineService
 
 ### 8.1 主入口
 
 ```java
-public class CbolStateMachineService {
+public class ChatEngineStateMachineService {
     private final StateMachine<ConversationState, ConversationFact, CbolStateContext> convSm;
 
-    public CbolStateMachineService() {
+    public ChatEngineStateMachineService() {
         this.convSm = CbolStateMachineRegistry.get(ConversationStateMachineFactory.MACHINE_ID);
     }
 
@@ -467,7 +467,7 @@ public final class CbolStateMachineRegistry {
 ```mermaid
 sequenceDiagram
     participant API as REST/WebSocket API
-    participant Svc as CbolStateMachineService
+    participant Svc as ChatEngineStateMachineService
     participant SM as StateMachine
     participant Repo as 会话仓库
     participant Log as 审计日志
@@ -487,7 +487,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant Svc as CbolStateMachineService
+    participant Svc as ChatEngineStateMachineService
     participant SM as StateMachine
     participant Repo as 仓库
 

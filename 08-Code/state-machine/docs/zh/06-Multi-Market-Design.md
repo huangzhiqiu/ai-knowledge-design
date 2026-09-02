@@ -346,7 +346,7 @@ extensions.forEach(ext -> ext.registerTransitions(builder));
 ### 3.4 市场感知服务层
 
 ```java
-public class CbolStateMachineService {
+public class ChatEngineStateMachineService {
     private final StateMachine<ConversationState, ConversationFact, CbolStateContext> machine;
     private final MarketConfigProvider configProvider;
 
@@ -491,4 +491,4 @@ public class CbolStateMachineService {
 - 现有 `StateMachineMarketConfig` — 当前配置模型（需要扩展）
 - 现有 `MarketConfigProvider` — 配置提供者接口（需要 YAML 加载器）
 - `05-Advanced-Features.md` — 与多市场无缝协作的装饰器模式（Failover、Resilient）
-- `02-CBOL-Business-Layer-Design.md` — 当前 CBOL 业务层设计
+- `02-CBOL-Business-Layer-Design.md` — 当前 Chat Engine 业务层设计
