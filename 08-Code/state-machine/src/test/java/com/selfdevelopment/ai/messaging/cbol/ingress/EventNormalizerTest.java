@@ -1,5 +1,7 @@
 package com.selfdevelopment.ai.messaging.cbol.ingress;
 
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
+
 import com.selfdevelopment.ai.messaging.statemachine.event.StandardEvent;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

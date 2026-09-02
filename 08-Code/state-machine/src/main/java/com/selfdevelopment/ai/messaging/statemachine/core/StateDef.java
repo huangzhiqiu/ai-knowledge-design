@@ -1,5 +1,9 @@
 package com.selfdevelopment.ai.messaging.statemachine.core;
 
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
+
+import com.selfdevelopment.ai.messaging.statemachine.api.Action;
+
 import lombok.Getter;
 
 import java.util.Objects;

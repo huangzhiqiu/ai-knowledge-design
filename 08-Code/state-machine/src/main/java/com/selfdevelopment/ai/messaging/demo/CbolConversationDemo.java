@@ -6,9 +6,9 @@ import com.selfdevelopment.ai.messaging.cbol.context.TraceContext;
 import com.selfdevelopment.ai.messaging.cbol.enums.ConversationFact;
 import com.selfdevelopment.ai.messaging.cbol.enums.ConversationState;
 import com.selfdevelopment.ai.messaging.cbol.model.ConversationInstance;
-import com.selfdevelopment.ai.messaging.cbol.statemachine.ConversationStateMachineFactory;
+import com.selfdevelopment.ai.messaging.cbol.statemachine.factory.ConversationStateMachineFactory;
 import com.selfdevelopment.ai.messaging.statemachine.core.StateContext;
-import com.selfdevelopment.ai.messaging.statemachine.core.StateMachine;
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
 
 /**
  * CBOL (AI Messaging Hub) business layer demo.

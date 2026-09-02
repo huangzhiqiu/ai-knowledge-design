@@ -1,5 +1,9 @@
 package com.selfdevelopment.ai.messaging.statemachine.validation;
 
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
+
+import com.selfdevelopment.ai.messaging.statemachine.api.Guard;
+
 import com.selfdevelopment.ai.messaging.statemachine.core.Transition;
 import com.selfdevelopment.ai.messaging.statemachine.core.TransitionKind;
 import org.junit.jupiter.api.BeforeEach;

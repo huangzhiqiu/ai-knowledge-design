@@ -1,8 +1,16 @@
 package com.selfdevelopment.ai.messaging.statemachine.idempotency;
 
+import com.selfdevelopment.ai.messaging.statemachine.idempotency.impl.InMemoryProcessedEventStore;
+
+import com.selfdevelopment.ai.messaging.statemachine.idempotency.impl.IdempotentStateMachineDecorator;
+
+import com.selfdevelopment.ai.messaging.statemachine.core.Transition;
+
+import com.selfdevelopment.ai.messaging.statemachine.api.Action;
+
 import com.selfdevelopment.ai.messaging.statemachine.builder.StateMachineBuilder;
 import com.selfdevelopment.ai.messaging.statemachine.core.StateContext;
-import com.selfdevelopment.ai.messaging.statemachine.core.StateMachine;
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

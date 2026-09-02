@@ -1,5 +1,11 @@
 package com.selfdevelopment.ai.messaging.statemachine.config;
 
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
+
+import com.selfdevelopment.ai.messaging.statemachine.api.Guard;
+
+import com.selfdevelopment.ai.messaging.statemachine.api.Action;
+
 /**
  * Adapter class for configuring a state machine.
  * <p>

@@ -5,11 +5,11 @@ import com.selfdevelopment.ai.messaging.statemachine.config.DefaultTransitionCon
 import com.selfdevelopment.ai.messaging.statemachine.config.StateConfigurer;
 import com.selfdevelopment.ai.messaging.statemachine.config.StateMachineConfigurerAdapter;
 import com.selfdevelopment.ai.messaging.statemachine.config.TransitionConfigurer;
-import com.selfdevelopment.ai.messaging.statemachine.core.Action;
-import com.selfdevelopment.ai.messaging.statemachine.core.Guard;
+import com.selfdevelopment.ai.messaging.statemachine.api.Action;
+import com.selfdevelopment.ai.messaging.statemachine.api.Guard;
 import com.selfdevelopment.ai.messaging.statemachine.core.SimpleStateMachine;
 import com.selfdevelopment.ai.messaging.statemachine.core.StateDef;
-import com.selfdevelopment.ai.messaging.statemachine.core.StateMachine;
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
 import com.selfdevelopment.ai.messaging.statemachine.core.Transition;
 import com.selfdevelopment.ai.messaging.statemachine.core.TransitionKind;
 import com.selfdevelopment.ai.messaging.statemachine.exception.StateMachineException;

@@ -2,7 +2,7 @@ package com.selfdevelopment.ai.messaging.cbol.repository;
 
 import com.selfdevelopment.ai.messaging.cbol.enums.ConversationState;
 import com.selfdevelopment.ai.messaging.cbol.model.ConversationInstance;
-import com.selfdevelopment.ai.messaging.statemachine.persistence.InMemoryStateRepository;
+import com.selfdevelopment.ai.messaging.statemachine.persistence.impl.InMemoryStateRepository;
 import com.selfdevelopment.ai.messaging.statemachine.persistence.StateRepository;
 import com.selfdevelopment.ai.messaging.statemachine.persistence.VersionedState;
 import org.slf4j.Logger;

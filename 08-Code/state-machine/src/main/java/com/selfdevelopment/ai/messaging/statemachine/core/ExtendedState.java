@@ -1,5 +1,7 @@
 package com.selfdevelopment.ai.messaging.statemachine.core;
 
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
+
 import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;

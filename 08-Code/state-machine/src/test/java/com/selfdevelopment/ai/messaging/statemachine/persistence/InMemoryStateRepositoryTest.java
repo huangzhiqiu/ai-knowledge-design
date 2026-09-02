@@ -1,5 +1,9 @@
 package com.selfdevelopment.ai.messaging.statemachine.persistence;
 
+import com.selfdevelopment.ai.messaging.statemachine.persistence.impl.InMemoryStateRepository;
+
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

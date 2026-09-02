@@ -1,5 +1,7 @@
 package com.selfdevelopment.ai.messaging.statemachine.event;
 
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
+
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;

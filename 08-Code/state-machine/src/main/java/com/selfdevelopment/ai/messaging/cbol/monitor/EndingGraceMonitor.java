@@ -3,7 +3,7 @@ package com.selfdevelopment.ai.messaging.cbol.monitor;
 import com.selfdevelopment.ai.messaging.cbol.context.CbolStateContext;
 import com.selfdevelopment.ai.messaging.cbol.enums.ConversationFact;
 import com.selfdevelopment.ai.messaging.cbol.enums.ConversationState;
-import com.selfdevelopment.ai.messaging.cbol.statemachine.CbolStateMachineService;
+import com.selfdevelopment.ai.messaging.cbol.service.CbolStateMachineService;
 
 /**
  * Monitors ending grace period and fires SYS_ENDING_GRACE_TIMEOUT when the threshold is exceeded.

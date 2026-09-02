@@ -1,8 +1,10 @@
 package com.selfdevelopment.ai.messaging.statemachine.metrics;
 
+import com.selfdevelopment.ai.messaging.statemachine.core.Transition;
+
 import com.selfdevelopment.ai.messaging.statemachine.builder.StateMachineBuilder;
 import com.selfdevelopment.ai.messaging.statemachine.core.StateContext;
-import com.selfdevelopment.ai.messaging.statemachine.core.StateMachine;
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
 import com.selfdevelopment.ai.messaging.statemachine.exception.StateMachineException;
 import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;

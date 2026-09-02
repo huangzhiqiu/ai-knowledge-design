@@ -1,8 +1,22 @@
 package com.selfdevelopment.ai.messaging.statemachine.resilience;
 
+import com.selfdevelopment.ai.messaging.statemachine.resilience.impl.ThrowFailureHandler;
+
+import com.selfdevelopment.ai.messaging.statemachine.resilience.impl.RetryFailureHandler;
+
+import com.selfdevelopment.ai.messaging.statemachine.resilience.impl.ResilientStateMachine;
+
+import com.selfdevelopment.ai.messaging.statemachine.resilience.impl.ReturnSourceFailureHandler;
+
+import com.selfdevelopment.ai.messaging.statemachine.resilience.impl.FallbackStateFailureHandler;
+
+import com.selfdevelopment.ai.messaging.statemachine.core.Transition;
+
+import com.selfdevelopment.ai.messaging.statemachine.api.Action;
+
 import com.selfdevelopment.ai.messaging.statemachine.builder.StateMachineBuilder;
 import com.selfdevelopment.ai.messaging.statemachine.core.StateContext;
-import com.selfdevelopment.ai.messaging.statemachine.core.StateMachine;
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
 import com.selfdevelopment.ai.messaging.statemachine.exception.StateMachineException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

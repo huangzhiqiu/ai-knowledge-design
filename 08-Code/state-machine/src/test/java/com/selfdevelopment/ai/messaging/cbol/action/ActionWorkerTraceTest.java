@@ -1,5 +1,9 @@
 package com.selfdevelopment.ai.messaging.cbol.action;
 
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
+
+import com.selfdevelopment.ai.messaging.statemachine.api.Action;
+
 import com.selfdevelopment.ai.messaging.cbol.config.StateMachineMarketConfig;
 import com.selfdevelopment.ai.messaging.cbol.context.CbolStateContext;
 import com.selfdevelopment.ai.messaging.cbol.context.TraceContext;

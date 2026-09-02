@@ -1,6 +1,8 @@
 package com.selfdevelopment.ai.messaging.statemachine.config;
 
-import com.selfdevelopment.ai.messaging.statemachine.core.Action;
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
+
+import com.selfdevelopment.ai.messaging.statemachine.api.Action;
 import com.selfdevelopment.ai.messaging.statemachine.core.StateDef;
 
 import java.util.Map;

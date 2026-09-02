@@ -1,5 +1,7 @@
 package com.selfdevelopment.ai.messaging.cbol.action;
 
+import com.selfdevelopment.ai.messaging.cbol.context.TraceContext;
+
 import com.selfdevelopment.ai.messaging.cbol.context.CbolStateContext;
 import com.selfdevelopment.ai.messaging.cbol.context.TraceMdcHelper;
 import lombok.extern.slf4j.Slf4j;

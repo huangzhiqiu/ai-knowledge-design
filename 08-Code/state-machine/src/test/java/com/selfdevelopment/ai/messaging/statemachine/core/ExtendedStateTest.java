@@ -1,5 +1,7 @@
 package com.selfdevelopment.ai.messaging.statemachine.core;
 
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

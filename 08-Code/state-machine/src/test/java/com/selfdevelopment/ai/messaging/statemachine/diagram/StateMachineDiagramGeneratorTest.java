@@ -1,7 +1,13 @@
 package com.selfdevelopment.ai.messaging.statemachine.diagram;
 
+import com.selfdevelopment.ai.messaging.statemachine.api.Guard;
+
+import com.selfdevelopment.ai.messaging.statemachine.core.Transition;
+
+import com.selfdevelopment.ai.messaging.statemachine.api.Action;
+
 import com.selfdevelopment.ai.messaging.statemachine.builder.StateMachineBuilder;
-import com.selfdevelopment.ai.messaging.statemachine.core.StateMachine;
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

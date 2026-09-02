@@ -1,5 +1,13 @@
 package com.selfdevelopment.ai.messaging.cbol.statemachine;
 
+import com.selfdevelopment.ai.messaging.cbol.statemachine.registry.CbolStateMachineRegistry;
+
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
+
+import com.selfdevelopment.ai.messaging.cbol.service.CbolStateMachineService;
+
+import com.selfdevelopment.ai.messaging.cbol.statemachine.factory.ConversationStateMachineFactory;
+
 import com.selfdevelopment.ai.messaging.cbol.config.StateMachineMarketConfig;
 import com.selfdevelopment.ai.messaging.cbol.context.CbolStateContext;
 import com.selfdevelopment.ai.messaging.cbol.context.TraceContext;
@@ -7,7 +15,7 @@ import com.selfdevelopment.ai.messaging.cbol.enums.ConversationFact;
 import com.selfdevelopment.ai.messaging.cbol.enums.ConversationState;
 import com.selfdevelopment.ai.messaging.cbol.model.ConversationInstance;
 import com.selfdevelopment.ai.messaging.statemachine.core.StateContext;
-import com.selfdevelopment.ai.messaging.statemachine.persistence.InMemoryStateRepository;
+import com.selfdevelopment.ai.messaging.statemachine.persistence.impl.InMemoryStateRepository;
 import com.selfdevelopment.ai.messaging.statemachine.persistence.OptimisticLockException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

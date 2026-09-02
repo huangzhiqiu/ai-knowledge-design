@@ -2,7 +2,7 @@ package com.selfdevelopment.ai.messaging.demo;
 
 import com.selfdevelopment.ai.messaging.statemachine.builder.StateMachineBuilder;
 import com.selfdevelopment.ai.messaging.statemachine.core.StateContext;
-import com.selfdevelopment.ai.messaging.statemachine.core.StateMachine;
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
 
 /**
  * Basic state machine usage demo.

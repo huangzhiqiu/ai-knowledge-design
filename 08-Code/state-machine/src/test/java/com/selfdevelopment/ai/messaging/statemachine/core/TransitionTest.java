@@ -1,5 +1,11 @@
 package com.selfdevelopment.ai.messaging.statemachine.core;
 
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
+
+import com.selfdevelopment.ai.messaging.statemachine.api.Guard;
+
+import com.selfdevelopment.ai.messaging.statemachine.api.Action;
+
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.atomic.AtomicInteger;

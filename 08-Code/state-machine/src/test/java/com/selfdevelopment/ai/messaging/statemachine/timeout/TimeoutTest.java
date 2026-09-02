@@ -1,8 +1,16 @@
 package com.selfdevelopment.ai.messaging.statemachine.timeout;
 
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachineListener;
+
+import com.selfdevelopment.ai.messaging.statemachine.core.Transition;
+
+import com.selfdevelopment.ai.messaging.statemachine.timeout.impl.InMemoryTimeoutScheduler;
+
+import com.selfdevelopment.ai.messaging.statemachine.timeout.impl.TimeoutAwareStateMachine;
+
 import com.selfdevelopment.ai.messaging.statemachine.builder.StateMachineBuilder;
 import com.selfdevelopment.ai.messaging.statemachine.core.StateContext;
-import com.selfdevelopment.ai.messaging.statemachine.core.StateMachine;
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -287,7 +295,7 @@ class TimeoutTest {
         );
 
         // Add a listener to detect the timeout transition
-        machine.addListener(new com.selfdevelopment.ai.messaging.statemachine.listener.StateMachineListener<>() {
+        machine.addListener(new com.selfdevelopment.ai.messaging.statemachine.api.StateMachineListener<>() {
             @Override
             public void stateChanged(StateContext<TestState, TestEvent, Void> context) {
                 if (context.getEvent() == TestEvent.TIMEOUT) {

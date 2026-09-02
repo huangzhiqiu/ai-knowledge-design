@@ -1,5 +1,13 @@
 package com.selfdevelopment.ai.messaging.cbol.statemachine;
 
+import com.selfdevelopment.ai.messaging.cbol.statemachine.registry.CbolStateMachineRegistry;
+
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
+
+import com.selfdevelopment.ai.messaging.cbol.service.CbolStateMachineService;
+
+import com.selfdevelopment.ai.messaging.cbol.statemachine.factory.ConversationStateMachineFactory;
+
 import com.selfdevelopment.ai.messaging.cbol.config.StateMachineMarketConfig;
 import com.selfdevelopment.ai.messaging.cbol.context.CbolStateContext;
 import com.selfdevelopment.ai.messaging.cbol.context.TraceContext;

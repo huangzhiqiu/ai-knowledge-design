@@ -1,11 +1,17 @@
 package com.selfdevelopment.ai.messaging.statemachine.core;
 
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
+
+import com.selfdevelopment.ai.messaging.statemachine.api.Guard;
+
+import com.selfdevelopment.ai.messaging.statemachine.api.Action;
+
 import com.selfdevelopment.ai.messaging.statemachine.builder.StateMachineBuilder;
 import com.selfdevelopment.ai.messaging.statemachine.config.StateConfigurer;
 import com.selfdevelopment.ai.messaging.statemachine.config.StateMachineConfigurerAdapter;
 import com.selfdevelopment.ai.messaging.statemachine.config.TransitionConfigurer;
 import com.selfdevelopment.ai.messaging.statemachine.exception.StateMachineException;
-import com.selfdevelopment.ai.messaging.statemachine.listener.StateMachineListener;
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachineListener;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

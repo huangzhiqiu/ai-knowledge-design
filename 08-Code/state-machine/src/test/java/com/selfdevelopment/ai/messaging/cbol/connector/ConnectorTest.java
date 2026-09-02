@@ -1,5 +1,13 @@
 package com.selfdevelopment.ai.messaging.cbol.connector;
 
+import com.selfdevelopment.ai.messaging.cbol.connector.impl.GenesysConnector;
+
+import com.selfdevelopment.ai.messaging.cbol.connector.impl.AibotConnector;
+
+import com.selfdevelopment.ai.messaging.cbol.connector.impl.ChatHistoryOdsConnector;
+
+import com.selfdevelopment.ai.messaging.cbol.connector.impl.CbolWebsocketConnector;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

@@ -1,5 +1,15 @@
 package com.selfdevelopment.ai.messaging.cbol.statemachine;
 
+import com.selfdevelopment.ai.messaging.statemachine.exception.StateMachineException;
+
+import com.selfdevelopment.ai.messaging.cbol.statemachine.registry.CbolStateMachineRegistry;
+
+import com.selfdevelopment.ai.messaging.cbol.statemachine.factory.ConversationStateMachineFactory;
+
+import com.selfdevelopment.ai.messaging.statemachine.core.Transition;
+
+import com.selfdevelopment.ai.messaging.statemachine.api.Action;
+
 import com.selfdevelopment.ai.messaging.cbol.config.StateMachineMarketConfig;
 import com.selfdevelopment.ai.messaging.cbol.context.CbolStateContext;
 import com.selfdevelopment.ai.messaging.cbol.context.TraceContext;
@@ -8,8 +18,8 @@ import com.selfdevelopment.ai.messaging.cbol.enums.ConversationState;
 import com.selfdevelopment.ai.messaging.cbol.model.ConversationInstance;
 import com.selfdevelopment.ai.messaging.cbol.model.InteractionInstance;
 import com.selfdevelopment.ai.messaging.statemachine.core.StateContext;
-import com.selfdevelopment.ai.messaging.statemachine.core.StateMachine;
-import com.selfdevelopment.ai.messaging.statemachine.resilience.FailoverStateMachine;
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
+import com.selfdevelopment.ai.messaging.statemachine.resilience.impl.FailoverStateMachine;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;

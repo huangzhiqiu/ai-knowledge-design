@@ -1,7 +1,9 @@
 package com.selfdevelopment.ai.messaging.statemachine.config;
 
-import com.selfdevelopment.ai.messaging.statemachine.core.Action;
-import com.selfdevelopment.ai.messaging.statemachine.core.Guard;
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
+
+import com.selfdevelopment.ai.messaging.statemachine.api.Action;
+import com.selfdevelopment.ai.messaging.statemachine.api.Guard;
 import com.selfdevelopment.ai.messaging.statemachine.core.Transition;
 import com.selfdevelopment.ai.messaging.statemachine.core.TransitionKind;
 

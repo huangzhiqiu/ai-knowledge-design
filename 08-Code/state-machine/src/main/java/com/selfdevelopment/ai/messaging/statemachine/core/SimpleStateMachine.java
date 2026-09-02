@@ -1,7 +1,13 @@
 package com.selfdevelopment.ai.messaging.statemachine.core;
 
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachine;
+
+import com.selfdevelopment.ai.messaging.statemachine.api.Guard;
+
+import com.selfdevelopment.ai.messaging.statemachine.api.Action;
+
 import com.selfdevelopment.ai.messaging.statemachine.exception.StateMachineException;
-import com.selfdevelopment.ai.messaging.statemachine.listener.StateMachineListener;
+import com.selfdevelopment.ai.messaging.statemachine.api.StateMachineListener;
 
 import java.util.Collection;
 import java.util.Collections;
