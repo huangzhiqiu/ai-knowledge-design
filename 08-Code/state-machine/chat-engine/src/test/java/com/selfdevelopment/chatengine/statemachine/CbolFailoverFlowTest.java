@@ -16,7 +16,6 @@ import com.selfdevelopment.chatengine.context.TraceContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
 import com.selfdevelopment.chatengine.model.ConversationInstance;
-import com.selfdevelopment.chatengine.model.InteractionInstance;
 import com.selfdevelopment.statemachine.core.StateContext;
 import com.selfdevelopment.statemachine.api.StateMachine;
 import com.selfdevelopment.statemachine.resilience.impl.FailoverStateMachine;
@@ -61,12 +60,8 @@ class CbolFailoverFlowTest {
                 .market("SG")
                 .state(state)
                 .build();
-        InteractionInstance interaction = InteractionInstance.builder()
-                .interactionId("int-failover-001")
-                .build();
         return CbolStateContext.builder()
                 .conversation(conv)
-                .interaction(interaction)
                 .marketConfig(StateMachineMarketConfig.defaultConfig())
                 .traceContext(TraceContext.generate())
                 .build();

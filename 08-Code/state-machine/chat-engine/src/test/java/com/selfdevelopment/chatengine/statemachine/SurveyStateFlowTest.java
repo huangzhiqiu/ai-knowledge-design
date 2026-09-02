@@ -14,7 +14,6 @@ import com.selfdevelopment.chatengine.context.TraceContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
 import com.selfdevelopment.chatengine.model.ConversationInstance;
-import com.selfdevelopment.chatengine.model.InteractionInstance;
 import com.selfdevelopment.statemachine.core.StateContext;
 import com.selfdevelopment.statemachine.exception.StateMachineException;
 import org.junit.jupiter.api.AfterAll;
@@ -51,12 +50,8 @@ class SurveyStateFlowTest {
                 .state(state)
                 .surveyEnabled(surveyEnabled)
                 .build();
-        InteractionInstance interaction = InteractionInstance.builder()
-                .interactionId("int-survey-001")
-                .build();
         return CbolStateContext.builder()
                 .conversation(conv)
-                .interaction(interaction)
                 .marketConfig(StateMachineMarketConfig.defaultConfig())
                 .traceContext(TraceContext.generate())
                 .build();

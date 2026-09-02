@@ -7,7 +7,6 @@ import com.selfdevelopment.chatengine.context.TraceMdcHelper;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
 import com.selfdevelopment.chatengine.model.ConversationInstance;
-import com.selfdevelopment.chatengine.model.InteractionInstance;
 import com.selfdevelopment.statemachine.api.Action;
 import com.selfdevelopment.statemachine.core.StateContext;
 import org.junit.jupiter.api.AfterEach;
@@ -32,10 +31,8 @@ class ActionWorkerTraceTest {
         worker = new ActionWorker();
         traceContext = TraceContext.generate();
         ConversationInstance conv = ConversationInstance.builder().conversationId("conv-002").build();
-        InteractionInstance interaction = InteractionInstance.builder().interactionId("int-002").build();
         businessCtx = CbolStateContext.builder()
                 .conversation(conv)
-                .interaction(interaction)
                 .marketConfig(StateMachineMarketConfig.defaultConfig())
                 .traceContext(traceContext)
                 .build();

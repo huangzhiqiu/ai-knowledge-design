@@ -196,7 +196,6 @@ public class ChatEngineStateMachineService {
     private CbolStateContext withState(CbolStateContext ctx, ConversationState state) {
         return CbolStateContext.builder()
                 .conversation(ctx.conversation().withState(state))
-                .interaction(ctx.interaction())
                 .marketConfig(ctx.marketConfig())
                 .traceContext(ctx.traceContext())
                 .build();

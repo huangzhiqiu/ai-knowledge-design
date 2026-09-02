@@ -6,7 +6,6 @@ import com.selfdevelopment.chatengine.context.TraceContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
 import com.selfdevelopment.chatengine.model.ConversationInstance;
-import com.selfdevelopment.chatengine.model.InteractionInstance;
 import com.selfdevelopment.chatengine.service.ChatEngineStateMachineService;
 import com.selfdevelopment.chatengine.statemachine.factory.ConversationStateMachineFactory;
 import com.selfdevelopment.statemachine.core.StateContext;
@@ -317,23 +316,18 @@ public class ChatEngineDemo {
 
     /**
      * Creates a CbolStateContext with the given conversation and market.
+     * <p>
+     * Note: InteractionInstance is intentionally NOT included here.
+     * Conversation (chat-engine) and Interaction (agent-connector) are
+     * independent state machines that communicate via events.
      */
     private static CbolStateContext createContext(ConversationInstance conversation, String market) {
         TraceContext traceContext = TraceContext.generate();
-
-        InteractionInstance interaction = InteractionInstance.builder()
-                .interactionId("int-" + conversation.conversationId())
-                .conversationId(conversation.conversationId())
-                .channelType("WEBCHAT")
-                .state("CONNECTED")
-                .needReconnect(false)
-                .build();
 
         StateMachineMarketConfig marketConfig = StateMachineMarketConfig.defaultConfig();
 
         return CbolStateContext.builder()
                 .conversation(conversation)
-                .interaction(interaction)
                 .marketConfig(marketConfig)
                 .traceContext(traceContext)
                 .build();
@@ -346,7 +340,6 @@ public class ChatEngineDemo {
         ConversationInstance updatedConversation = ctx.conversation().withState(newState);
         return CbolStateContext.builder()
                 .conversation(updatedConversation)
-                .interaction(ctx.interaction())
                 .marketConfig(ctx.marketConfig())
                 .traceContext(ctx.traceContext())
                 .build();

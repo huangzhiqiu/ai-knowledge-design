@@ -10,7 +10,6 @@ import com.selfdevelopment.chatengine.context.TraceContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
 import com.selfdevelopment.chatengine.model.ConversationInstance;
-import com.selfdevelopment.chatengine.model.InteractionInstance;
 import com.selfdevelopment.chatengine.statemachine.registry.CbolStateMachineRegistry;
 import com.selfdevelopment.chatengine.service.ChatEngineStateMachineService;
 import com.selfdevelopment.chatengine.statemachine.factory.ConversationStateMachineFactory;
@@ -53,12 +52,8 @@ class AllMonitorsTest {
                 .market("SG")
                 .state(state)
                 .build();
-        InteractionInstance interaction = InteractionInstance.builder()
-                .interactionId("int-mon-01")
-                .build();
         return CbolStateContext.builder()
                 .conversation(conv)
-                .interaction(interaction)
                 .marketConfig(config)
                 .traceContext(TraceContext.generate())
                 .build();

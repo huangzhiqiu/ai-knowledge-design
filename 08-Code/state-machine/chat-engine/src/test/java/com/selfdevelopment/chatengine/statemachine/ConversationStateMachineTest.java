@@ -14,7 +14,6 @@ import com.selfdevelopment.chatengine.context.TraceContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
 import com.selfdevelopment.chatengine.model.ConversationInstance;
-import com.selfdevelopment.chatengine.model.InteractionInstance;
 import com.selfdevelopment.statemachine.core.StateContext;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -42,12 +41,8 @@ class ConversationStateMachineTest {
                 .market("SG")
                 .state(state)
                 .build();
-        InteractionInstance interaction = InteractionInstance.builder()
-                .interactionId("int-001")
-                .build();
         return CbolStateContext.builder()
                 .conversation(conv)
-                .interaction(interaction)
                 .marketConfig(StateMachineMarketConfig.defaultConfig())
                 .traceContext(TraceContext.generate())
                 .build();
