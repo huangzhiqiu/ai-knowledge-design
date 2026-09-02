@@ -1,14 +1,8 @@
 package com.selfdevelopment.chatengine.ingress;
 
-import com.selfdevelopment.chatengine.context.TraceContext;
-
-import com.selfdevelopment.chatengine.enums.ConversationFact;
-
-import com.selfdevelopment.chatengine.action.ActionWorker;
-
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.service.ChatEngineStateMachineService;
-import com.selfdevelopment.statemachine.event.EventDispatcher;
+import com.selfdevelopment.statemachine.event.AbstractEventDispatcher;
 import com.selfdevelopment.statemachine.event.StandardEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,114 +11,71 @@ import java.util.Objects;
 import java.util.function.Function;
 
 /**
- * CBOL-specific event dispatcher that routes standard events through the
- * dual state machine pipeline (Interaction → Conversation).
+ * Chat engine event dispatcher that routes standard events through the conversation state machine.
  * <p>
- * Pipeline:
- * <pre>
- * StandardEvent → Interaction StateMachine (channel-level)
- *                    ↓ (conversation event)
- *              Conversation StateMachine (business-level)
- *                    ↓ (next status)
- *              persist status → Actions / Business layer → Connectors
- * </pre>
+ * This dispatcher handles events from chat sources (AIBot, customer WebSocket) and routes them
+ * through the conversation state machine (business-level).
  * <p>
  * Usage:
  * <pre>{@code
  * ChatEngineEventDispatcher dispatcher = new ChatEngineEventDispatcher(
- *     ChatEngineStateMachineService,
+ *     chatEngineStateMachineService,
  *     event -> buildContextFromEvent(event)
  * );
  *
  * // Register normalizers
  * AibotEventNormalizer aibotNormalizer = new AibotEventNormalizer();
- * GenesysEventNormalizer genesysNormalizer = new GenesysEventNormalizer();
  *
  * // Normalize and dispatch
  * aibotNormalizer.normalize(aibotEvent).ifPresent(dispatcher::dispatch);
- * genesysNormalizer.normalize(genesysEvent).ifPresent(dispatcher::dispatch);
  * }</pre>
  */
-public class ChatEngineEventDispatcher {
+public class ChatEngineEventDispatcher extends AbstractEventDispatcher<CbolStateContext> {
 
     private static final Logger log = LoggerFactory.getLogger(ChatEngineEventDispatcher.class);
 
-    private final EventDispatcher dispatcher;
     private final ChatEngineStateMachineService stateMachineService;
-    private final Function<StandardEvent, CbolStateContext> contextBuilder;
 
     /**
-     * Creates a CBOL event dispatcher.
+     * Creates a chat engine event dispatcher.
      *
-     * @param stateMachineService the CBOL state machine service
+     * @param stateMachineService the chat engine state machine service
      * @param contextBuilder      function to build CbolStateContext from a StandardEvent
      */
     public ChatEngineEventDispatcher(ChatEngineStateMachineService stateMachineService,
-                                Function<StandardEvent, CbolStateContext> contextBuilder) {
+                                      Function<StandardEvent, CbolStateContext> contextBuilder) {
+        super(contextBuilder);
         this.stateMachineService = Objects.requireNonNull(stateMachineService, "stateMachineService must not be null");
-        this.contextBuilder = Objects.requireNonNull(contextBuilder, "contextBuilder must not be null");
-        this.dispatcher = new EventDispatcher();
-
-        // Register default handler for all event types
-        this.dispatcher.setDefaultHandler(this::handleEvent);
     }
 
     /**
-     * Dispatches a standard event through the dual state machine pipeline.
-     *
-     * @param event the standard event to dispatch
-     */
-    public void dispatch(StandardEvent event) {
-        Objects.requireNonNull(event, "event must not be null");
-        log.info("Dispatching event: type={}, source={}, entityId={}, traceId={}",
-                event.getEventType(), event.getSource(), event.getEntityId(), event.getTraceId());
-
-        try {
-            dispatcher.dispatch(event);
-        } catch (Exception e) {
-            log.error("Failed to dispatch event: type={}, eventId={}, error={}",
-                    event.getEventType(), event.getEventId(), e.getMessage(), e);
-            throw e;
-        }
-    }
-
-    /**
-     * Handles a standard event by routing through the state machine.
+     * Handles a standard event by routing through the conversation state machine.
      * <p>
      * In the full implementation, this would:
-     * 1. Fire event through Interaction StateMachine (channel-level)
-     * 2. If interaction produces a conversation event, fire through Conversation StateMachine
+     * 1. Map standard event type to ConversationFact
+     * 2. Fire event through Conversation StateMachine (business-level)
      * 3. Persist the resulting state
      * 4. Execute business actions (via ActionWorker)
-     * 5. Call connectors (AIBot, Genesys, Websocket, ChatHistory)
+     * 5. Call connectors (AIBot, Websocket, ChatHistory)
      */
-    private void handleEvent(StandardEvent event) {
-        CbolStateContext context = contextBuilder.apply(event);
-
-        // Map standard event type to ConversationFact
-        // In production, this mapping would be in a dedicated EventMapper
-        log.debug("Processing event through state machine: type={}, entityId={}",
-                event.getEventType(), event.getEntityId());
-
+    @Override
+    protected void handleEvent(StandardEvent event, CbolStateContext context) {
         // The actual state machine firing happens in ChatEngineStateMachineService
         // This dispatcher provides the event routing and context building layer
         if (context.traceContext() != null) {
             context.traceContext().traceId(); // ensure trace context is populated
         }
+
+        log.debug("Chat engine event processed: type={}, entityId={}",
+                event.getEventType(), event.getEntityId());
     }
 
     /**
-     * Returns the underlying event dispatcher for advanced configuration
-     * (registering interceptors, custom handlers, etc.).
+     * Returns the chat engine state machine service.
+     *
+     * @return the state machine service
      */
-    public EventDispatcher getDispatcher() {
-        return dispatcher;
-    }
-
-    /**
-     * Registers an interceptor for cross-cutting concerns (logging, metrics, tracing).
-     */
-    public void registerInterceptor(String name, EventDispatcher.EventInterceptor interceptor) {
-        dispatcher.registerInterceptor(name, interceptor);
+    public ChatEngineStateMachineService getStateMachineService() {
+        return stateMachineService;
     }
 }

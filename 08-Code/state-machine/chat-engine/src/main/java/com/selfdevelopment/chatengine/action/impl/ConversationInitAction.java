@@ -20,7 +20,7 @@ import lombok.extern.slf4j.Slf4j;
  * </ul>
  * <p>
  * After this action completes successfully, the conversation enters INITIATED state,
- * ready for customer connection (CUSTOMER_CONNECT → ACTIVE).
+ * ready for customer connection (CUSTOMER_CONNECT → IN_PROGRESS).
  */
 @Slf4j
 public class ConversationInitAction

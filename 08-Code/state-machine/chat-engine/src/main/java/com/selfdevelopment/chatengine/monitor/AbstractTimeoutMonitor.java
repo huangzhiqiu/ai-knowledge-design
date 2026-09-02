@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public abstract class AbstractTimeoutMonitor {
 
-    protected final ChatEngineStateMachineService ChatEngineStateMachineService;
+    protected final ChatEngineStateMachineService chatEngineStateMachineService;
 
     /**
      * Returns whether this monitor applies to the given conversation state.
@@ -53,7 +53,7 @@ public abstract class AbstractTimeoutMonitor {
         long elapsedMs = System.currentTimeMillis() - referenceTs;
 
         if (elapsedMs >= timeoutMs) {
-            ChatEngineStateMachineService.fire(ctx, timeoutEvent());
+            chatEngineStateMachineService.fire(ctx, timeoutEvent());
         }
     }
 }

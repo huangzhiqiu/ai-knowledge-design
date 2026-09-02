@@ -8,7 +8,7 @@ import com.selfdevelopment.statemachine.core.StateContext;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Action executed when a customer connects (INITIATED → ACTIVE).
+ * Action executed when a customer connects (INITIATED → IN_PROGRESS).
  * <p>
  * This action handles the actual business logic of establishing a connection:
  * <ul>

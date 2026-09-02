@@ -8,7 +8,7 @@ import com.selfdevelopment.statemachine.core.StateContext;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Action executed when a customer closes the conversation (ACTIVE → ENDING).
+ * Action executed when a customer closes the conversation (IN_PROGRESS → ENDING).
  * <p>
  * This action handles the actual business logic of closing a conversation:
  * <ul>

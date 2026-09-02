@@ -8,7 +8,7 @@ import com.selfdevelopment.statemachine.core.StateContext;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Action executed when a transfer is requested (ACTIVE → TRANSFERRED).
+ * Action executed when a transfer is requested (IN_PROGRESS → TRANSFERRED).
  * <p>
  * This action handles the actual business logic of transferring to a human agent:
  * <ul>
