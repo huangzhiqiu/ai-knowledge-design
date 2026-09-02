@@ -439,7 +439,7 @@ public class ChatEngineStateMachineService {
     private final StateMachine<ConversationState, ConversationFact, CbolStateContext> convSm;
 
     public ChatEngineStateMachineService() {
-        this.convSm = CbolStateMachineRegistry.get(ConversationStateMachineFactory.MACHINE_ID);
+        this.convSm = StateMachineRegistry.getInstance().get(ConversationStateMachineFactory.MACHINE_ID);
     }
 
     public StateContext<ConversationState, ConversationFact, CbolStateContext> fire(
@@ -515,28 +515,29 @@ public class ConversationStateMachineFactory {
         // ...（全部 10 条迁移）
 
         StateMachine<...> sm = builder.build();
-        CbolStateMachineRegistry.register(sm);
+        StateMachineRegistry.getInstance().register(sm);
         return sm;
     }
 }
 ```
 
-### 9.2 CbolStateMachineRegistry
+### 9.2 状态机注册表
 
-共享 `StateMachineRegistry` 的单例持有者。
+chat-engine 模块使用 statemachine-core 中的全局单例 `StateMachineRegistry` 进行状态机的注册和查找。这消除了对模块特定注册表包装器的需求。
 
 ```java
-public final class CbolStateMachineRegistry {
-    private static final StateMachineRegistry INSTANCE = new StateMachineRegistry();
+// 注册状态机
+StateMachineRegistry.getInstance().register(machine);
 
-    private CbolStateMachineRegistry() {}  // 单例
+// 通过 ID 查找状态机
+StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+    StateMachineRegistry.getInstance().get(ConversationStateMachineFactory.MACHINE_ID);
 
-    public static StateMachineRegistry getInstance() { return INSTANCE; }
-    public static <S, E, C> void register(StateMachine<S, E, C> machine) { INSTANCE.register(machine); }
-    public static <S, E, C> StateMachine<S, E, C> get(String machineId) { return INSTANCE.get(machineId); }
-    public static void clear() { INSTANCE.clear(); }  // 用于测试隔离
-}
+// 清空所有已注册的状态机（用于测试隔离）
+StateMachineRegistry.getInstance().clear();
 ```
+
+**设计说明**：chat-engine 和 agent-connector 共享同一个全局注册表。由于每个状态机都有唯一的 machine ID（`conversation` vs `interaction`），因此不会发生冲突。全局单例方法简化了 API，并消除了重复的注册表持有者类。
 
 ## 10. 典型使用流程
 

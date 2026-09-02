@@ -396,7 +396,7 @@ void shouldThrowWhenNoTransitionExists() {
 ```java
 @AfterEach
 void tearDown() {
-    CbolStateMachineRegistry.clear();  // 测试间清空注册表
+    StateMachineRegistry.getInstance().clear();  // 测试间清空注册表
 }
 ```
 

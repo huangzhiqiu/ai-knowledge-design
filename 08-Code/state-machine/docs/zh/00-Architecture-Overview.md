@@ -293,10 +293,8 @@ com.selfdevelopment.chatengine/
 │   ├── ActionWorker.java               # 有界线程池异步执行器 + MDC 传播
 │   └── CbolActionDefinition.java
 ├── statemachine/
-│   ├── factory/
-│   │   └── ConversationStateMachineFactory.java
-│   └── registry/
-│       └── CbolStateMachineRegistry.java
+│   └── factory/
+│       └── ConversationStateMachineFactory.java
 ├── service/
 │   └── ChatEngineStateMachineService.java  # 主服务入口
 ├── connector/                           # Chat Engine 连接器
@@ -329,10 +327,8 @@ com.selfdevelopment.agentconnector/
 │   ├── GenesysEventNormalizer.java
 │   └── AgentConnectorEventDispatcher.java
 ├── statemachine/
-│   ├── factory/
-│   │   └── InteractionStateMachineFactory.java
-│   └── registry/
-│       └── AgentConnectorStateMachineRegistry.java
+│   └── factory/
+│       └── InteractionStateMachineFactory.java
 ├── service/
 │   └── AgentConnectorStateMachineService.java
 ├── connector/

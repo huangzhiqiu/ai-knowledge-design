@@ -17,6 +17,18 @@
 
 ## 更新日志
 
+### v2.4 (2026-09-03)
+- **Registry 重构（方案 A）**：
+  - 在 statemachine-core 的 `StateMachineRegistry` 中添加了 `getInstance()` 静态方法，用于全局单例访问
+  - 删除了重复的业务层 Registry 类：
+    * 删除了 `CbolStateMachineRegistry`（chat-engine）
+    * 删除了 `AgentConnectorStateMachineRegistry`（agent-connector）
+  - 更新所有业务代码，直接使用 `StateMachineRegistry.getInstance()`
+  - 在 `AgentConnectorStateMachineService` 中通过 `getOrCreateStateMachine()` 方法保留了自动初始化行为
+  - 更新了 5 个测试文件，使用 `StateMachineRegistry.getInstance().clear()`
+  - 消除了约 100 行重复代码
+  - 两个业务模块现在共享同一个全局 Registry（machineId 确保不会冲突）
+
 ### v2.3 (2026-09-03)
 - **代码质量修复 (P0)**：
   - 修复了 3 个 Monitor 类的参数命名：`ChatEngineStateMachineService` → `chatEngineStateMachineService`

@@ -293,10 +293,8 @@ com.selfdevelopment.chatengine/
 │   ├── ActionWorker.java               # Async executor with bounded thread pool + MDC propagation
 │   └── CbolActionDefinition.java
 ├── statemachine/
-│   ├── factory/
-│   │   └── ConversationStateMachineFactory.java
-│   └── registry/
-│       └── CbolStateMachineRegistry.java
+│   └── factory/
+│       └── ConversationStateMachineFactory.java
 ├── service/
 │   └── ChatEngineStateMachineService.java  # Main service entry point
 ├── connector/                           # Chat engine connectors
@@ -329,10 +327,8 @@ com.selfdevelopment.agentconnector/
 │   ├── GenesysEventNormalizer.java
 │   └── AgentConnectorEventDispatcher.java
 ├── statemachine/
-│   ├── factory/
-│   │   └── InteractionStateMachineFactory.java
-│   └── registry/
-│       └── AgentConnectorStateMachineRegistry.java
+│   └── factory/
+│       └── InteractionStateMachineFactory.java
 ├── service/
 │   └── AgentConnectorStateMachineService.java
 ├── connector/

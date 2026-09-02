@@ -288,6 +288,14 @@ cd 08-Code/state-machine
 
 ## Changelog
 
+### v2.4 (2026-09-03)
+- **Registry refactoring (Scheme A)**:
+  - Added `getInstance()` static method to `StateMachineRegistry` for global singleton access
+  - Removed duplicate business-layer registry classes (`CbolStateMachineRegistry`, `AgentConnectorStateMachineRegistry`)
+  - All business code now uses `StateMachineRegistry.getInstance()` directly
+  - Preserved auto-initialization in `AgentConnectorStateMachineService`
+  - Eliminated ~100 lines of duplicate code
+
 ### v2.3 (2026-09-03)
 - **Code quality fixes (P0)**:
   - Fixed parameter naming in 3 Monitor classes: `ChatEngineStateMachineService` → `chatEngineStateMachineService`

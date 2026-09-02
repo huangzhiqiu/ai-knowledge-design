@@ -412,7 +412,7 @@ void shouldThrowWhenNoTransitionExists() {
 ```java
 @AfterEach
 void tearDown() {
-    CbolStateMachineRegistry.clear();  // Clear registry between tests
+    StateMachineRegistry.getInstance().clear();  // Clear registry between tests
 }
 ```
 

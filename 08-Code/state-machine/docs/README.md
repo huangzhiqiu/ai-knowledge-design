@@ -17,6 +17,18 @@
 
 ## Changelog
 
+### v2.4 (2026-09-03)
+- **Registry refactoring (Scheme A)**:
+  - Added `getInstance()` static method to `StateMachineRegistry` in statemachine-core for global singleton access
+  - Removed duplicate business-layer registry classes:
+    * Deleted `CbolStateMachineRegistry` (chat-engine)
+    * Deleted `AgentConnectorStateMachineRegistry` (agent-connector)
+  - Updated all business code to use `StateMachineRegistry.getInstance()` directly
+  - Preserved auto-initialization behavior in `AgentConnectorStateMachineService` via `getOrCreateStateMachine()` method
+  - Updated 5 test files to use `StateMachineRegistry.getInstance().clear()`
+  - Eliminated ~100 lines of duplicate code
+  - Both business modules now share the same global registry (machineId ensures no conflicts)
+
 ### v2.3 (2026-09-03)
 - **Code quality fixes (P0)**:
   - Fixed parameter naming in 3 Monitor classes: `ChatEngineStateMachineService` → `chatEngineStateMachineService`

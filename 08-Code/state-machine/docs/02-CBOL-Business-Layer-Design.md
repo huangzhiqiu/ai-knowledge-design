@@ -520,7 +520,7 @@ public class ChatEngineStateMachineService {
     private final StateMachine<ConversationState, ConversationFact, CbolStateContext> convSm;
 
     public ChatEngineStateMachineService() {
-        this.convSm = CbolStateMachineRegistry.get(ConversationStateMachineFactory.MACHINE_ID);
+        this.convSm = StateMachineRegistry.getInstance().get(ConversationStateMachineFactory.MACHINE_ID);
     }
 
     public StateContext<ConversationState, ConversationFact, CbolStateContext> fire(
@@ -596,28 +596,29 @@ public class ConversationStateMachineFactory {
         // ... (all 10 transitions)
 
         StateMachine<...> sm = builder.build();
-        CbolStateMachineRegistry.register(sm);
+        StateMachineRegistry.getInstance().register(sm);
         return sm;
     }
 }
 ```
 
-### 9.2 CbolStateMachineRegistry
+### 9.2 State Machine Registry
 
-Singleton holder for the shared `StateMachineRegistry`.
+The chat-engine module uses the global singleton `StateMachineRegistry` from statemachine-core for state machine registration and lookup. This eliminates the need for a module-specific registry wrapper.
 
 ```java
-public final class CbolStateMachineRegistry {
-    private static final StateMachineRegistry INSTANCE = new StateMachineRegistry();
+// Register a state machine
+StateMachineRegistry.getInstance().register(machine);
 
-    private CbolStateMachineRegistry() {}  // Singleton
+// Look up a state machine by ID
+StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+    StateMachineRegistry.getInstance().get(ConversationStateMachineFactory.MACHINE_ID);
 
-    public static StateMachineRegistry getInstance() { return INSTANCE; }
-    public static <S, E, C> void register(StateMachine<S, E, C> machine) { INSTANCE.register(machine); }
-    public static <S, E, C> StateMachine<S, E, C> get(String machineId) { return INSTANCE.get(machineId); }
-    public static void clear() { INSTANCE.clear(); }  // For test isolation
-}
+// Clear all registered machines (for test isolation)
+StateMachineRegistry.getInstance().clear();
 ```
+
+**Design note**: Both chat-engine and agent-connector share the same global registry. Since each state machine has a unique machine ID (`conversation` vs `interaction`), there are no conflicts. The global singleton approach simplifies the API and eliminates duplicate registry holder classes.
 
 ## 10. Typical Usage Flow
 
