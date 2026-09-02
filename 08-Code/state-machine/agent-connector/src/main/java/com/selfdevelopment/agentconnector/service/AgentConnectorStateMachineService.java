@@ -5,8 +5,8 @@ import com.selfdevelopment.agentconnector.enums.InteractionFact;
 import com.selfdevelopment.agentconnector.enums.InteractionState;
 import com.selfdevelopment.agentconnector.model.InteractionInstance;
 import com.selfdevelopment.agentconnector.statemachine.factory.InteractionStateMachineFactory;
-import com.selfdevelopment.agentconnector.statemachine.registry.AgentConnectorStateMachineRegistry;
 import com.selfdevelopment.statemachine.api.StateMachine;
+import com.selfdevelopment.statemachine.api.StateMachineRegistry;
 import com.selfdevelopment.statemachine.core.StateContext;
 import com.selfdevelopment.statemachine.exception.StateMachineException;
 import lombok.extern.slf4j.Slf4j;
@@ -29,9 +29,26 @@ public class AgentConnectorStateMachineService {
 
     /**
      * Creates a service using the default interaction state machine from the registry.
+     * <p>
+     * If the state machine is not yet registered, it will be automatically created
+     * and registered via {@link InteractionStateMachineFactory#create()}.
      */
     public AgentConnectorStateMachineService() {
-        this(AgentConnectorStateMachineRegistry.get(InteractionStateMachineFactory.MACHINE_ID), DEFAULT_MAX_RETRIES);
+        this(getOrCreateStateMachine(), DEFAULT_MAX_RETRIES);
+    }
+
+    /**
+     * Gets the interaction state machine from the global registry, creating and
+     * registering it if it doesn't exist yet.
+     *
+     * @return the interaction state machine
+     */
+    private static StateMachine<InteractionState, InteractionFact, AgentConnectorStateContext> getOrCreateStateMachine() {
+        StateMachineRegistry registry = StateMachineRegistry.getInstance();
+        if (!registry.contains(InteractionStateMachineFactory.MACHINE_ID)) {
+            InteractionStateMachineFactory.create();
+        }
+        return registry.get(InteractionStateMachineFactory.MACHINE_ID);
     }
 
     /**

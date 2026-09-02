@@ -2,12 +2,11 @@ package com.selfdevelopment.chatengine.service;
 
 import com.selfdevelopment.chatengine.context.TraceContext;
 
-import com.selfdevelopment.chatengine.statemachine.registry.CbolStateMachineRegistry;
-
 import com.selfdevelopment.chatengine.statemachine.factory.ConversationStateMachineFactory;
 
 import com.selfdevelopment.statemachine.core.StateContext;
 import com.selfdevelopment.statemachine.api.StateMachine;
+import com.selfdevelopment.statemachine.api.StateMachineRegistry;
 import com.selfdevelopment.statemachine.exception.StateMachineException;
 import com.selfdevelopment.statemachine.persistence.OptimisticLockException;
 import com.selfdevelopment.statemachine.persistence.StateRepository;
@@ -56,7 +55,7 @@ public class ChatEngineStateMachineService {
      */
     public ChatEngineStateMachineService(StateRepository<ConversationState, String> stateRepository,
                                     int maxRetries) {
-        this(CbolStateMachineRegistry.get(ConversationStateMachineFactory.MACHINE_ID),
+        this(StateMachineRegistry.getInstance().get(ConversationStateMachineFactory.MACHINE_ID),
                 stateRepository, maxRetries);
     }
 

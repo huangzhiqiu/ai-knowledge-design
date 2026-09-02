@@ -3,8 +3,8 @@ package com.selfdevelopment.agentconnector.statemachine.factory;
 import com.selfdevelopment.agentconnector.context.AgentConnectorStateContext;
 import com.selfdevelopment.agentconnector.enums.InteractionFact;
 import com.selfdevelopment.agentconnector.enums.InteractionState;
-import com.selfdevelopment.agentconnector.statemachine.registry.AgentConnectorStateMachineRegistry;
 import com.selfdevelopment.statemachine.api.StateMachine;
+import com.selfdevelopment.statemachine.api.StateMachineRegistry;
 import com.selfdevelopment.statemachine.builder.StateMachineBuilder;
 
 /**
@@ -29,8 +29,8 @@ public class InteractionStateMachineFactory {
      */
     public static StateMachine<InteractionState, InteractionFact, AgentConnectorStateContext> create() {
         StateMachine<InteractionState, InteractionFact, AgentConnectorStateContext> sm = build();
-        // Register directly to the underlying registry
-        AgentConnectorStateMachineRegistry.getRegistry().register(sm);
+        // Register to the global registry
+        StateMachineRegistry.getInstance().register(sm);
         return sm;
     }
 

@@ -10,7 +10,7 @@ import com.selfdevelopment.chatengine.context.TraceContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
 import com.selfdevelopment.chatengine.model.ConversationInstance;
-import com.selfdevelopment.chatengine.statemachine.registry.CbolStateMachineRegistry;
+import com.selfdevelopment.statemachine.api.StateMachineRegistry;
 import com.selfdevelopment.chatengine.service.ChatEngineStateMachineService;
 import com.selfdevelopment.chatengine.statemachine.factory.ConversationStateMachineFactory;
 import org.junit.jupiter.api.AfterAll;
@@ -34,7 +34,7 @@ class AllMonitorsTest {
 
     @AfterAll
     static void tearDown() {
-        CbolStateMachineRegistry.clear();
+        StateMachineRegistry.getInstance().clear();
     }
 
     private CbolStateContext buildCtx(ConversationState state, long idleSeconds, long transferSeconds, long endingSeconds) {

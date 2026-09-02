@@ -17,7 +17,28 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class StateMachineRegistry {
 
+    /**
+     * Global singleton instance for application-wide state machine management.
+     * <p>
+     * Use this instance when you want a shared registry across the entire application.
+     * For isolated registries (e.g., in tests), create a new instance via the constructor.
+     */
+    private static final StateMachineRegistry GLOBAL_INSTANCE = new StateMachineRegistry();
+
     private final Map<String, StateMachine<?, ?, ?>> machines = new ConcurrentHashMap<>();
+
+    /**
+     * Returns the global singleton registry instance.
+     * <p>
+     * This instance is shared across the entire application. State machines from
+     * different modules (e.g., chat-engine, agent-connector) can be registered here
+     * as long as they have unique machine IDs.
+     *
+     * @return the global StateMachineRegistry instance
+     */
+    public static StateMachineRegistry getInstance() {
+        return GLOBAL_INSTANCE;
+    }
 
     /**
      * Registers a state machine under its machine ID.

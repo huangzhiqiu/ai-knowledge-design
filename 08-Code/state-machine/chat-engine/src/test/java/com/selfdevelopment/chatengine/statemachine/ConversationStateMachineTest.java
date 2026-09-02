@@ -1,6 +1,6 @@
 package com.selfdevelopment.chatengine.statemachine;
 
-import com.selfdevelopment.chatengine.statemachine.registry.CbolStateMachineRegistry;
+import com.selfdevelopment.statemachine.api.StateMachineRegistry;
 
 import com.selfdevelopment.statemachine.api.StateMachine;
 
@@ -32,7 +32,7 @@ class ConversationStateMachineTest {
 
     @AfterAll
     static void tearDown() {
-        CbolStateMachineRegistry.clear();
+        StateMachineRegistry.getInstance().clear();
     }
 
     private CbolStateContext buildCtx(ConversationState state) {

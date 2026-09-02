@@ -9,10 +9,9 @@ import com.selfdevelopment.chatengine.action.impl.TransferFailedAction;
 import com.selfdevelopment.chatengine.action.impl.TransferRequestAction;
 import com.selfdevelopment.chatengine.service.ChatEngineStateMachineService;
 
-import com.selfdevelopment.chatengine.statemachine.registry.CbolStateMachineRegistry;
-
-import com.selfdevelopment.statemachine.builder.StateMachineBuilder;
 import com.selfdevelopment.statemachine.api.StateMachine;
+import com.selfdevelopment.statemachine.api.StateMachineRegistry;
+import com.selfdevelopment.statemachine.builder.StateMachineBuilder;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
@@ -230,7 +229,7 @@ public class ConversationStateMachineFactory {
                 .and();
 
         StateMachine<ConversationState, ConversationFact, CbolStateContext> sm = builder.build();
-        CbolStateMachineRegistry.register(sm);
+        StateMachineRegistry.getInstance().register(sm);
         return sm;
     }
 }
