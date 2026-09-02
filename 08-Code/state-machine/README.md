@@ -10,6 +10,7 @@
 | **Stateless engine** | Stores only transition rules; current state is injected by the business layer per call |
 | **Table-driven** | O(1) transition lookup via ConcurrentHashMap, no reflection, no Spring container required |
 | **Single responsibility** | Only handles: guard evaluation → state transition → action execution |
+| **Action-first transition** | Action executes BEFORE state change; action failure prevents state transition (core design principle) |
 | **Zero core dependencies** | Core engine depends only on JDK standard library (Micrometer optional for metrics) |
 | **Type-safe** | Generic Java types with compile-time checking for State/Event/Context |
 | **Testable** | DSL-style configuration is living documentation, naturally unit-testable |
@@ -44,9 +45,9 @@ state-machine/
 
 | Module | Package | Responsibility |
 |--------|---------|----------------|
-| **statemachine-core** | `com.selfdevelopment.statemachine` | Generic state machine engine, Builder, ConfigurerAdapter, persistence, event sourcing, idempotency, timeout, resilience, metrics, validation, diagram generation, Connector generic interface |
-| **chat-engine** | `com.selfdevelopment.chatengine` | Conversation state machine (7 states), Aibot connector, ChatHistory ODS connector, monitors, market configuration, trace context, async action worker |
-| **agent-connector** | `com.selfdevelopment.agentconnector` | Interaction state machine (6 states), Genesys connector, WebSocket connector, event normalizers |
+| **statemachine-core** | `com.selfdevelopment.statemachine` | Generic state machine engine, Builder, ConfigurerAdapter, persistence, event sourcing, idempotency, timeout, resilience, metrics, validation, diagram generation |
+| **chat-engine** | `com.selfdevelopment.chatengine` | Conversation state machine (7 states), 6 concrete action implementations, monitors, market configuration, trace context, async action worker |
+| **agent-connector** | `com.selfdevelopment.agentconnector` | Interaction state machine (6 states), event normalizers |
 
 ### Module Dependencies
 
@@ -87,11 +88,18 @@ agent-connector ──► statemachine-core
 - **7 conversation states**: INITIATED, ACTIVE, TRANSFERRED, SURVEY_IN_PROGRESS, ENDING, ERROR, CLOSED
 - 13+ events across lifecycle, transfer, ending, survey, and system categories
 - 10+ transitions including v6 transfer-failure-reset-to-INITIATED
+- **6 concrete action implementations** (directly implement core `Action<S, E, C>` interface):
+  - `CustomerConnectAction`: INITIATED → ACTIVE (create record, send welcome, init session)
+  - `TransferRequestAction`: ACTIVE → TRANSFERRED (check availability, route to agent queue)
+  - `TransferFailedAction`: TRANSFERRED → INITIATED (record failure, cleanup, trigger re-routing)
+  - `CustomerCloseAction`: ACTIVE → ENDING (mark ending, send confirmation, release resources)
+  - `SurveyStartAction`: ACTIVE → SURVEY_IN_PROGRESS (create survey, send invitation, set timeout)
+  - `SurveyCompleteAction`: SURVEY_IN_PROGRESS → ENDING (save results, calculate NPS/CSAT, cancel timeout)
+- **Action-first transition design**: action executes BEFORE state change; action failure throws `StateMachineException` and prevents state transition
 - Multi-market configuration with per-market timeouts and feature flags (HK, SG, UK, etc.)
 - TraceId full-chain propagation via SLF4J MDC
-- Async actions with bounded thread pool and MDC propagation
+- Async actions with bounded thread pool and MDC propagation (`ActionWorker`)
 - 3 monitors: CustomerIdle, TransferTimeout, EndingGrace
-- Aibot connector, ChatHistory ODS connector
 - Conversation repository with optimistic locking
 
 ### Agent Connector (agent-connector)
@@ -120,11 +128,10 @@ state-machine/
 │   ├── pom.xml
 │   └── src/
 │       ├── main/java/com/selfdevelopment/statemachine/
-│       │   ├── api/                     # Core interfaces
-│       │   ├── core/                    # Core implementations
+│       │   ├── api/                     # Core interfaces (Action, Guard, StateMachine, etc.)
+│       │   ├── core/                    # Core implementations (SimpleStateMachine, Transition, StateContext)
 │       │   ├── builder/                 # Builder DSL
 │       │   ├── config/                  # ConfigurerAdapter
-│       │   ├── connector/               # Generic Connector interface
 │       │   ├── event/                   # Event dispatcher/normalizer
 │       │   ├── persistence/             # State repository + optimistic lock
 │       │   ├── validation/              # Build-time validator
@@ -144,14 +151,15 @@ state-machine/
 │       │   ├── model/                   # ConversationInstance, InteractionInstance (simplified)
 │       │   ├── config/                  # Market config provider
 │       │   ├── context/                 # CbolStateContext, TraceContext
-│       │   ├── action/                  # Async action worker
+│       │   ├── action/                  # Async action worker + 6 concrete action implementations
+│       │   │   └── impl/                # CustomerConnectAction, TransferRequestAction, etc.
 │       │   ├── monitor/                 # CustomerIdle, Transfer, EndingGrace
 │       │   ├── repository/              # Conversation repository
-│       │   ├── connector/               # Aibot, ChatHistory ODS connectors
-│       │   ├── ingress/                 # Event dispatcher, normalizers
+│       │   ├── ingress/                 # Event dispatcher, normalizers (reserved for future)
 │       │   ├── service/                 # ChatEngineStateMachineService
+│       │   ├── demo/                    # ChatEngineDemo with 5 scenarios
 │       │   └── statemachine/            # Factory, Registry
-│       └── test/java/                   # 50+ test cases
+│       └── test/java/                   # 72 test cases
 └── agent-connector/
     ├── pom.xml
     └── src/
@@ -159,9 +167,9 @@ state-machine/
         │   ├── enums/                   # InteractionState, InteractionFact
         │   ├── model/                   # InteractionInstance
         │   ├── context/                 # AgentConnectorStateContext
-        │   ├── connector/               # Genesys, WebSocket connectors
-        │   ├── ingress/                 # Event dispatcher, Genesys normalizer
+        │   ├── ingress/                 # Event dispatcher, Genesys normalizer (reserved for future)
         │   ├── service/                 # AgentConnectorStateMachineService
+        │   ├── demo/                    # AgentConnectorDemo
         │   └── statemachine/            # Factory, Registry
         └── test/java/                   # Test cases
 ```
@@ -273,7 +281,7 @@ cd 08-Code/state-machine
 ./mvnw.cmd package
 ```
 
-**Current stats:** 270+ test cases across all modules, BUILD SUCCESS
+**Current stats:** 291+ test cases across all modules (219 core + 72 chat-engine), BUILD SUCCESS
 
 ## Quality Gates
 
@@ -309,4 +317,4 @@ cd 08-Code/state-machine
 
 ---
 
-*state-machine — Self-Development AI Messaging Hub — Multi-Module — 2026-09-02*
+*state-machine — Self-Development AI Messaging Hub — Multi-Module — 2026-09-03*
