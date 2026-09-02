@@ -73,7 +73,10 @@ public class ChatEngineDemo {
     /**
      * Demo 1: Basic conversation flow with action execution.
      * <p>
-     * INITIATED → ACTIVE → TRANSFERRED → ACTIVE → ENDING → CLOSED
+     * NEW → ACTIVE → TRANSFERRED → ACTIVE → ENDING → CLOSED
+     * <p>
+     * NEW is the initial state: conversation record created (customer opened chat window),
+     * but no messages exchanged yet. CUSTOMER_CONNECT triggers the transition to ACTIVE.
      * <p>
      * Each transition executes its associated action:
      * <ul>
@@ -88,12 +91,13 @@ public class ChatEngineDemo {
         // 1. Create the service (stateless mode)
         ChatEngineStateMachineService service = new ChatEngineStateMachineService();
 
-        // 2. Create a conversation instance in INITIATED state
+        // 2. Create a conversation instance in NEW state (initial state)
+        //    NEW: conversation record created, but customer hasn't connected yet
         ConversationInstance conversation = ConversationInstance.builder()
                 .conversationId("conv-001")
                 .market("HK")
                 .tenantId("tenant-hk-001")
-                .state(ConversationState.INITIATED)
+                .state(ConversationState.NEW)
                 .surveyEnabled(false)
                 .surveyCompleted(false)
                 .build();
@@ -103,6 +107,7 @@ public class ChatEngineDemo {
 
         // 4. Fire events to drive the state machine
         //    Each transition executes its associated action
+        System.out.println("  Initial state: NEW (conversation created, waiting for customer connect)");
         System.out.println("  [Action: CustomerConnectAction - create record, send welcome]");
         ctx = printTransition(ctx, ConversationFact.CUSTOMER_CONNECT, service);
 

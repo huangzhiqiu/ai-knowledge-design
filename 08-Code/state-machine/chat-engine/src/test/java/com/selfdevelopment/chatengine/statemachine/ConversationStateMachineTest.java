@@ -49,6 +49,15 @@ class ConversationStateMachineTest {
     }
 
     @Test
+    void testNewToActive() {
+        // NEW is the initial state: conversation created, but not started yet
+        StateContext<ConversationState, ConversationFact, CbolStateContext> result =
+                service.fire(buildCtx(ConversationState.NEW), ConversationFact.CUSTOMER_CONNECT);
+        assertEquals(ConversationState.ACTIVE, result.getTargetState());
+        assertTrue(result.isTransitionAccepted());
+    }
+
+    @Test
     void testInitToActive() {
         StateContext<ConversationState, ConversationFact, CbolStateContext> result =
                 service.fire(buildCtx(ConversationState.INITIATED), ConversationFact.CUSTOMER_CONNECT);

@@ -33,7 +33,20 @@ public class ConversationStateMachineFactory {
         StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> builder =
                 StateMachineBuilder.builder(MACHINE_ID);
 
+        // Set initial state to NEW: conversation record created, but not started yet
+        builder.initialState(ConversationState.NEW);
+
+        // NEW → ACTIVE: customer connects from a newly created conversation, execute CustomerConnectAction
+        // NEW is the initial state: conversation record created, but no messages exchanged yet
+        builder.transition()
+                .from(ConversationState.NEW)
+                .on(ConversationFact.CUSTOMER_CONNECT)
+                .to(ConversationState.ACTIVE)
+                .perform(CUSTOMER_CONNECT_ACTION)
+                .and();
+
         // INITIATED → ACTIVE: customer connects, execute CustomerConnectAction
+        // INITIATED: conversation started (first message sent), waiting for connection
         builder.transition()
                 .from(ConversationState.INITIATED)
                 .on(ConversationFact.CUSTOMER_CONNECT)
@@ -138,6 +151,12 @@ public class ConversationStateMachineFactory {
 
         // SYSTEM events (from monitors)
         builder.transition()
+                .from(ConversationState.NEW)
+                .on(ConversationFact.SYS_CUSTOMER_IDLE)
+                .to(ConversationState.ENDING)
+                .and();
+
+        builder.transition()
                 .from(ConversationState.INITIATED)
                 .on(ConversationFact.SYS_CUSTOMER_IDLE)
                 .to(ConversationState.ENDING)
@@ -172,6 +191,12 @@ public class ConversationStateMachineFactory {
         // When an action throws an unhandled RuntimeException, FailoverStateMachine automatically
         // fires SYS_ACTION_FAILED. Each non-terminal state routes to ERROR for centralized handling.
         // From ERROR: SYS_RETRY returns to ACTIVE, SYS_ABORT terminates to CLOSED.
+
+        builder.transition()
+                .from(ConversationState.NEW)
+                .on(ConversationFact.SYS_ACTION_FAILED)
+                .to(ConversationState.ERROR)
+                .and();
 
         builder.transition()
                 .from(ConversationState.INITIATED)
