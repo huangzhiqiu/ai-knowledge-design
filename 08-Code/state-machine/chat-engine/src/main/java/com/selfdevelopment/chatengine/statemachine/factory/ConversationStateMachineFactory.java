@@ -30,6 +30,21 @@ public class ConversationStateMachineFactory {
                 .to(ConversationState.TRANSFERRED)
                 .and();
 
+        // Agent attached (internal transition, stays in ACTIVE)
+        builder.transition()
+                .from(ConversationState.ACTIVE)
+                .on(ConversationFact.AGENT_ATTACHED)
+                .to(ConversationState.ACTIVE)
+                .internal()
+                .and();
+
+        // Transfer connected successfully → back to ACTIVE
+        builder.transition()
+                .from(ConversationState.TRANSFERRED)
+                .on(ConversationFact.TRANSFER_CONNECTED)
+                .to(ConversationState.ACTIVE)
+                .and();
+
         // v6: transfer failed -> INITIATED (no rollback)
         builder.transition()
                 .from(ConversationState.TRANSFERRED)

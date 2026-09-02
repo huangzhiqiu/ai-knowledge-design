@@ -83,12 +83,12 @@ public class ChatEngineDemo {
         CbolStateContext ctx = createContext(conversation, "HK");
 
         // 4. Fire events to drive the state machine
-        printTransition(ctx, ConversationFact.CUSTOMER_CONNECT, service);
-        printTransition(ctx, ConversationFact.AGENT_ATTACHED, service);
-        printTransition(ctx, ConversationFact.TRANSFER_REQUEST, service);
-        printTransition(ctx, ConversationFact.TRANSFER_CONNECTED, service);
-        printTransition(ctx, ConversationFact.CUSTOMER_CLOSE, service);
-        printTransition(ctx, ConversationFact.SYS_ENDING_GRACE_TIMEOUT, service);
+        ctx = printTransition(ctx, ConversationFact.CUSTOMER_CONNECT, service);
+        ctx = printTransition(ctx, ConversationFact.AGENT_ATTACHED, service);
+        ctx = printTransition(ctx, ConversationFact.TRANSFER_REQUEST, service);
+        ctx = printTransition(ctx, ConversationFact.TRANSFER_CONNECTED, service);
+        ctx = printTransition(ctx, ConversationFact.CUSTOMER_CLOSE, service);
+        ctx = printTransition(ctx, ConversationFact.SYS_ENDING_GRACE_TIMEOUT, service);
 
         System.out.println("Final state: CLOSED");
     }
@@ -266,9 +266,9 @@ public class ChatEngineDemo {
     }
 
     /**
-     * Fires an event and prints the transition result.
+     * Fires an event, prints the transition result, and returns the updated context.
      */
-    private static void printTransition(
+    private static CbolStateContext printTransition(
             CbolStateContext ctx,
             ConversationFact fact,
             ChatEngineStateMachineService service) {
@@ -281,5 +281,8 @@ public class ChatEngineDemo {
         boolean accepted = result.isTransitionAccepted();
 
         System.out.printf("  %s --(%s)--> %s [accepted=%s]%n", from, fact, to, accepted);
+
+        // Return updated context with new state
+        return updateContextState(ctx, to);
     }
 }

@@ -29,6 +29,7 @@ public class InteractionStateMachineFactory {
      */
     public static StateMachine<InteractionState, InteractionFact, AgentConnectorStateContext> create() {
         StateMachine<InteractionState, InteractionFact, AgentConnectorStateContext> sm = build();
+        // Register directly to the underlying registry
         AgentConnectorStateMachineRegistry.getRegistry().register(sm);
         return sm;
     }

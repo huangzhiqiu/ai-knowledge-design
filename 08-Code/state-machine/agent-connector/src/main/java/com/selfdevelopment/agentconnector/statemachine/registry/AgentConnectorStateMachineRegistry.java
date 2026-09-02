@@ -25,7 +25,8 @@ public final class AgentConnectorStateMachineRegistry {
         if (initialized) {
             return;
         }
-        registry.register(InteractionStateMachineFactory.create());
+        // Use build() instead of create() to avoid double registration
+        registry.register(InteractionStateMachineFactory.build());
         initialized = true;
     }
 
@@ -49,11 +50,11 @@ public final class AgentConnectorStateMachineRegistry {
 
     /**
      * Returns the underlying registry for advanced operations.
+     * <p>
+     * Note: This method does NOT trigger initialization. Use {@link #get(String)}
+     * or {@link #initialize()} to ensure the registry is populated.
      */
     public static StateMachineRegistry getRegistry() {
-        if (!initialized) {
-            initialize();
-        }
         return registry;
     }
 
