@@ -93,7 +93,7 @@ The CBOL messaging hub will be deployed to **multiple markets** (HK, UK, SG, etc
 flowchart TB
     subgraph Core["Core State Machine (shared by all markets)"]
         SM[ConversationStateMachineFactory]
-        STATES[States: INITIATED → IN_PROGRESS → TRANSFERRED → SURVEY → ENDING → CLOSED → ERROR]
+        STATES[States: NEW → INITIATED → IN_PROGRESS (survey as sub-phase) → TRANSFERRED → ENDING → ERROR → CLOSED]
         EVENTS[Events: CUSTOMER_CONNECT, TRANSFER_REQUEST, SURVEY_START, SYS_ACTION_FAILED, ...]
     end
 

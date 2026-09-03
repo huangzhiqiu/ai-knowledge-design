@@ -149,7 +149,7 @@ timeouts:
 ## 影响分析（自动生成）
 
 - HK: 1 个配置值变更，0 个迁移受影响
-- SG: 1 个功能开关变更，2 个迁移现在处于活动状态（来自 IN_PROGRESS/TRANSFERRED 的 SURVEY_START）
+- SG: 1 个功能开关变更，1 个迁移现在处于活动状态（来自 IN_PROGRESS 的 SURVEY_START 内部转换）
 - 无其他市场受影响
 
 ## 校验结果（自动生成）

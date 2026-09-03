@@ -93,7 +93,7 @@ CBOL 消息中心将部署到**多个市场**（HK、UK、SG 等）。每个市�
 flowchart TB
     subgraph Core["核心状态机（所有市场共享）"]
         SM[ConversationStateMachineFactory]
-        STATES[状态: INITIATED → IN_PROGRESS → TRANSFERRED → SURVEY → ENDING → CLOSED → ERROR]
+        STATES[状态: NEW → INITIATED → IN_PROGRESS（调查作为子阶段）→ TRANSFERRED → ENDING → ERROR → CLOSED]
         EVENTS[事件: CUSTOMER_CONNECT, TRANSFER_REQUEST, SURVEY_START, SYS_ACTION_FAILED, ...]
     end
 

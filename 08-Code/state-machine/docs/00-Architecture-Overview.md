@@ -269,7 +269,7 @@ com.selfdevelopment.statemachine/
 ```
 com.selfdevelopment.chatengine/
 ├── enums/
-│   ├── ConversationState.java          # 7 states: INITIATED, IN_PROGRESS, TRANSFERRED, IN_PROGRESS, ENDING, ERROR, CLOSED
+│   ├── ConversationState.java          # 7 states: NEW, INITIATED, IN_PROGRESS, TRANSFERRED, ENDING, ERROR, CLOSED
 │   ├── ConversationFact.java           # 18 events (lifecycle, transfer, survey, ending, system, failover)
 │   ├── EndReason.java
 │   └── TransferOutcome.java
@@ -289,9 +289,15 @@ com.selfdevelopment.chatengine/
 │   ├── AibotEventNormalizer.java
 │   └── ChatEngineEventDispatcher.java
 ├── action/
-│   ├── CbolAction.java
 │   ├── ActionWorker.java               # Async executor with bounded thread pool + MDC propagation
-│   └── CbolActionDefinition.java
+│   └── impl/                           # Action implementations (directly implement core Action<S,E,C>)
+│       ├── ConversationInitAction.java # NEW → INITIATED
+│       ├── CustomerConnectAction.java  # INITIATED → IN_PROGRESS
+│       ├── TransferRequestAction.java  # IN_PROGRESS → TRANSFERRED
+│       ├── TransferFailedAction.java   # TRANSFERRED → INITIATED
+│       ├── CustomerCloseAction.java    # IN_PROGRESS → ENDING
+│       ├── SurveyStartAction.java      # IN_PROGRESS → IN_PROGRESS (internal)
+│       └── SurveyCompleteAction.java   # IN_PROGRESS → ENDING
 ├── statemachine/
 │   └── factory/
 │       └── ConversationStateMachineFactory.java

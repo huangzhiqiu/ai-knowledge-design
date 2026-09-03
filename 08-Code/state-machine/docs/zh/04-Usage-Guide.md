@@ -299,25 +299,28 @@ ActionWorker worker = new ActionWorker();  // 默认：core=CPU, max=CPU*2, queu
 // 或使用自定义配置
 ActionWorker customWorker = new ActionWorker(4, 8, 60, 500);
 
-// 提交异步动作
-CbolAction sendNotification = ctx -> {
-    notificationService.send(ctx.conversation().customerId(), "Your conversation is IN_PROGRESS");
+// 提交异步动作（直接使用核心 Action 接口）
+Action<ConversationState, ConversationFact, CbolStateContext> sendNotification = ctx -> {
+    notificationService.send(ctx.getBusinessContext().conversation().customerId(), "Your conversation is IN_PROGRESS");
 };
 
-worker.submit(sendNotification, ctx);
+worker.submit(sendNotification, stateContext);
 
 // 应用退出时关闭
 worker.shutdown();
 ```
 
-### 7.2 CbolAction 接口
+### 7.2 Action 接口（核心）
 
 ```java
+// 来自 statemachine-core 的核心 Action 接口
 @FunctionalInterface
-public interface CbolAction {
-    void execute(CbolStateContext ctx);
+public interface Action<S, E, C> {
+    void execute(StateContext<S, E, C> context);
 }
 ```
+
+**注意**：所有业务 action 都直接实现核心的 `Action<S, E, C>` 接口，不再需要业务层的 `CbolAction` 包装接口。
 
 ## 8. 错误处理模式
 

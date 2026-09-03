@@ -117,7 +117,7 @@ agent-connector ──► statemachine-core
 - **图生成** — 从配置自动生成 Mermaid、PlantUML、迁移表
 
 ### Chat Engine (chat-engine)
-- **7 个会话状态** — INITIATED, IN_PROGRESS, TRANSFERRED, IN_PROGRESS, ENDING, ERROR, CLOSED
+- **7 个会话状态** — NEW, INITIATED, IN_PROGRESS, TRANSFERRED, ENDING, ERROR, CLOSED
 - **18 个事件** — 生命周期、转接、满意度调查、结束、系统、故障转移
 - **23 条迁移** — 包括 v6 转接失败重置、满意度调查流程、故障转移流程
 - **3 个监控器** — CustomerIdle（客户空闲）、TransferTimeout（转接超时）、EndingGrace（结束宽限）

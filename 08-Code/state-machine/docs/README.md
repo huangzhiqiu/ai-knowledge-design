@@ -114,7 +114,7 @@ agent-connector ──► statemachine-core
 - **Diagrams** — auto-generate Mermaid, PlantUML, transition tables from config
 
 ### Chat Engine (chat-engine)
-- **7 conversation states** — INITIATED, IN_PROGRESS, TRANSFERRED, IN_PROGRESS, ENDING, ERROR, CLOSED
+- **7 conversation states** — NEW, INITIATED, IN_PROGRESS, TRANSFERRED, ENDING, ERROR, CLOSED
 - **18 events** — lifecycle, transfer, survey, ending, system, failover
 - **23 transitions** — including v6 transfer-failure-reset, survey flow, failover flow
 - **3 monitors** — CustomerIdle, TransferTimeout, EndingGrace

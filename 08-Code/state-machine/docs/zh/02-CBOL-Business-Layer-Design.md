@@ -318,17 +318,27 @@ public class ActionWorker {
              1000);  // 队列容量
     }
 
-    public void submit(CbolAction action, CbolStateContext ctx) {
-        executor.submit(() -> {
+    // 即发即忘：异常仅记录日志
+    public void submit(Action<ConversationState, ConversationFact, CbolStateContext> action,
+                       StateContext<ConversationState, ConversationFact, CbolStateContext> ctx) {
+        submitWithResult(action, ctx).exceptionally(ex -> {
+            log.error("动作执行失败, conversationId={}", ..., ex);
+            return null;
+        });
+    }
+
+    // 结果跟踪：返回 CompletableFuture
+    public CompletableFuture<Void> submitWithResult(
+            Action<ConversationState, ConversationFact, CbolStateContext> action,
+            StateContext<ConversationState, ConversationFact, CbolStateContext> ctx) {
+        return CompletableFuture.runAsync(() -> {
             try {
-                TraceMdcHelper.set(ctx.traceContext());  // MDC 传播
+                TraceMdcHelper.set(ctx.getBusinessContext().traceContext());  // MDC 传播
                 action.execute(ctx);
-            } catch (RuntimeException e) {
-                log.error("动作执行失败, conversationId={}", ..., e);
             } finally {
                 TraceMdcHelper.clear();  // 强制清理
             }
-        });
+        }, executor);
     }
 }
 ```

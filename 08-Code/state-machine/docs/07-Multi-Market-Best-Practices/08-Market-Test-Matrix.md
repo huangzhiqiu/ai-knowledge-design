@@ -42,7 +42,7 @@ With multiple markets each having different configs, testing becomes a combinato
 │    HK, SG, UK, US, JP, ...                                       │
 │                                                                   │
 │  Dimension 2: State (S)                                           │
-│    INITIATED, IN_PROGRESS, TRANSFERRED, IN_PROGRESS,          │
+│    NEW, INITIATED, IN_PROGRESS, TRANSFERRED,                    │
 │    ENDING, ERROR, CLOSED                                          │
 │                                                                   │
 │  Dimension 3: Event (E)                                           │

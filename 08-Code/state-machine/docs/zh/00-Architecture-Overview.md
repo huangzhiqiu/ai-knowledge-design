@@ -269,7 +269,7 @@ com.selfdevelopment.statemachine/
 ```
 com.selfdevelopment.chatengine/
 ├── enums/
-│   ├── ConversationState.java          # 7 个状态：INITIATED、IN_PROGRESS、TRANSFERRED、IN_PROGRESS、ENDING、ERROR、CLOSED
+│   ├── ConversationState.java          # 7 个状态：NEW、INITIATED、IN_PROGRESS、TRANSFERRED、ENDING、ERROR、CLOSED
 │   ├── ConversationFact.java           # 18 个事件（生命周期、转接、满意度调查、结束、系统、故障转移）
 │   ├── EndReason.java
 │   └── TransferOutcome.java
@@ -289,9 +289,15 @@ com.selfdevelopment.chatengine/
 │   ├── AibotEventNormalizer.java
 │   └── ChatEngineEventDispatcher.java
 ├── action/
-│   ├── CbolAction.java
 │   ├── ActionWorker.java               # 有界线程池异步执行器 + MDC 传播
-│   └── CbolActionDefinition.java
+│   └── impl/                           # Action 实现（直接实现核心 Action<S,E,C> 接口）
+│       ├── ConversationInitAction.java # NEW → INITIATED
+│       ├── CustomerConnectAction.java  # INITIATED → IN_PROGRESS
+│       ├── TransferRequestAction.java  # IN_PROGRESS → TRANSFERRED
+│       ├── TransferFailedAction.java   # TRANSFERRED → INITIATED
+│       ├── CustomerCloseAction.java    # IN_PROGRESS → ENDING
+│       ├── SurveyStartAction.java      # IN_PROGRESS → IN_PROGRESS（内部转换）
+│       └── SurveyCompleteAction.java   # IN_PROGRESS → ENDING
 ├── statemachine/
 │   └── factory/
 │       └── ConversationStateMachineFactory.java

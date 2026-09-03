@@ -144,7 +144,7 @@ timeouts:
 ## Impact Analysis (auto-generated)
 
 - HK: 1 config value changed, 0 transitions affected
-- SG: 1 feature toggle changed, 2 transitions now IN_PROGRESS (SURVEY_START from IN_PROGRESS/TRANSFERRED)
+- SG: 1 feature toggle changed, 1 transition now active (SURVEY_START internal transition from IN_PROGRESS)
 - No other markets affected
 
 ## Validation Results (auto-generated)

@@ -45,7 +45,7 @@
 │    HK, SG, UK, US, JP, ...                                       │
 │                                                                   │
 │  维度 2: 状态 (S)                                           │
-│    INITIATED, IN_PROGRESS, TRANSFERRED, IN_PROGRESS,          │
+│    NEW, INITIATED, IN_PROGRESS, TRANSFERRED,              │
 │    ENDING, ERROR, CLOSED                                          │
 │                                                                   │
 │  维度 3: 事件 (E)                                           │
