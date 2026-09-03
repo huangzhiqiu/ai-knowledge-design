@@ -26,10 +26,10 @@ The business layer implements conversation lifecycle management using the core s
 
 ```java
 public enum ConversationState {
-    INITIATED,          // Conversation created, waiting for customer connection
-    IN_PROGRESS,             // Customer connected, AI or agent actively handling
+    NEW,                // Initial state, conversation record created but not initialized
+    INITIATED,          // Conversation initialized, waiting for customer connection
+    IN_PROGRESS,        // Customer connected, AI or agent actively handling (includes survey as sub-phase)
     TRANSFERRED,        // Transfer to human agent in progress
-    IN_PROGRESS, // Post-conversation survey in progress (controlled by flow)
     ENDING,             // Conversation ending, grace period for cleanup
     ERROR,              // Action failed, failover state (retry or abort)
     CLOSED              // Terminal state, conversation fully closed
@@ -40,13 +40,15 @@ public enum ConversationState {
 
 | State | Description | Entry Trigger | Exit Trigger |
 |-------|-------------|---------------|--------------|
-| INITIATED | Conversation created but customer not yet connected | System creates conversation | CUSTOMER_CONNECT / SYS_ACTION_FAILED |
-| IN_PROGRESS | Customer connected, IN_PROGRESS conversation | CUSTOMER_CONNECT / SYS_RETRY | TRANSFER_REQUEST / SURVEY_START / CUSTOMER_CLOSE / SYS_CUSTOMER_IDLE / SYS_ACTION_FAILED |
-| TRANSFERRED | Transfer to agent in progress | TRANSFER_REQUEST | TRANSFER_CONNECTED / TRANSFER_FAILED / TRANSFER_TIMEOUT / SURVEY_START / SYS_CUSTOMER_IDLE / SYS_ACTION_FAILED |
-| IN_PROGRESS | Post-conversation survey IN_PROGRESS | SURVEY_START | SURVEY_COMPLETE / SYS_SURVEY_TIMEOUT / SYS_CUSTOMER_IDLE / CUSTOMER_CLOSE / SYS_ACTION_FAILED |
+| NEW | Initial state, conversation record created but not initialized | System creates conversation record | CONVERSATION_INITIATED |
+| INITIATED | Conversation initialized, waiting for customer connection | CONVERSATION_INITIATED | CUSTOMER_CONNECT / SYS_ACTION_FAILED |
+| IN_PROGRESS | Customer connected, actively handling conversation (survey is an internal sub-phase) | CUSTOMER_CONNECT / SYS_RETRY | TRANSFER_REQUEST / CUSTOMER_CLOSE / SYS_CUSTOMER_IDLE / SYS_ACTION_FAILED |
+| TRANSFERRED | Transfer to agent in progress | TRANSFER_REQUEST | TRANSFER_FAILED / TRANSFER_TIMEOUT / SYS_CUSTOMER_IDLE / SYS_ACTION_FAILED |
 | ENDING | Grace period before closure | CUSTOMER_CLOSE / SYS_CUSTOMER_IDLE / SURVEY_COMPLETE / SYS_SURVEY_TIMEOUT | SYS_ENDING_GRACE_TIMEOUT |
 | ERROR | Action failed, failover state | SYS_ACTION_FAILED | SYS_RETRY / SYS_ABORT |
 | CLOSED | Terminal state | SYS_ENDING_GRACE_TIMEOUT / SYS_ABORT | (none) |
+
+**Note**: `SURVEY_START` is an internal transition within `IN_PROGRESS` (IN_PROGRESS → IN_PROGRESS). It does not change the state but executes the SurveyStartAction. `SURVEY_COMPLETE` transitions directly from `IN_PROGRESS` to `ENDING`.
 
 ### 2.3 Events (ConversationFact)
 

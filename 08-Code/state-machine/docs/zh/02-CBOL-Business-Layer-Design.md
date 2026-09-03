@@ -17,7 +17,7 @@
 - **全链路追踪**：通过 SLF4J MDC 跨异步边界传播 TraceId
 - **v6 设计**：转接失败/超时返回 INITIATED（不回滚到 IN_PROGRESS）
 - **自动化监控器**：三个基于时间的监控器，用于空闲检测、转接超时和结束宽限
-- **满意度调查作为进行中状态**：IN_PROGRESS 是活跃流程的子状态，由流程控制
+- **满意度调查作为内部子阶段**：SURVEY_START 是 IN_PROGRESS 内的内部转换（不改变状态），由流程控制
 - **故障转移机制**：未处理的异常触发 FAIL 事件，路由到失败分支
 
 ## 2. 会话状态模型
@@ -26,10 +26,10 @@
 
 ```java
 public enum ConversationState {
-    INITIATED,          // 会话已创建，等待客户连接
-    IN_PROGRESS,             // 客户已连接，AI 或人工正在处理
+    NEW,                // 初始状态，会话记录已创建但尚未初始化
+    INITIATED,          // 会话已初始化，等待客户连接
+    IN_PROGRESS,        // 客户已连接，AI 或人工正在处理（满意度调查是内部子阶段）
     TRANSFERRED,        // 正在转接人工客服
-    IN_PROGRESS, // 会话后满意度调查进行中（由流程控制）
     ENDING,             // 会话结束中，清理宽限期
     ERROR,              // 动作失败，故障转移状态（重试或中止）
     CLOSED              // 终态，会话完全关闭
@@ -40,13 +40,15 @@ public enum ConversationState {
 
 | 状态 | 描述 | 进入触发 | 退出触发 |
 |------|------|---------|---------|
-| INITIATED | 会话已创建但客户尚未连接 | 系统创建会话 | CUSTOMER_CONNECT / SYS_ACTION_FAILED |
-| IN_PROGRESS | 客户已连接，会话进行中 | CUSTOMER_CONNECT / SYS_RETRY | TRANSFER_REQUEST / SURVEY_START / CUSTOMER_CLOSE / SYS_CUSTOMER_IDLE / SYS_ACTION_FAILED |
-| TRANSFERRED | 正在转接客服 | TRANSFER_REQUEST | TRANSFER_CONNECTED / TRANSFER_FAILED / TRANSFER_TIMEOUT / SURVEY_START / SYS_CUSTOMER_IDLE / SYS_ACTION_FAILED |
-| IN_PROGRESS | 会话后满意度调查进行中 | SURVEY_START | SURVEY_COMPLETE / SYS_SURVEY_TIMEOUT / SYS_CUSTOMER_IDLE / CUSTOMER_CLOSE / SYS_ACTION_FAILED |
+| NEW | 初始状态，会话记录已创建但尚未初始化 | 系统创建会话记录 | CONVERSATION_INITIATED |
+| INITIATED | 会话已初始化，等待客户连接 | CONVERSATION_INITIATED | CUSTOMER_CONNECT / SYS_ACTION_FAILED |
+| IN_PROGRESS | 客户已连接，正在处理会话（满意度调查是内部子阶段） | CUSTOMER_CONNECT / SYS_RETRY | TRANSFER_REQUEST / CUSTOMER_CLOSE / SYS_CUSTOMER_IDLE / SYS_ACTION_FAILED |
+| TRANSFERRED | 正在转接客服 | TRANSFER_REQUEST | TRANSFER_FAILED / TRANSFER_TIMEOUT / SYS_CUSTOMER_IDLE / SYS_ACTION_FAILED |
 | ENDING | 关闭前的宽限期 | CUSTOMER_CLOSE / SYS_CUSTOMER_IDLE / SURVEY_COMPLETE / SYS_SURVEY_TIMEOUT | SYS_ENDING_GRACE_TIMEOUT |
 | ERROR | 动作失败，故障转移状态 | SYS_ACTION_FAILED | SYS_RETRY / SYS_ABORT |
 | CLOSED | 终态 | SYS_ENDING_GRACE_TIMEOUT / SYS_ABORT | （无） |
+
+**注意**：`SURVEY_START` 是 `IN_PROGRESS` 内的内部转换（IN_PROGRESS → IN_PROGRESS）。它不会改变状态，但会执行 SurveyStartAction。`SURVEY_COMPLETE` 直接从 `IN_PROGRESS` 转换到 `ENDING`。
 
 ### 2.3 事件（ConversationFact）
 
