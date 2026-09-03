@@ -34,12 +34,18 @@ import java.util.UUID;
  *   <li>{@link StateMachineException} is propagated to the caller</li>
  * </ul>
  * <p>
- * Currently, agent-connector transitions do not have concrete action implementations bound.
- * To add actions, implement the core {@code Action<InteractionState, InteractionFact, AgentConnectorStateContext>}
- * interface and bind them in {@link InteractionStateMachineFactory} using {@code .perform(action)}.
- * <p>
- * For action failure handling with automatic failover, use the {@code FailoverStateMachine} decorator
- * from statemachine-core (see {@code com.selfdevelopment.statemachine.resilience.impl.FailoverStateMachine}).
+ * <b>Actions bound to transitions:</b>
+ * <ul>
+ *   <li>CONNECTING → CONNECTED: {@code ConnectionEstablishedAction} (register channel, start heartbeat)</li>
+ *   <li>CONNECTING → DISCONNECTED: {@code ConnectionFailedAction} (record failure, cleanup resources)</li>
+ *   <li>CONNECTED → RECONNECTING: {@code ConnectionDroppedAction} (pause processing, init reconnection)</li>
+ *   <li>CONNECTED → DISCONNECTED: {@code CloseRequestAction} (send close frame, release resources)</li>
+ *   <li>RECONNECTING → CONNECTED: {@code ReconnectSuccessAction} (resume processing, flush buffered messages)</li>
+ *   <li>CONNECTED → HELD: {@code HoldRequestAction} (pause delivery, start hold music)</li>
+ *   <li>HELD → CONNECTED: {@code HoldResumeAction} (stop hold music, resume delivery, flush messages)</li>
+ *   <li>CONNECTED → TRANSFERRING: {@code TransferStartAction} (pause processing, establish target connection)</li>
+ *   <li>TRANSFERRING → CONNECTED: {@code TransferCompleteAction} (verify integrity, resume processing, close old channel)</li>
+ * </ul>
  *
  * <h3>Usage</h3>
  * <pre>{@code
@@ -97,6 +103,7 @@ public class AgentConnectorDemo {
         System.out.println("Initial state: CONNECTING");
 
         // Connection established
+        System.out.println("  [Action: ConnectionEstablishedAction - register channel, start heartbeat, notify upstream]");
         fireAndPrint(ctx, InteractionFact.CONNECTION_ESTABLISHED, service);
         ctx = updateContextState(ctx, InteractionState.CONNECTED);
 
@@ -104,6 +111,7 @@ public class AgentConnectorDemo {
         System.out.println("  [Active communication in progress...]");
 
         // Customer closes
+        System.out.println("  [Action: CloseRequestAction - send close frame, flush messages, release resources]");
         fireAndPrint(ctx, InteractionFact.CLOSE_REQUEST, service);
 
         System.out.println("Final state: DISCONNECTED");
@@ -127,16 +135,19 @@ public class AgentConnectorDemo {
         System.out.println("Initial state: CONNECTED");
 
         // Agent puts on hold
+        System.out.println("  [Action: HoldRequestAction - pause delivery, start hold music, buffer messages]");
         fireAndPrint(ctx, InteractionFact.HOLD_REQUEST, service);
         ctx = updateContextState(ctx, InteractionState.HELD);
 
         System.out.println("  [Customer on hold, playing hold music...]");
 
         // Agent resumes
+        System.out.println("  [Action: HoldResumeAction - stop hold music, resume delivery, flush buffered messages]");
         fireAndPrint(ctx, InteractionFact.HOLD_RESUME, service);
         ctx = updateContextState(ctx, InteractionState.CONNECTED);
 
         // Close
+        System.out.println("  [Action: CloseRequestAction - send close frame, release resources]");
         fireAndPrint(ctx, InteractionFact.CLOSE_REQUEST, service);
 
         System.out.println("Final state: DISCONNECTED");
@@ -160,18 +171,21 @@ public class AgentConnectorDemo {
         System.out.println("Initial state: CONNECTED");
 
         // Connection dropped
+        System.out.println("  [Action: ConnectionDroppedAction - pause processing, init reconnection, buffer messages]");
         fireAndPrint(ctx, InteractionFact.CONNECTION_DROPPED, service);
         ctx = updateContextState(ctx, InteractionState.RECONNECTING);
 
         System.out.println("  [Attempting reconnection (attempt 1/3)...]");
 
         // Reconnect succeeded
+        System.out.println("  [Action: ReconnectSuccessAction - register new channel, resume processing, flush buffered messages]");
         fireAndPrint(ctx, InteractionFact.RECONNECT_SUCCESS, service);
         ctx = updateContextState(ctx, InteractionState.CONNECTED);
 
         System.out.println("  [Connection restored, resuming communication...]");
 
         // Close
+        System.out.println("  [Action: CloseRequestAction - send close frame, release resources]");
         fireAndPrint(ctx, InteractionFact.CLOSE_REQUEST, service);
 
         System.out.println("Final state: DISCONNECTED");
@@ -227,18 +241,21 @@ public class AgentConnectorDemo {
         System.out.println("Initial state: CONNECTED");
 
         // Start channel transfer
+        System.out.println("  [Action: TransferStartAction - pause processing, establish target connection, transfer state]");
         fireAndPrint(ctx, InteractionFact.TRANSFER_START, service);
         ctx = updateContextState(ctx, InteractionState.TRANSFERRING);
 
         System.out.println("  [Transferring channel to new node...]");
 
         // Transfer completed
+        System.out.println("  [Action: TransferCompleteAction - verify integrity, resume processing, close old channel]");
         fireAndPrint(ctx, InteractionFact.TRANSFER_COMPLETE, service);
         ctx = updateContextState(ctx, InteractionState.CONNECTED);
 
         System.out.println("  [Channel transferred, communication continues on new node...]");
 
         // Close
+        System.out.println("  [Action: CloseRequestAction - send close frame, release resources]");
         fireAndPrint(ctx, InteractionFact.CLOSE_REQUEST, service);
 
         System.out.println("Final state: DISCONNECTED");

@@ -16,7 +16,7 @@ import com.selfdevelopment.statemachine.exception.StateMachineException;
  * <p>
  * Demonstrates the complete conversation lifecycle with action execution:
  * <ul>
- *   <li>Basic flow: INITIATED → ACTIVE → TRANSFERRED → ACTIVE → ENDING → CLOSED</li>
+ *   <li>Basic flow: NEW → INITIATED → IN_PROGRESS → TRANSFERRED → IN_PROGRESS → ENDING → CLOSED</li>
  *   <li>Survey flow: IN_PROGRESS (messaging) → IN_PROGRESS (survey, internal) → ENDING → CLOSED</li>
  *   <li>Multi-market configuration (HK, SG, UK)</li>
  *   <li>Transfer failure flow with TransferFailedAction execution</li>
@@ -31,10 +31,11 @@ import com.selfdevelopment.statemachine.exception.StateMachineException;
  * <p>
  * <b>Actions bound to transitions:</b>
  * <ul>
- *   <li>INITIATED → ACTIVE: {@code CustomerConnectAction} (create record, send welcome)</li>
- *   <li>ACTIVE → TRANSFERRED: {@code TransferRequestAction} (route to agent queue)</li>
+ *   <li>NEW → INITIATED: {@code ConversationInitAction} (validate config, allocate resources)</li>
+ *   <li>INITIATED → IN_PROGRESS: {@code CustomerConnectAction} (create record, send welcome)</li>
+ *   <li>IN_PROGRESS → TRANSFERRED: {@code TransferRequestAction} (route to agent queue)</li>
  *   <li>TRANSFERRED → INITIATED: {@code TransferFailedAction} (cleanup, re-route)</li>
- *   <li>ACTIVE → ENDING: {@code CustomerCloseAction} (close conversation, release resources)</li>
+ *   <li>IN_PROGRESS → ENDING: {@code CustomerCloseAction} (close conversation, release resources)</li>
  *   <li>IN_PROGRESS → IN_PROGRESS (internal): {@code SurveyStartAction} (send survey invitation)</li>
  *   <li>IN_PROGRESS → ENDING: {@code SurveyCompleteAction} (save results, calculate score)</li>
  * </ul>
@@ -73,12 +74,12 @@ public class ChatEngineDemo {
     /**
      * Demo 1: Basic conversation flow with action execution.
      * <p>
-     * NEW → INITIATED → ACTIVE → TRANSFERRED → ACTIVE → ENDING → CLOSED
+     * NEW → INITIATED → IN_PROGRESS → TRANSFERRED → IN_PROGRESS → ENDING → CLOSED
      * <p>
      * NEW is the initial state: conversation record created (customer opened chat window),
      * but no messages exchanged yet. CONVERSATION_INITIATED triggers preparation work
      * (ConversationInitAction: validate config, allocate resources, setup routing).
-     * Then CUSTOMER_CONNECT transitions to ACTIVE (CustomerConnectAction).
+     * Then CUSTOMER_CONNECT transitions to IN_PROGRESS (CustomerConnectAction).
      * <p>
      * Each transition executes its associated action:
      * <ul>
@@ -160,7 +161,7 @@ public class ChatEngineDemo {
 
         CbolStateContext ctx = createContext(conversation, "SG");
 
-        System.out.println("Initial state: ACTIVE (surveyEnabled=true)");
+        System.out.println("Initial state: IN_PROGRESS (surveyEnabled=true)");
 
         // closeConversation automatically routes to SURVEY_START when survey is enabled
         System.out.println("  [Action: SurveyStartAction - send survey invitation, set timeout]");
@@ -232,7 +233,7 @@ public class ChatEngineDemo {
     /**
      * Demo 4: Transfer failure flow with TransferFailedAction execution.
      * <p>
-     * ACTIVE → TRANSFERRED → (transfer failed) → INITIATED (reset)
+     * IN_PROGRESS → TRANSFERRED → (transfer failed) → INITIATED (reset)
      * <p>
      * When a transfer fails, TransferFailedAction executes (records failure,
      * cleans up state, triggers re-routing) and the conversation resets to
@@ -253,7 +254,7 @@ public class ChatEngineDemo {
 
         CbolStateContext ctx = createContext(conversation, "HK");
 
-        System.out.println("Initial state: ACTIVE");
+        System.out.println("Initial state: IN_PROGRESS");
 
         // Transfer request
         System.out.println("  [Action: TransferRequestAction - request routing]");
@@ -302,9 +303,9 @@ public class ChatEngineDemo {
 
         CbolStateContext ctx = createContext(conversation, "HK");
 
-        System.out.println("Initial state: ACTIVE");
+        System.out.println("Initial state: IN_PROGRESS");
 
-        // Try to fire an event that has no transition from ACTIVE
+        // Try to fire an event that has no transition from IN_PROGRESS
         // This demonstrates that invalid events don't change state
         try {
             StateContext<ConversationState, ConversationFact, CbolStateContext> result =
