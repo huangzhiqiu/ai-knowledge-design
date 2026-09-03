@@ -49,54 +49,33 @@ import com.selfdevelopment.statemachine.exception.StateMachineException;
 public class ChatEngineDemo {
 
     public static void main(String[] args) {
-        System.out.println("=== Chat Engine State Machine Demo ===\n");
+        DemoLogger.printTitle("Chat Engine Conversation State Machine Demo");
 
         // Build and register the conversation state machine (must be done before creating service)
         ConversationStateMachineFactory.build();
-        System.out.println("State machine registered: " + ConversationStateMachineFactory.MACHINE_ID);
-        System.out.println("Action execution: each transition requires successful action execution\n");
+        DemoLogger.printInfo("State machine registered: " + ConversationStateMachineFactory.MACHINE_ID);
+        DemoLogger.printInfo("Action execution: each transition requires successful action execution");
 
         runBasicConversationFlow();
-        System.out.println();
-
         runSurveyFlow();
-        System.out.println();
-
         runMultiMarketDemo();
-        System.out.println();
-
         runTransferFailureFlow();
-        System.out.println();
-
         runActionFailureDemo();
+
+        DemoLogger.printTitle("All Demos Completed Successfully");
     }
 
     /**
      * Demo 1: Basic conversation flow with action execution.
      * <p>
      * NEW → INITIATED → IN_PROGRESS → TRANSFERRED → IN_PROGRESS → ENDING → CLOSED
-     * <p>
-     * NEW is the initial state: conversation record created (customer opened chat window),
-     * but no messages exchanged yet. CONVERSATION_INITIATED triggers preparation work
-     * (ConversationInitAction: validate config, allocate resources, setup routing).
-     * Then CUSTOMER_CONNECT transitions to IN_PROGRESS (CustomerConnectAction).
-     * <p>
-     * Each transition executes its associated action:
-     * <ul>
-     *   <li>CONVERSATION_INITIATED: ConversationInitAction</li>
-     *   <li>CUSTOMER_CONNECT: CustomerConnectAction</li>
-     *   <li>TRANSFER_REQUEST: TransferRequestAction</li>
-     *   <li>CUSTOMER_CLOSE: CustomerCloseAction</li>
-     * </ul>
      */
     public static void runBasicConversationFlow() {
-        System.out.println("--- Demo 1: Basic Conversation Flow (with Action Execution) ---");
+        DemoLogger.printSection("Demo 1: Basic Conversation Flow (with Action Execution)");
+        DemoLogger.resetCounter();
 
-        // 1. Create the service (stateless mode)
         ChatEngineStateMachineService service = new ChatEngineStateMachineService();
 
-        // 2. Create a conversation instance in NEW state (initial state)
-        //    NEW: conversation record created, but initialization not done yet
         ConversationInstance conversation = ConversationInstance.builder()
                 .conversationId("conv-001")
                 .market("HK")
@@ -106,50 +85,48 @@ public class ChatEngineDemo {
                 .surveyCompleted(false)
                 .build();
 
-        // 3. Create context with trace
         CbolStateContext ctx = createContext(conversation, "HK");
+        DemoLogger.printInitialState("NEW", "conv-001", "HK");
 
-        // 4. Fire events to drive the state machine
-        //    Each transition executes its associated action
-        System.out.println("  Initial state: NEW (conversation created, waiting for initialization)");
-        System.out.println("  [Action: ConversationInitAction - validate config, allocate resources, setup routing]");
-        ctx = printTransition(ctx, ConversationFact.CONVERSATION_INITIATED, service);
+        // NEW → INITIATED
+        DemoLogger.printAction("ConversationInitAction", "Validate config, allocate resources, setup routing");
+        ctx = fireAndPrint(ctx, ConversationFact.CONVERSATION_INITIATED, service);
 
-        System.out.println("  [Action: CustomerConnectAction - create record, send welcome]");
-        ctx = printTransition(ctx, ConversationFact.CUSTOMER_CONNECT, service);
+        // INITIATED → IN_PROGRESS
+        DemoLogger.printAction("CustomerConnectAction", "Create record, send welcome message");
+        ctx = fireAndPrint(ctx, ConversationFact.CUSTOMER_CONNECT, service);
 
-        ctx = printTransition(ctx, ConversationFact.AGENT_ATTACHED, service);
+        // IN_PROGRESS → TRANSFERRED
+        DemoLogger.printAction("TransferRequestAction", "Route to agent queue, initiate transfer");
+        ctx = fireAndPrint(ctx, ConversationFact.TRANSFER_REQUEST, service);
 
-        System.out.println("  [Action: TransferRequestAction - route to agent queue]");
-        ctx = printTransition(ctx, ConversationFact.TRANSFER_REQUEST, service);
+        // TRANSFERRED → IN_PROGRESS (reserved)
+        DemoLogger.printInfo("Transfer connected (reserved transition)");
+        ctx = fireAndPrint(ctx, ConversationFact.TRANSFER_CONNECTED, service);
 
-        ctx = printTransition(ctx, ConversationFact.TRANSFER_CONNECTED, service);
+        // IN_PROGRESS → ENDING
+        DemoLogger.printAction("CustomerCloseAction", "Close conversation, release resources");
+        ctx = fireAndPrint(ctx, ConversationFact.CUSTOMER_CLOSE, service);
 
-        System.out.println("  [Action: CustomerCloseAction - close conversation, release resources]");
-        ctx = printTransition(ctx, ConversationFact.CUSTOMER_CLOSE, service);
+        // ENDING → CLOSED
+        DemoLogger.printInfo("Ending grace timeout, finalizing conversation");
+        ctx = fireAndPrint(ctx, ConversationFact.SYS_ENDING_GRACE_TIMEOUT, service);
 
-        ctx = printTransition(ctx, ConversationFact.SYS_ENDING_GRACE_TIMEOUT, service);
-
-        System.out.println("Final state: CLOSED");
+        DemoLogger.printFinalState("CLOSED", "conv-001");
+        DemoLogger.printDemoComplete("Basic Conversation Flow", true);
     }
 
     /**
      * Demo 2: Survey flow with action execution.
      * <p>
      * IN_PROGRESS (messaging) → IN_PROGRESS (survey, internal) → ENDING → CLOSED
-     * <p>
-     * Actions:
-     * <ul>
-     *   <li>SURVEY_START: SurveyStartAction (send survey invitation)</li>
-     *   <li>SURVEY_COMPLETE: SurveyCompleteAction (save results, calculate score)</li>
-     * </ul>
      */
     public static void runSurveyFlow() {
-        System.out.println("--- Demo 2: Survey Flow (Survey as In-Progress with Actions) ---");
+        DemoLogger.printSection("Demo 2: Survey Flow (Survey as In-Progress Sub-phase)");
+        DemoLogger.resetCounter();
 
         ChatEngineStateMachineService service = new ChatEngineStateMachineService();
 
-        // Create conversation with survey enabled
         ConversationInstance conversation = ConversationInstance.builder()
                 .conversationId("conv-002")
                 .market("SG")
@@ -160,44 +137,45 @@ public class ChatEngineDemo {
                 .build();
 
         CbolStateContext ctx = createContext(conversation, "SG");
-
-        System.out.println("Initial state: IN_PROGRESS (surveyEnabled=true)");
+        DemoLogger.printInitialState("IN_PROGRESS", "conv-002", "SG");
+        DemoLogger.printInfo("surveyEnabled=true, closeConversation will route to SURVEY_START");
 
         // closeConversation automatically routes to SURVEY_START when survey is enabled
-        System.out.println("  [Action: SurveyStartAction - send survey invitation, set timeout]");
+        DemoLogger.printAction("SurveyStartAction", "Send survey invitation, set survey timeout");
         StateContext<ConversationState, ConversationFact, CbolStateContext> result =
                 service.closeConversation(ctx);
-        System.out.printf("  closeConversation() → %s (fact: SURVEY_START)%n", result.getTargetState());
-
-        // Update context with new state
+        DemoLogger.printTransition("IN_PROGRESS", "SURVEY_START", result.getTargetState().name(),
+                result.isTransitionAccepted());
         ctx = updateContextState(ctx, result.getTargetState());
 
         // Complete the survey
-        System.out.println("  [Action: SurveyCompleteAction - save results, calculate NPS/CSAT]");
+        DemoLogger.printAction("SurveyCompleteAction", "Save results, calculate NPS/CSAT score");
         result = service.completeSurvey(ctx);
-        System.out.printf("  completeSurvey() → %s (fact: SURVEY_COMPLETE)%n", result.getTargetState());
-
+        DemoLogger.printTransition("IN_PROGRESS", "SURVEY_COMPLETE", result.getTargetState().name(),
+                result.isTransitionAccepted());
         ctx = updateContextState(ctx, result.getTargetState());
 
         // Ending grace timeout → CLOSED
+        DemoLogger.printInfo("Ending grace timeout, finalizing conversation");
         result = service.fire(ctx, ConversationFact.SYS_ENDING_GRACE_TIMEOUT);
-        System.out.printf("  SYS_ENDING_GRACE_TIMEOUT → %s%n", result.getTargetState());
+        DemoLogger.printTransition("ENDING", "SYS_ENDING_GRACE_TIMEOUT", result.getTargetState().name(),
+                result.isTransitionAccepted());
 
-        System.out.println("Final state: CLOSED");
+        DemoLogger.printFinalState("CLOSED", "conv-002");
+        DemoLogger.printDemoComplete("Survey Flow", true);
     }
 
     /**
      * Demo 3: Multi-market configuration.
-     * <p>
-     * Demonstrates how different markets (HK, SG, UK) can have different
-     * timeout configurations and feature flags.
      */
     public static void runMultiMarketDemo() {
-        System.out.println("--- Demo 3: Multi-Market Configuration ---");
+        DemoLogger.printSection("Demo 3: Multi-Market Configuration");
+        DemoLogger.resetCounter();
 
         // HK market: default config, survey disabled
         StateMachineMarketConfig hkConfig = StateMachineMarketConfig.defaultConfig();
-        System.out.printf("HK market: idleTimeout=%ds, transferTimeout=%ds, surveyEnabled=%s%n",
+        DemoLogger.printInfo("HK Market: default configuration");
+        System.out.printf("           idleTimeout=%ds, transferTimeout=%ds, surveyEnabled=%s%n",
                 hkConfig.customerIdleSeconds(), hkConfig.transferTimeoutSeconds(), hkConfig.surveyEnabled());
 
         // SG market: survey enabled, shorter timeouts
@@ -210,7 +188,8 @@ public class ChatEngineDemo {
                 .genesysEnabled(true)
                 .fallbackRoutingStrategy("QUEUE")
                 .build();
-        System.out.printf("SG market: idleTimeout=%ds, transferTimeout=%ds, surveyEnabled=%s, genesysEnabled=%s%n",
+        DemoLogger.printInfo("SG Market: survey enabled, shorter timeouts, Genesys enabled");
+        System.out.printf("           idleTimeout=%ds, transferTimeout=%ds, surveyEnabled=%s, genesysEnabled=%s%n",
                 sgConfig.customerIdleSeconds(), sgConfig.transferTimeoutSeconds(),
                 sgConfig.surveyEnabled(), sgConfig.genesysEnabled());
 
@@ -224,23 +203,22 @@ public class ChatEngineDemo {
                 .genesysEnabled(false)
                 .fallbackRoutingStrategy("AI_BOT")
                 .build();
-        System.out.printf("UK market: idleTimeout=%ds, transferEnabled=%s, fallbackStrategy=%s%n",
+        DemoLogger.printInfo("UK Market: transfer disabled, AI_BOT fallback strategy");
+        System.out.printf("           idleTimeout=%ds, transferEnabled=%s, fallbackStrategy=%s%n",
                 ukConfig.customerIdleSeconds(), ukConfig.transferEnabled(), ukConfig.fallbackRoutingStrategy());
 
-        System.out.println("Multi-market configuration allows per-market behavior control");
+        DemoLogger.printInfo("Multi-market configuration allows per-market behavior control");
+        DemoLogger.printDemoComplete("Multi-Market Configuration", true);
     }
 
     /**
      * Demo 4: Transfer failure flow with TransferFailedAction execution.
      * <p>
      * IN_PROGRESS → TRANSFERRED → (transfer failed) → INITIATED (reset)
-     * <p>
-     * When a transfer fails, TransferFailedAction executes (records failure,
-     * cleans up state, triggers re-routing) and the conversation resets to
-     * INITIATED state for re-routing.
      */
     public static void runTransferFailureFlow() {
-        System.out.println("--- Demo 4: Transfer Failure Flow (with TransferFailedAction) ---");
+        DemoLogger.printSection("Demo 4: Transfer Failure Flow (with TransferFailedAction)");
+        DemoLogger.resetCounter();
 
         ChatEngineStateMachineService service = new ChatEngineStateMachineService();
 
@@ -253,44 +231,41 @@ public class ChatEngineDemo {
                 .build();
 
         CbolStateContext ctx = createContext(conversation, "HK");
-
-        System.out.println("Initial state: IN_PROGRESS");
+        DemoLogger.printInitialState("IN_PROGRESS", "conv-004", "HK");
 
         // Transfer request
-        System.out.println("  [Action: TransferRequestAction - request routing]");
+        DemoLogger.printAction("TransferRequestAction", "Request routing to agent queue");
         StateContext<ConversationState, ConversationFact, CbolStateContext> result =
                 service.fire(ctx, ConversationFact.TRANSFER_REQUEST);
-        System.out.printf("  TRANSFER_REQUEST → %s%n", result.getTargetState());
+        DemoLogger.printTransition("IN_PROGRESS", "TRANSFER_REQUEST", result.getTargetState().name(),
+                result.isTransitionAccepted());
         ctx = updateContextState(ctx, result.getTargetState());
 
         // Transfer failed → reset to INITIATED
-        System.out.println("  [Action: TransferFailedAction - record failure, cleanup, trigger re-routing]");
+        DemoLogger.printAction("TransferFailedAction", "Record failure, cleanup state, trigger re-routing");
         result = service.fire(ctx, ConversationFact.TRANSFER_FAILED);
-        System.out.printf("  TRANSFER_FAILED → %s (conversation reset for re-routing)%n", result.getTargetState());
+        DemoLogger.printTransition("TRANSFERRED", "TRANSFER_FAILED", result.getTargetState().name(),
+                result.isTransitionAccepted());
 
-        System.out.println("Final state: INITIATED (ready for re-routing)");
+        DemoLogger.printFinalState("INITIATED", "conv-004");
+        DemoLogger.printInfo("Conversation reset to INITIATED, ready for re-routing");
+        DemoLogger.printDemoComplete("Transfer Failure Flow", true);
     }
 
     /**
      * Demo 5: Action failure handling.
      * <p>
      * Demonstrates that when an action throws an exception, the state does NOT change.
-     * This is the core design principle: "from A to B requires successful action execution".
-     * <p>
-     * In this demo, we use a custom state machine with a failing action to show that
-     * action failure prevents state transition.
      */
     public static void runActionFailureDemo() {
-        System.out.println("--- Demo 5: Action Failure Handling (Action Failure Prevents State Change) ---");
+        DemoLogger.printSection("Demo 5: Action Failure Handling (Action Failure Prevents State Change)");
+        DemoLogger.resetCounter();
 
-        System.out.println("Core design principle:");
-        System.out.println("  - Action executes BEFORE state change");
-        System.out.println("  - If action throws exception, state does NOT change");
-        System.out.println("  - StateMachineException is propagated to caller");
-        System.out.println();
+        DemoLogger.printInfo("Core design principle:");
+        System.out.println("           - Action executes BEFORE state change");
+        System.out.println("           - If action throws exception, state does NOT change");
+        System.out.println("           - StateMachineException is propagated to caller");
 
-        // Demonstrate with the actual state machine using an invalid event
-        // This shows that when no transition is found, the state doesn't change
         ChatEngineStateMachineService service = new ChatEngineStateMachineService();
 
         ConversationInstance conversation = ConversationInstance.builder()
@@ -302,24 +277,22 @@ public class ChatEngineDemo {
                 .build();
 
         CbolStateContext ctx = createContext(conversation, "HK");
-
-        System.out.println("Initial state: IN_PROGRESS");
+        DemoLogger.printInitialState("IN_PROGRESS", "conv-005", "HK");
 
         // Try to fire an event that has no transition from IN_PROGRESS
-        // This demonstrates that invalid events don't change state
+        DemoLogger.printInfo("Attempting invalid transition: SURVEY_COMPLETE from IN_PROGRESS (no survey started)");
         try {
             StateContext<ConversationState, ConversationFact, CbolStateContext> result =
                     service.fire(ctx, ConversationFact.SURVEY_COMPLETE);
-            System.out.printf("  SURVEY_COMPLETE → %s (unexpected, should have failed)%n", result.getTargetState());
+            DemoLogger.printError("Unexpected success: transition should have failed");
         } catch (StateMachineException e) {
-            System.out.printf("  SURVEY_COMPLETE → StateMachineException: %s%n", e.getMessage());
-            System.out.println("  State remains: IN_PROGRESS (no transition, no state change)");
+            DemoLogger.printError("StateMachineException: " + e.getMessage());
+            DemoLogger.printInfo("State remains: IN_PROGRESS (no transition, no state change)");
         }
 
-        System.out.println();
-        System.out.println("Note: To test action failure specifically, use FailoverStateMachine decorator");
-        System.out.println("      which catches action exceptions and triggers a failover event.");
-        System.out.println("      See statemachine-core/resilience/FailoverStateMachine for details.");
+        DemoLogger.printInfo("Note: For actual action failure testing, use FailoverStateMachine decorator");
+        DemoLogger.printInfo("      which catches action exceptions and triggers a failover event.");
+        DemoLogger.printDemoComplete("Action Failure Handling", true);
     }
 
     // ========================================================================
@@ -328,14 +301,9 @@ public class ChatEngineDemo {
 
     /**
      * Creates a CbolStateContext with the given conversation and market.
-     * <p>
-     * Note: InteractionInstance is intentionally NOT included here.
-     * Conversation (chat-engine) and Interaction (agent-connector) are
-     * independent state machines that communicate via events.
      */
     private static CbolStateContext createContext(ConversationInstance conversation, String market) {
         TraceContext traceContext = TraceContext.generate();
-
         StateMachineMarketConfig marketConfig = StateMachineMarketConfig.defaultConfig();
 
         return CbolStateContext.builder()
@@ -360,7 +328,7 @@ public class ChatEngineDemo {
     /**
      * Fires an event, prints the transition result, and returns the updated context.
      */
-    private static CbolStateContext printTransition(
+    private static CbolStateContext fireAndPrint(
             CbolStateContext ctx,
             ConversationFact fact,
             ChatEngineStateMachineService service) {
@@ -372,9 +340,8 @@ public class ChatEngineDemo {
         ConversationState to = result.getTargetState();
         boolean accepted = result.isTransitionAccepted();
 
-        System.out.printf("  %s --(%s)--> %s [accepted=%s]%n", from, fact, to, accepted);
+        DemoLogger.printTransition(from.name(), fact.name(), to.name(), accepted);
 
-        // Return updated context with new state
         return updateContextState(ctx, to);
     }
 }

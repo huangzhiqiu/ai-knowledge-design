@@ -17,10 +17,10 @@ import java.util.UUID;
  * Demonstrates the complete channel/connection lifecycle with action execution design:
  * <ul>
  *   <li>Basic connection flow: CONNECTING → CONNECTED → DISCONNECTED</li>
- *   <li>Hold flow: CONNECTED → HELD → CONNECTED</li>
- *   <li>Reconnection flow: CONNECTED → RECONNECTING → CONNECTED</li>
+ *   <li>Hold flow: CONNECTED → HELD → CONNECTED → DISCONNECTED</li>
+ *   <li>Reconnection flow: CONNECTED → RECONNECTING → CONNECTED → DISCONNECTED</li>
  *   <li>Reconnection exhausted flow: CONNECTED → RECONNECTING → DISCONNECTED</li>
- *   <li>Transfer flow: CONNECTED → TRANSFERRING → CONNECTED</li>
+ *   <li>Transfer flow: CONNECTED → TRANSFERRING → CONNECTED → DISCONNECTED</li>
  *   <li>Connection failure: CONNECTING → DISCONNECTED</li>
  *   <li>Action failure handling: demonstrates action failure prevents state change</li>
  * </ul>
@@ -56,139 +56,120 @@ import java.util.UUID;
 public class AgentConnectorDemo {
 
     public static void main(String[] args) {
-        System.out.println("=== Agent Connector Interaction State Machine Demo ===\n");
+        DemoLogger.printTitle("Agent Connector Interaction State Machine Demo");
 
         // Build and register the interaction state machine (must be done before creating service)
         InteractionStateMachineFactory.build();
-        System.out.println("State machine registered: " + InteractionStateMachineFactory.MACHINE_ID);
-        System.out.println("Action-first transition: action executes before state change\n");
+        DemoLogger.printInfo("State machine registered: " + InteractionStateMachineFactory.MACHINE_ID);
+        DemoLogger.printInfo("Action-first transition: action executes before state change");
 
         runBasicConnectionFlow();
-        System.out.println();
-
         runHoldFlow();
-        System.out.println();
-
         runReconnectionFlow();
-        System.out.println();
-
         runReconnectionExhaustedFlow();
-        System.out.println();
-
         runTransferFlow();
-        System.out.println();
-
         runConnectionFailureFlow();
-        System.out.println();
-
         runActionFailureDemo();
+
+        DemoLogger.printTitle("All Demos Completed Successfully");
     }
 
     /**
      * Demo 1: Basic connection flow.
      * <p>
      * CONNECTING → CONNECTED → DISCONNECTED
-     * <p>
-     * This is the simplest flow: establish a connection, communicate, then close.
      */
     public static void runBasicConnectionFlow() {
-        System.out.println("--- Demo 1: Basic Connection Flow ---");
+        DemoLogger.printSection("Demo 1: Basic Connection Flow");
+        DemoLogger.resetCounter();
 
         AgentConnectorStateMachineService service = new AgentConnectorStateMachineService();
 
-        // Create interaction in CONNECTING state
         InteractionInstance interaction = createInteraction("int-001", InteractionState.CONNECTING);
         AgentConnectorStateContext ctx = createContext(interaction, "HK");
-
-        System.out.println("Initial state: CONNECTING");
+        DemoLogger.printInitialState("CONNECTING", "int-001", "HK");
 
         // Connection established
-        System.out.println("  [Action: ConnectionEstablishedAction - register channel, start heartbeat, notify upstream]");
-        fireAndPrint(ctx, InteractionFact.CONNECTION_ESTABLISHED, service);
-        ctx = updateContextState(ctx, InteractionState.CONNECTED);
+        DemoLogger.printAction("ConnectionEstablishedAction", "Register channel, start heartbeat, notify upstream");
+        ctx = fireAndPrint(ctx, InteractionFact.CONNECTION_ESTABLISHED, service);
 
-        // Active communication happens here...
-        System.out.println("  [Active communication in progress...]");
+        // Active communication
+        DemoLogger.printInfo("Active communication in progress...");
 
         // Customer closes
-        System.out.println("  [Action: CloseRequestAction - send close frame, flush messages, release resources]");
+        DemoLogger.printAction("CloseRequestAction", "Send close frame, flush messages, release resources");
         fireAndPrint(ctx, InteractionFact.CLOSE_REQUEST, service);
 
-        System.out.println("Final state: DISCONNECTED");
+        DemoLogger.printFinalState("DISCONNECTED", "int-001");
+        DemoLogger.printDemoComplete("Basic Connection Flow", true);
     }
 
     /**
      * Demo 2: Hold flow.
      * <p>
      * CONNECTED → HELD → CONNECTED → DISCONNECTED
-     * <p>
-     * Agent puts customer on hold, then resumes the conversation.
      */
     public static void runHoldFlow() {
-        System.out.println("--- Demo 2: Hold Flow ---");
+        DemoLogger.printSection("Demo 2: Hold Flow");
+        DemoLogger.resetCounter();
 
         AgentConnectorStateMachineService service = new AgentConnectorStateMachineService();
 
         InteractionInstance interaction = createInteraction("int-002", InteractionState.CONNECTED);
         AgentConnectorStateContext ctx = createContext(interaction, "SG");
-
-        System.out.println("Initial state: CONNECTED");
+        DemoLogger.printInitialState("CONNECTED", "int-002", "SG");
 
         // Agent puts on hold
-        System.out.println("  [Action: HoldRequestAction - pause delivery, start hold music, buffer messages]");
-        fireAndPrint(ctx, InteractionFact.HOLD_REQUEST, service);
-        ctx = updateContextState(ctx, InteractionState.HELD);
+        DemoLogger.printAction("HoldRequestAction", "Pause delivery, start hold music, buffer messages");
+        ctx = fireAndPrint(ctx, InteractionFact.HOLD_REQUEST, service);
 
-        System.out.println("  [Customer on hold, playing hold music...]");
+        DemoLogger.printInfo("Customer on hold, playing hold music...");
 
         // Agent resumes
-        System.out.println("  [Action: HoldResumeAction - stop hold music, resume delivery, flush buffered messages]");
-        fireAndPrint(ctx, InteractionFact.HOLD_RESUME, service);
-        ctx = updateContextState(ctx, InteractionState.CONNECTED);
+        DemoLogger.printAction("HoldResumeAction", "Stop hold music, resume delivery, flush buffered messages");
+        ctx = fireAndPrint(ctx, InteractionFact.HOLD_RESUME, service);
 
         // Close
-        System.out.println("  [Action: CloseRequestAction - send close frame, release resources]");
+        DemoLogger.printAction("CloseRequestAction", "Send close frame, release resources");
         fireAndPrint(ctx, InteractionFact.CLOSE_REQUEST, service);
 
-        System.out.println("Final state: DISCONNECTED");
+        DemoLogger.printFinalState("DISCONNECTED", "int-002");
+        DemoLogger.printDemoComplete("Hold Flow", true);
     }
 
     /**
      * Demo 3: Reconnection flow.
      * <p>
      * CONNECTED → RECONNECTING → CONNECTED → DISCONNECTED
-     * <p>
-     * Connection drops unexpectedly, system attempts to reconnect, and succeeds.
      */
     public static void runReconnectionFlow() {
-        System.out.println("--- Demo 3: Reconnection Flow ---");
+        DemoLogger.printSection("Demo 3: Reconnection Flow");
+        DemoLogger.resetCounter();
 
         AgentConnectorStateMachineService service = new AgentConnectorStateMachineService();
 
         InteractionInstance interaction = createInteraction("int-003", InteractionState.CONNECTED);
         AgentConnectorStateContext ctx = createContext(interaction, "UK");
-
-        System.out.println("Initial state: CONNECTED");
+        DemoLogger.printInitialState("CONNECTED", "int-003", "UK");
 
         // Connection dropped
-        System.out.println("  [Action: ConnectionDroppedAction - pause processing, init reconnection, buffer messages]");
-        fireAndPrint(ctx, InteractionFact.CONNECTION_DROPPED, service);
-        ctx = updateContextState(ctx, InteractionState.RECONNECTING);
+        DemoLogger.printAction("ConnectionDroppedAction", "Pause processing, init reconnection, buffer messages");
+        ctx = fireAndPrint(ctx, InteractionFact.CONNECTION_DROPPED, service);
 
-        System.out.println("  [Attempting reconnection (attempt 1/3)...]");
+        DemoLogger.printInfo("Attempting reconnection (attempt 1/3)...");
 
         // Reconnect succeeded
-        System.out.println("  [Action: ReconnectSuccessAction - register new channel, resume processing, flush buffered messages]");
-        fireAndPrint(ctx, InteractionFact.RECONNECT_SUCCESS, service);
-        ctx = updateContextState(ctx, InteractionState.CONNECTED);
+        DemoLogger.printAction("ReconnectSuccessAction", "Register new channel, resume processing, flush buffered messages");
+        ctx = fireAndPrint(ctx, InteractionFact.RECONNECT_SUCCESS, service);
 
-        System.out.println("  [Connection restored, resuming communication...]");
+        DemoLogger.printInfo("Connection restored, resuming communication...");
 
         // Close
-        System.out.println("  [Action: CloseRequestAction - send close frame, release resources]");
+        DemoLogger.printAction("CloseRequestAction", "Send close frame, release resources");
         fireAndPrint(ctx, InteractionFact.CLOSE_REQUEST, service);
 
-        System.out.println("Final state: DISCONNECTED");
+        DemoLogger.printFinalState("DISCONNECTED", "int-003");
+        DemoLogger.printDemoComplete("Reconnection Flow", true);
     }
 
     /**
@@ -197,68 +178,66 @@ public class AgentConnectorDemo {
      * CONNECTED → RECONNECTING → DISCONNECTED (max retries exhausted)
      */
     public static void runReconnectionExhaustedFlow() {
-        System.out.println("--- Demo 4: Reconnection Exhausted Flow ---");
+        DemoLogger.printSection("Demo 4: Reconnection Exhausted Flow");
+        DemoLogger.resetCounter();
 
         AgentConnectorStateMachineService service = new AgentConnectorStateMachineService();
 
         InteractionInstance interaction = createInteraction("int-004", InteractionState.CONNECTED);
         AgentConnectorStateContext ctx = createContext(interaction, "HK");
-
-        System.out.println("Initial state: CONNECTED");
+        DemoLogger.printInitialState("CONNECTED", "int-004", "HK");
 
         // Connection dropped
-        fireAndPrint(ctx, InteractionFact.CONNECTION_DROPPED, service);
-        ctx = updateContextState(ctx, InteractionState.RECONNECTING);
+        DemoLogger.printAction("ConnectionDroppedAction", "Pause processing, init reconnection");
+        ctx = fireAndPrint(ctx, InteractionFact.CONNECTION_DROPPED, service);
 
-        System.out.println("  [Reconnection attempt 1 failed...]");
+        DemoLogger.printInfo("Reconnection attempt 1 failed...");
         fireAndPrint(ctx, InteractionFact.RECONNECT_FAILED, service);
 
-        System.out.println("  [Reconnection attempt 2 failed...]");
+        DemoLogger.printInfo("Reconnection attempt 2 failed...");
         fireAndPrint(ctx, InteractionFact.RECONNECT_FAILED, service);
 
-        System.out.println("  [Reconnection attempt 3 failed, max retries exhausted...]");
+        DemoLogger.printInfo("Reconnection attempt 3 failed, max retries exhausted...");
         fireAndPrint(ctx, InteractionFact.RECONNECT_EXHAUSTED, service);
 
-        System.out.println("Final state: DISCONNECTED (permanent failure)");
+        DemoLogger.printFinalState("DISCONNECTED", "int-004");
+        DemoLogger.printInfo("Permanent failure, connection could not be restored");
+        DemoLogger.printDemoComplete("Reconnection Exhausted Flow", true);
     }
 
     /**
      * Demo 5: Transfer flow (channel-level).
      * <p>
      * CONNECTED → TRANSFERRING → CONNECTED → DISCONNECTED
-     * <p>
-     * Channel transfer initiated (e.g., WebSocket handoff to another node),
-     * transfer completes, communication continues on the new channel.
      */
     public static void runTransferFlow() {
-        System.out.println("--- Demo 5: Channel Transfer Flow ---");
+        DemoLogger.printSection("Demo 5: Channel Transfer Flow");
+        DemoLogger.resetCounter();
 
         AgentConnectorStateMachineService service = new AgentConnectorStateMachineService();
 
         InteractionInstance interaction = createInteraction("int-005", InteractionState.CONNECTED);
         AgentConnectorStateContext ctx = createContext(interaction, "HK");
-
-        System.out.println("Initial state: CONNECTED");
+        DemoLogger.printInitialState("CONNECTED", "int-005", "HK");
 
         // Start channel transfer
-        System.out.println("  [Action: TransferStartAction - pause processing, establish target connection, transfer state]");
-        fireAndPrint(ctx, InteractionFact.TRANSFER_START, service);
-        ctx = updateContextState(ctx, InteractionState.TRANSFERRING);
+        DemoLogger.printAction("TransferStartAction", "Pause processing, establish target connection, transfer state");
+        ctx = fireAndPrint(ctx, InteractionFact.TRANSFER_START, service);
 
-        System.out.println("  [Transferring channel to new node...]");
+        DemoLogger.printInfo("Transferring channel to new node...");
 
         // Transfer completed
-        System.out.println("  [Action: TransferCompleteAction - verify integrity, resume processing, close old channel]");
-        fireAndPrint(ctx, InteractionFact.TRANSFER_COMPLETE, service);
-        ctx = updateContextState(ctx, InteractionState.CONNECTED);
+        DemoLogger.printAction("TransferCompleteAction", "Verify integrity, resume processing, close old channel");
+        ctx = fireAndPrint(ctx, InteractionFact.TRANSFER_COMPLETE, service);
 
-        System.out.println("  [Channel transferred, communication continues on new node...]");
+        DemoLogger.printInfo("Channel transferred, communication continues on new node...");
 
         // Close
-        System.out.println("  [Action: CloseRequestAction - send close frame, release resources]");
+        DemoLogger.printAction("CloseRequestAction", "Send close frame, release resources");
         fireAndPrint(ctx, InteractionFact.CLOSE_REQUEST, service);
 
-        System.out.println("Final state: DISCONNECTED");
+        DemoLogger.printFinalState("DISCONNECTED", "int-005");
+        DemoLogger.printDemoComplete("Channel Transfer Flow", true);
     }
 
     /**
@@ -267,19 +246,22 @@ public class AgentConnectorDemo {
      * CONNECTING → DISCONNECTED (connection failed)
      */
     public static void runConnectionFailureFlow() {
-        System.out.println("--- Demo 6: Connection Failure Flow ---");
+        DemoLogger.printSection("Demo 6: Connection Failure Flow");
+        DemoLogger.resetCounter();
 
         AgentConnectorStateMachineService service = new AgentConnectorStateMachineService();
 
         InteractionInstance interaction = createInteraction("int-006", InteractionState.CONNECTING);
         AgentConnectorStateContext ctx = createContext(interaction, "SG");
+        DemoLogger.printInitialState("CONNECTING", "int-006", "SG");
 
-        System.out.println("Initial state: CONNECTING");
-
-        // Connection failed (network error, auth failure, etc.)
+        // Connection failed
+        DemoLogger.printAction("ConnectionFailedAction", "Record failure reason, cleanup resources, trigger reconnection strategy");
         fireAndPrint(ctx, InteractionFact.CONNECTION_FAILED, service);
 
-        System.out.println("Final state: DISCONNECTED (connection failed)");
+        DemoLogger.printFinalState("DISCONNECTED", "int-006");
+        DemoLogger.printInfo("Connection failed (network error, auth failure, etc.)");
+        DemoLogger.printDemoComplete("Connection Failure Flow", true);
     }
 
     /**
@@ -287,44 +269,39 @@ public class AgentConnectorDemo {
      * <p>
      * Demonstrates the action-first transition design principle:
      * when an action throws an exception, the state does NOT change.
-     * <p>
-     * In this demo, we show that invalid events (no transition defined)
-     * do not change state. For actual action failure testing, use the
-     * FailoverStateMachine decorator from statemachine-core.
      */
     public static void runActionFailureDemo() {
-        System.out.println("--- Demo 7: Action Failure Handling (Action-First Transition) ---");
+        DemoLogger.printSection("Demo 7: Action Failure Handling (Action-First Transition)");
+        DemoLogger.resetCounter();
 
-        System.out.println("Core design principle:");
-        System.out.println("  - Action executes BEFORE state change");
-        System.out.println("  - If action throws exception, state does NOT change");
-        System.out.println("  - StateMachineException is propagated to caller");
-        System.out.println();
+        DemoLogger.printInfo("Core design principle:");
+        System.out.println("           - Action executes BEFORE state change");
+        System.out.println("           - If action throws exception, state does NOT change");
+        System.out.println("           - StateMachineException is propagated to caller");
 
         AgentConnectorStateMachineService service = new AgentConnectorStateMachineService();
 
         InteractionInstance interaction = createInteraction("int-007", InteractionState.CONNECTED);
         AgentConnectorStateContext ctx = createContext(interaction, "HK");
-
-        System.out.println("Initial state: CONNECTED");
+        DemoLogger.printInitialState("CONNECTED", "int-007", "HK");
 
         // Try to fire an event that has no transition from CONNECTED
-        // This demonstrates that invalid events don't change state
+        DemoLogger.printInfo("Attempting invalid transition: CONNECTION_ESTABLISHED from CONNECTED");
         try {
             StateContext<InteractionState, InteractionFact, AgentConnectorStateContext> result =
                     service.fire(ctx, InteractionFact.CONNECTION_ESTABLISHED);
-            System.out.printf("  CONNECTION_ESTABLISHED → %s (unexpected, should have failed)%n",
-                    result.getTargetState());
+            DemoLogger.printError("Unexpected success: transition should have failed");
         } catch (StateMachineException e) {
-            System.out.printf("  CONNECTION_ESTABLISHED → StateMachineException: %s%n",
-                    e.getMessage().length() > 80 ? e.getMessage().substring(0, 80) + "..." : e.getMessage());
-            System.out.println("  State remains: CONNECTED (no transition, no state change)");
+            String message = e.getMessage().length() > 80
+                    ? e.getMessage().substring(0, 80) + "..."
+                    : e.getMessage();
+            DemoLogger.printError("StateMachineException: " + message);
+            DemoLogger.printInfo("State remains: CONNECTED (no transition, no state change)");
         }
 
-        System.out.println();
-        System.out.println("Note: To test actual action failure, bind an action that throws an exception");
-        System.out.println("      in InteractionStateMachineFactory, or use FailoverStateMachine decorator.");
-        System.out.println("      See statemachine-core/resilience/FailoverStateMachine for details.");
+        DemoLogger.printInfo("Note: To test actual action failure, bind an action that throws an exception");
+        DemoLogger.printInfo("      in InteractionStateMachineFactory, or use FailoverStateMachine decorator.");
+        DemoLogger.printDemoComplete("Action Failure Handling", true);
     }
 
     // ========================================================================
@@ -377,9 +354,9 @@ public class AgentConnectorDemo {
     }
 
     /**
-     * Fires an event and prints the transition result.
+     * Fires an event, prints the transition result, and returns the updated context.
      */
-    private static void fireAndPrint(
+    private static AgentConnectorStateContext fireAndPrint(
             AgentConnectorStateContext ctx,
             InteractionFact fact,
             AgentConnectorStateMachineService service) {
@@ -391,6 +368,8 @@ public class AgentConnectorDemo {
         InteractionState to = result.getTargetState();
         boolean accepted = result.isTransitionAccepted();
 
-        System.out.printf("  %s --(%s)--> %s [accepted=%s]%n", from, fact, to, accepted);
+        DemoLogger.printTransition(from.name(), fact.name(), to.name(), accepted);
+
+        return updateContextState(ctx, to);
     }
 }
