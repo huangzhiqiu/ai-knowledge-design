@@ -289,7 +289,7 @@ com.selfdevelopment.chatengine/
 │   ├── AibotEventNormalizer.java
 │   └── ChatEngineEventDispatcher.java
 ├── action/
-│   ├── ActionWorker.java               # Async executor with bounded thread pool + MDC propagation
+│   ├── ActionWorker.java               # [RESERVED] Async executor with bounded thread pool + MDC propagation (not used in production, reserved for future async actions)
 │   └── impl/                           # Action implementations (directly implement core Action<S,E,C>)
 │       ├── ConversationInitAction.java # NEW → INITIATED
 │       ├── CustomerConnectAction.java  # INITIATED → IN_PROGRESS

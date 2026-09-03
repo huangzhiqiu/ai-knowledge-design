@@ -293,6 +293,9 @@ public void checkTransferTimeout() {
 
 ### 7.1 使用 ActionWorker
 
+> **[预留 - 生产代码未使用]** ActionWorker 是预留的异步执行工具类。
+> 当前状态机采用同步执行 action（action-first transition）。
+
 ```java
 ActionWorker worker = new ActionWorker();  // 默认：core=CPU, max=CPU*2, queue=1000
 

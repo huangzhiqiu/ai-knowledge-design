@@ -293,6 +293,9 @@ public void checkTransferTimeout() {
 
 ### 7.1 Using ActionWorker
 
+> **[RESERVED - Not used in production]** ActionWorker is a reserved utility for future async actions.
+> The current state machine executes actions synchronously (action-first transition).
+
 ```java
 ActionWorker worker = new ActionWorker();  // Default: core=CPU, max=CPU*2, queue=1000
 

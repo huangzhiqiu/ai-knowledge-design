@@ -303,6 +303,11 @@ flowchart TD
 
 ## 7. ActionWorker (Async Execution)
 
+> **[RESERVED UTILITY - Currently not used in production]**
+>
+> The current state machine uses **action-first transition** (synchronous execution before state change).
+> This worker is reserved for future non-critical async actions (notifications, audit logging).
+
 ### 7.1 Design
 
 Executes state machine actions asynchronously with a bounded thread pool.

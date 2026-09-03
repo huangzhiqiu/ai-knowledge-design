@@ -21,6 +21,16 @@ import java.util.function.Consumer;
 /**
  * Worker for executing state machine actions asynchronously.
  * <p>
+ * <b>RESERVED UTILITY CLASS - Currently not used in production code.</b>
+ * <p>
+ * The current state machine design uses <b>action-first transition</b>: actions are executed
+ * synchronously before state transition. If an action fails, an exception is thrown and the
+ * state remains unchanged. This ensures state consistency.
+ * <p>
+ * This worker is reserved for future use cases where non-critical actions (e.g., sending
+ * notifications, audit logging) can be executed asynchronously without affecting the main
+ * state transition flow.
+ * <p>
  * Uses a bounded thread pool to prevent OOM under high load.
  * Propagates trace context (MDC) to worker threads.
  * <p>

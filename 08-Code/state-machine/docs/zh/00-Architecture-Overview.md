@@ -289,7 +289,7 @@ com.selfdevelopment.chatengine/
 │   ├── AibotEventNormalizer.java
 │   └── ChatEngineEventDispatcher.java
 ├── action/
-│   ├── ActionWorker.java               # 有界线程池异步执行器 + MDC 传播
+│   ├── ActionWorker.java               # [预留] 有界线程池异步执行器 + MDC 传播（生产代码未使用，预留用于未来异步 action）
 │   └── impl/                           # Action 实现（直接实现核心 Action<S,E,C> 接口）
 │       ├── ConversationInitAction.java # NEW → INITIATED
 │       ├── CustomerConnectAction.java  # INITIATED → IN_PROGRESS
