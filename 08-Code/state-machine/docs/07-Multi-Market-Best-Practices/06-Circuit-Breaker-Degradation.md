@@ -369,7 +369,7 @@ public class DegradationAwareEventProcessor {
     private final DegradationController degradationController;
     private final StateMachineProcessor processor;
 
-    public StateContext<...> process(String market, Event event, Conversation conversation) {
+    public ConversationState process(String market, Event event, Conversation conversation) {
         // 1. Check degradation level
         DegradationController.DegradationLevel level = degradationController.getLevel(market);
 
@@ -389,7 +389,7 @@ public class DegradationAwareEventProcessor {
         };
     }
 
-    private StateContext<...> processWithSkippedActions(Event event, Conversation conversation) {
+    private ConversationState processWithSkippedActions(Event event, Conversation conversation) {
         // Skip non-critical actions (audit, notifications) but still do state transition
         return processor.process(event, conversation, ProcessingOptions.skipNonCriticalActions());
     }
@@ -401,20 +401,28 @@ public class DegradationAwareEventProcessor {
 For L1 (weak degradation), the state machine can skip non-critical actions:
 
 ```java
-public class DegradationAwareStateMachine implements StateMachine<...> {
+// Note: COLA StateMachine's fireEvent returns ConversationState, not StateContext
+// Degradation awareness can be implemented at the business layer (Service layer),
+// rather than wrapping the StateMachine interface
+public class DegradationAwareStateMachineService {
 
-    private final StateMachine<...> delegate;
+    private final StateMachine<ConversationState, ConversationFact, CbolStateContext> delegate;
     private final DegradationController degradationController;
     private final String market;
 
-    @Override
-    public StateContext<...> fireEvent(ConversationState source, ConversationFact event, CbolStateContext ctx) {
+    public ConversationState fireEvent(ConversationState source, ConversationFact event, CbolStateContext ctx) {
         DegradationController.DegradationLevel level = degradationController.getLevel(market);
 
         if (level == DegradationController.DegradationLevel.L1_WEAK) {
-            // Skip entry/exit actions and transition actions marked as non-critical
-            return delegate.fireEvent(source, event, ctx,
-                    ExtendedState.with("skipNonCriticalActions", true));
+            // L1 weak degradation: skip non-critical actions, but still do state transition
+            // This can be implemented by setting a flag in CbolStateContext
+            CbolStateContext degradedCtx = CbolStateContext.builder()
+                    .conversation(ctx.conversation())
+                    .marketConfig(ctx.marketConfig())
+                    .traceContext(ctx.traceContext())
+                    .skipNonCriticalActions(true)  // custom flag
+                    .build();
+            return delegate.fireEvent(source, event, degradedCtx);
         }
 
         return delegate.fireEvent(source, event, ctx);

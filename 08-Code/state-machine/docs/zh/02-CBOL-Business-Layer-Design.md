@@ -328,9 +328,10 @@ public class ActionWorker {
 
     // 即发即忘：异常仅记录日志
     public void submit(Action<ConversationState, ConversationFact, CbolStateContext> action,
-                       StateContext<ConversationState, ConversationFact, CbolStateContext> ctx) {
-        submitWithResult(action, ctx).exceptionally(ex -> {
-            log.error("动作执行失败, conversationId={}", ..., ex);
+                       ConversationState from, ConversationState to,
+                       ConversationFact event, CbolStateContext ctx) {
+        submitWithResult(action, from, to, event, ctx).exceptionally(ex -> {
+            log.error("动作执行失败, conversationId={}", ctx.conversation().conversationId(), ex);
             return null;
         });
     }
@@ -338,11 +339,12 @@ public class ActionWorker {
     // 结果跟踪：返回 CompletableFuture
     public CompletableFuture<Void> submitWithResult(
             Action<ConversationState, ConversationFact, CbolStateContext> action,
-            StateContext<ConversationState, ConversationFact, CbolStateContext> ctx) {
+            ConversationState from, ConversationState to,
+            ConversationFact event, CbolStateContext ctx) {
         return CompletableFuture.runAsync(() -> {
             try {
-                TraceMdcHelper.set(ctx.getBusinessContext().traceContext());  // MDC 传播
-                action.execute(ctx);
+                TraceMdcHelper.set(ctx.traceContext());  // MDC 传播
+                action.execute(from, to, event, ctx);  // COLA Action 接口
             } finally {
                 TraceMdcHelper.clear();  // 强制清理
             }
@@ -580,9 +582,9 @@ sequenceDiagram
     API->>API: 构建 CbolStateContext（带 marketConfig、traceContext）
     API->>Svc: fire(ctx, CUSTOMER_CONNECT)
     Svc->>SM: fireEvent(INITIATED, CUSTOMER_CONNECT, ctx)
-    SM-->>Svc: StateContext(target=IN_PROGRESS)
-    Svc->>Log: info("StateTransitionRecord: INITIATED->IN_PROGRESS")
-    Svc-->>API: StateContext
+    SM-->>Svc: ConversationState=IN_PROGRESS
+    Svc->>Log: info("状态转换：INITIATED->IN_PROGRESS")
+    Svc-->>API: ConversationState
     API->>Repo: save(会话 state=IN_PROGRESS)
 ```
 
@@ -598,7 +600,7 @@ sequenceDiagram
     Svc->>SM: fireEvent(TRANSFERRED, TRANSFER_FAILED, ctx)
     Note over SM: 迁移：TRANSFERRED -> INITIATED
     Note over SM: v6：不回滚到 IN_PROGRESS
-    SM-->>Svc: StateContext(target=INITIATED)
+    SM-->>Svc: ConversationState=INITIATED
     Svc->>Repo: save(state=INITIATED)
     Note over Repo: 会话返回初始状态<br/>客户可重新连接或重新路由
 ```

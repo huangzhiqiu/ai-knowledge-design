@@ -278,7 +278,7 @@ public class MarketAwareEventProcessor {
     private final StateMachineProcessor processor;
     private final ConfigProvider configProvider;
 
-    public StateContext<...> process(Event event, Conversation conversation) {
+    public ConversationState process(Event event, Conversation conversation) {
         // 1. 解析市场
         String market = router.resolve(event, conversation);
         router.validate(market);

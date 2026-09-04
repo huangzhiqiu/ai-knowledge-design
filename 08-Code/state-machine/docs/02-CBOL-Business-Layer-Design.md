@@ -327,13 +327,14 @@ public class ActionWorker {
     }
 
     public void submit(Action<ConversationState, ConversationFact, CbolStateContext> action,
-                       StateContext<ConversationState, ConversationFact, CbolStateContext> ctx) {
+                       ConversationState from, ConversationState to,
+                       ConversationFact event, CbolStateContext ctx) {
         executor.submit(() -> {
             try {
                 TraceMdcHelper.set(ctx.traceContext());  // MDC propagation
-                action.execute(ctx);
+                action.execute(from, to, event, ctx);  // COLA Action interface
             } catch (RuntimeException e) {
-                log.error("Action execution failed, conversationId={}", ..., e);
+                log.error("Action execution failed, conversationId={}", ctx.conversation().conversationId(), e);
             } finally {
                 TraceMdcHelper.clear();  // MANDATORY cleanup
             }
@@ -468,9 +469,8 @@ public class CustomerConnectAction
     implements Action<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override
-    public void execute(StateContext<ConversationState, ConversationFact, CbolStateContext> context) {
-        CbolStateContext ctx = context.getBusinessContext();
-        
+    public void execute(ConversationState from, ConversationState to,
+                        ConversationFact event, CbolStateContext ctx) {
         // 1. Extract data from context
         String conversationId = ctx.conversation().conversationId();
         
@@ -479,7 +479,8 @@ public class CustomerConnectAction
         sendWelcomeMessage(ctx);
         
         // 3. Log completion
-        log.info("CustomerConnectAction completed: conversationId={}", conversationId);
+        log.info("CustomerConnectAction completed: conversationId={}, {} -> {}",
+                conversationId, from, to);
     }
 }
 ```

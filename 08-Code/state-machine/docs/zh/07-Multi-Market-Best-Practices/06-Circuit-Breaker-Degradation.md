@@ -371,7 +371,7 @@ public class DegradationAwareEventProcessor {
     private final DegradationController degradationController;
     private final StateMachineProcessor processor;
 
-    public StateContext<...> process(String market, Event event, Conversation conversation) {
+    public ConversationState process(String market, Event event, Conversation conversation) {
         // 1. 检查降级级别
         DegradationController.DegradationLevel level = degradationController.getLevel(market);
 
@@ -391,7 +391,7 @@ public class DegradationAwareEventProcessor {
         };
     }
 
-    private StateContext<...> processWithSkippedActions(Event event, Conversation conversation) {
+    private ConversationState processWithSkippedActions(Event event, Conversation conversation) {
         // 跳过非关键动作（审计、通知）但仍执行状态迁移
         return processor.process(event, conversation, ProcessingOptions.skipNonCriticalActions());
     }
@@ -403,20 +403,27 @@ public class DegradationAwareEventProcessor {
 对于 L1（弱降级），状态机可以跳过非关键动作：
 
 ```java
-public class DegradationAwareStateMachine implements StateMachine<...> {
+// 注意：COLA StateMachine 的 fireEvent 返回 ConversationState，不是 StateContext
+// 降级感知可以在业务层（Service 层）实现，而不是包装 StateMachine 接口
+public class DegradationAwareStateMachineService {
 
-    private final StateMachine<...> delegate;
+    private final StateMachine<ConversationState, ConversationFact, CbolStateContext> delegate;
     private final DegradationController degradationController;
     private final String market;
 
-    @Override
-    public StateContext<...> fireEvent(ConversationState source, ConversationFact event, CbolStateContext ctx) {
+    public ConversationState fireEvent(ConversationState source, ConversationFact event, CbolStateContext ctx) {
         DegradationController.DegradationLevel level = degradationController.getLevel(market);
 
         if (level == DegradationController.DegradationLevel.L1_WEAK) {
-            // 跳过标记为非关键的 entry/exit 动作和迁移动作
-            return delegate.fireEvent(source, event, ctx,
-                    ExtendedState.with("skipNonCriticalActions", true));
+            // L1 弱降级：跳过非关键动作，但仍执行状态迁移
+            // 可以通过在 CbolStateContext 中设置标志来实现
+            CbolStateContext degradedCtx = CbolStateContext.builder()
+                    .conversation(ctx.conversation())
+                    .marketConfig(ctx.marketConfig())
+                    .traceContext(ctx.traceContext())
+                    .skipNonCriticalActions(true)  // 自定义标志
+                    .build();
+            return delegate.fireEvent(source, event, degradedCtx);
         }
 
         return delegate.fireEvent(source, event, ctx);

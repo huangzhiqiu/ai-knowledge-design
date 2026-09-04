@@ -350,14 +350,14 @@ public class ChatEngineStateMachineService {
     private final StateMachine<ConversationState, ConversationFact, CbolStateContext> machine;
     private final MarketConfigProvider configProvider;
 
-    public StateContext<...> fire(String conversationId, String market, ConversationFact fact) {
+    public ConversationState fire(String conversationId, String market, ConversationFact fact) {
         StateMachineMarketConfig config = configProvider.getConfig(market);
         CbolStateContext ctx = buildContext(conversationId, config);
         return machine.fireEvent(ctx.conversation().state(), fact, ctx);
     }
 
     // closeConversation: survey path only if surveyEnabled
-    public StateContext<...> closeConversation(String conversationId, String market) {
+    public ConversationState closeConversation(String conversationId, String market) {
         StateMachineMarketConfig config = configProvider.getConfig(market);
         ConversationFact fact = config.surveyEnabled()
             ? ConversationFact.SURVEY_START
