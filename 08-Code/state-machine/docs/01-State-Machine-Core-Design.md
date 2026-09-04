@@ -1,6 +1,7 @@
 # State Machine Core Framework Design
 
-> Version: 2.1 | Last Updated: 2026-09-03
+> Version: 3.0 | Last Updated: 2026-09-04
+> Based on Alibaba COLA StateMachine: https://github.com/alibaba/COLA
 
 ## 0. Design Principles
 
@@ -12,29 +13,28 @@ The state machine follows the **action-first transition** principle:
 
 This ensures that business logic (action) is the gatekeeper for state transitions. A transition from state A to state B only completes if the associated action executes successfully.
 
-**Execution order for EXTERNAL transitions:**
-1. Exit action of source state (best-effort, failure → listener only)
-2. **Transition action (failure → `StateMachineException`, state does NOT change)**
-3. Entry action of target state (best-effort, failure → listener only)
+**Execution order for EXTERNAL transitions (COLA StateMachine):**
+1. Guard/Condition check (`when()`) — if false, transition is rejected
+2. **Transition action (`perform()`) — failure → `StateMachineException`, state does NOT change**
+3. State transition completes
 
 **Key points:**
 - Transition action is the only action that can block a state transition
-- Exit/entry actions are best-effort because they are side effects, not core business logic
 - When transition action fails, the source state is preserved and the exception propagates
-- Use `FailoverStateMachine` decorator for automatic failover on action failure
+- COLA StateMachine throws `StateMachineException` when no transition matches or when action fails
 
-See [Section 2.2](#22-action-execution-order-external-transition) for detailed execution order and failure handling.
-
-## 1. Core Abstractions
+## 1. Core Abstractions (Alibaba COLA StateMachine)
 
 ### Package Structure
 
-The core framework is organized into two main packages:
+The core framework is based on Alibaba COLA StateMachine:
 
 | Package | Responsibility |
 |---------|----------------|
-| `com.selfdevelopment.statemachine.api` | Public interfaces: `StateMachine`, `Action`, `Guard`, `StateMachineListener`, `StateMachineRegistry` |
-| `com.selfdevelopment.statemachine.core` | Core implementations: `SimpleStateMachine`, `Transition`, `StateDef`, `StateContext`, `ExtendedState`, `TransitionKind` |
+| `com.alibaba.cola.statemachine` | Core interfaces: `StateMachine`, `Action`, `Condition`, `State`, `Transition`, `StateMachineFactory`, `StateContext` |
+| `com.alibaba.cola.statemachine.builder` | Builder DSL: `StateMachineBuilder`, `StateMachineBuilderFactory`, `TransitionBuilder`, `From`, `To`, `On`, `When`, `Perform` |
+| `com.alibaba.cola.statemachine.impl` | Core implementations: `StateMachineImpl`, `StateImpl`, `TransitionImpl`, `StateContextImpl` |
+| `com.alibaba.cola.statemachine.exception` | `StateMachineException` |
 
 ### 1.1 StateMachine Interface
 
@@ -42,27 +42,27 @@ The central interface defining the state machine contract.
 
 ```java
 public interface StateMachine<S, E, C> {
-    // Lifecycle
-    void start();
-    void stop();
-    boolean isStarted();
+    /**
+     * Fire an event and return the target state.
+     * @param sourceState the source state
+     * @param event the event to fire
+     * @param ctx the business context
+     * @return the target state after transition
+     * @throws StateMachineException if no transition matches or action fails
+     */
+    S fireEvent(S sourceState, E event, C ctx);
 
-    // Event processing
-    StateContext<S, E, C> fireEvent(S sourceState, E event, C context);
-    StateContext<S, E, C> fireEvent(S sourceState, E event, C context, ExtendedState extendedState);
+    /**
+     * Verify if an event can be fired from the source state.
+     */
+    boolean verify(S sourceState, E event);
 
-    // Query
-    boolean hasTransition(S sourceState, E event);
-    boolean canFire(S sourceState, E event, C context);
-    int getTransitionCount();
-    Collection<Transition<S, E, C>> getAllTransitions();
+    /**
+     * Generate a PlantUML state diagram.
+     */
+    String generatePlantUML();
+
     String getMachineId();
-    S getInitialState();
-    Collection<S> getEndStates();
-
-    // Listeners
-    void addListener(StateMachineListener<S, E, C> listener);
-    void removeListener(StateMachineListener<S, E, C> listener);
 }
 ```
 
@@ -71,422 +71,259 @@ public interface StateMachine<S, E, C> {
 - `E` — Event type (typically an enum)
 - `C` — Business context type (carries domain data)
 
-### 1.2 Two Firing Modes
+### 1.2 Action Interface
 
-`SimpleStateMachine` supports two firing modes:
-
-| Mode | Method | Behavior on Rejection | Use Case |
-|------|--------|----------------------|----------|
-| **Strict** | `fireEvent()` | Throws `StateMachineException` | When failures should propagate (with ResilientStateMachine / FailoverStateMachine) |
-| **Lenient** | `tryFireEvent()` | Returns rejected `StateContext` (`transitionAccepted=false`) | When "event not applicable" should be handled gracefully |
-
-Both modes still throw on action execution failures (those are real errors, not "not applicable").
+The functional interface for transition actions.
 
 ```java
-// Strict mode — throws on rejection
-StateContext<S, E, C> result = machine.fireEvent(state, event, ctx);
-
-// Lenient mode — returns rejected context instead of throwing
-StateContext<S, E, C> result = machine.tryFireEvent(state, event, ctx, null);
-if (!result.isTransitionAccepted()) {
-    log.warn("Event not applicable: {}", event);
-    return;
-}
-```
-
-### 1.2 SimpleStateMachine Implementation
-
-The default, thread-safe implementation.
-
-**Internal Data Structures:**
-
-```java
-// Transition lookup: O(1) by (sourceState, event)
-private final Map<TransitionKey<S, E>, List<Transition<S, E, C>>> transitions;
-
-// State definitions: entry/exit actions, initial/end flags
-private final Map<S, StateDef<S, E, C>> stateDefs;
-
-// Listeners: CopyOnWriteArrayList for thread-safe iteration
-private final List<StateMachineListener<S, E, C>> listeners = new CopyOnWriteArrayList<>();
-
-// Machine metadata
-private final String machineId;
-private final S initialState;
-private final Set<S> endStates;
-
-// Lifecycle
-private volatile boolean started = false;
-```
-
-**TransitionKey** is a private record used as the map key:
-
-```java
-private record TransitionKey<S, E>(S sourceState, E event) {
-    static <S, E> TransitionKey<S, E> of(S sourceState, E event) {
-        return new TransitionKey<>(sourceState, event);
-    }
-}
-```
-
-**Two firing methods:**
-
-```java
-// Strict mode: throws StateMachineException on rejection
-public StateContext<S, E, C> fireEvent(S sourceState, E event, C context, ExtendedState extendedState) {
-    StateContext<S, E, C> result = tryFireEvent(sourceState, event, context, extendedState);
-    if (!result.isTransitionAccepted()) {
-        throw new StateMachineException(reason);
-    }
-    return result;
-}
-
-// Lenient mode: returns rejected context instead of throwing
-public StateContext<S, E, C> tryFireEvent(S sourceState, E event, C context, ExtendedState extendedState) {
-    // ... lookup transitions, evaluate guards, execute actions ...
-    // Returns StateContext with transitionAccepted=false on rejection
-}
-```
-
-### 1.3 Transition
-
-Represents a single transition rule.
-
-```java
-public final class Transition<S, E, C> {
-    private final S sourceState;      // State before transition
-    private final E event;            // Triggering event
-    private final S targetState;      // State after transition
-    private final Guard<S, E, C> guard;    // Optional condition (null = always allowed)
-    private final Action<S, E, C> action;  // Optional side effect
-    private final TransitionKind kind;      // EXTERNAL (default) or INTERNAL
-}
-```
-
-**Key Methods:**
-- `matches(sourceState, event)` — Checks if this transition applies
-- `isGuardSatisfied(context)` — Evaluates guard (null guard = true)
-- `executeAction(context)` — Executes action if present
-- `isInternal()` — Returns true for INTERNAL transitions
-
-**TransitionKind:**
-- `EXTERNAL` — State changes; exit(source) → action → entry(target)
-- `INTERNAL` — State does not change; only action executes; no entry/exit
-
-### 1.4 StateDef
-
-Defines metadata for a state, including entry/exit actions.
-
-```java
-public final class StateDef<S, E, C> {
-    private final S id;
-    private final Action<S, E, C> entryAction;
-    private final Action<S, E, C> exitAction;
-    private final boolean initial;
-    private final boolean end;
-}
-```
-
-**Execution Semantics:**
-- `exit(context)` — Executes exit action if present (best-effort, failures don't block transition)
-- `enter(context)` — Executes entry action if present (best-effort)
-- `hasEntryAction()` / `hasExitAction()` — Null checks
-
-### 1.5 StateContext
-
-The context object passed through every transition.
-
-```java
-public final class StateContext<S, E, C> {
-    private final S sourceState;
-    private final S targetState;
-    private final E event;
-    private final C businessContext;
-    private final ExtendedState extendedState;
-    private final Exception exception;        // Non-null if an error occurred
-    private final boolean transitionAccepted; // true if transition was applied
-}
-```
-
-**Builder Pattern:**
-
-```java
-StateContext.<S, E, C>builder()
-    .sourceState(source)
-    .targetState(target)
-    .event(event)
-    .businessContext(ctx)
-    .extendedState(ext)
-    .transitionAccepted(true)
-    .build();
-```
-
-### 1.6 ExtendedState
-
-Key-value store for variables shared across transitions.
-
-```java
-public final class ExtendedState {
-    private final Map<String, Object> variables = new ConcurrentHashMap<>();
-
-    public ExtendedState set(String key, Object value) { ... }  // returns this for chaining
-    public <T> T get(String key) { ... }
-    public <T> T getOrDefault(String key, T defaultValue) { ... }
-    public boolean contains(String key) { ... }
-    public ExtendedState remove(String key) { ... }  // returns this for chaining
-    public Map<String, Object> getVariables() { ... }  // unmodifiable view
-    public void clear() { ... }
-}
-```
-
-**Use Cases:**
-- Passing data between guard conditions and actions
-- Storing intermediate computation results
-- Tracking retry counts within a conversation
-
-### 1.7 Guard & Action (Functional Interfaces)
-
-```java
-@FunctionalInterface
-public interface Guard<S, E, C> {
-    boolean evaluate(StateContext<S, E, C> context);
-}
-
 @FunctionalInterface
 public interface Action<S, E, C> {
-    void execute(StateContext<S, E, C> context);
+    /**
+     * Execute the action.
+     * @param from the source state
+     * @param to the target state
+     * @param event the event that triggered the transition
+     * @param context the business context
+     */
+    void execute(S from, S to, E event, C context);
 }
 ```
 
-## 2. Event Processing Flow
+**Key points:**
+- Actions are executed synchronously before state transition
+- If an action throws an exception, the state does NOT change
+- Actions are stateless and can be shared across multiple transitions
 
-### 2.1 fireEvent / tryFireEvent Sequence Diagram
+### 1.3 Condition Interface (Guard)
 
-```mermaid
-sequenceDiagram
-    participant Caller
-    participant SM as SimpleStateMachine
-    participant T as Transition
-    participant SD as StateDef
-    participant L as Listener
-
-    Caller->>SM: fireEvent(sourceState, event, context)
-    SM->>SM: tryFireEvent(sourceState, event, context)
-    SM->>SM: Lookup transitions by (sourceState, event)
-    alt No transition found
-        SM->>L: transitionDenied("No transition found")
-        alt fireEvent (strict mode)
-            SM-->>Caller: throw StateMachineException
-        else tryFireEvent (lenient mode)
-            SM-->>Caller: return rejected StateContext
-        end
-    end
-
-    loop For each candidate transition
-        SM->>L: transitionStarted(transition, preCtx)
-        SM->>T: isGuardSatisfied(preCtx)
-        alt Guard fails
-            Note over SM: Continue to next candidate
-        else Guard passes
-            SM->>SD: exit(sourceState) [best-effort]
-            SM->>T: executeAction(preCtx)
-            alt Action fails
-                SM->>L: transitionError(errorCtx)
-                SM-->>Caller: throw StateMachineException (both modes)
-            end
-            SM->>SD: enter(targetState) [best-effort]
-            SM->>L: transitionEnded(transition, resultCtx)
-            alt State changed
-                SM->>L: stateChanged(resultCtx)
-            end
-            SM-->>Caller: return resultCtx
-        end
-    end
-
-    alt All guards failed
-        SM->>L: transitionDenied("All guard conditions failed")
-        alt fireEvent (strict mode)
-            SM-->>Caller: throw StateMachineException
-        else tryFireEvent (lenient mode)
-            SM-->>Caller: return rejected StateContext
-        end
-    end
-```
-
-### 2.2 Action Execution Order (EXTERNAL Transition)
-
-```
-1. exit action of source state     (best-effort, failure → listener only)
-2. transition action                (failure → StateMachineException)
-3. entry action of target state    (best-effort, failure → listener only)
-```
-
-**INTERNAL Transition:** Only step 2 executes; no entry/exit actions.
-
-### 2.3 Error Handling Strategy
-
-| Component | Failure Behavior | Rationale |
-|-----------|-----------------|-----------|
-| Exit action | Logged via listener, transition continues | Side effect shouldn't block state change |
-| Transition action | StateMachineException thrown | Business logic failure must be visible |
-| Entry action | Logged via listener, transition continues | State already changed, can't roll back |
-| Guard condition | Next candidate tried; all fail → exception | Guards are conditions, not errors |
-
-## 3. Builder DSL
-
-### 3.1 Fluent API
+The functional interface for transition guards/conditions.
 
 ```java
-StateMachine<OrderState, OrderEvent, OrderContext> machine =
-    StateMachineBuilder.<OrderState, OrderEvent, OrderContext>builder("order-machine")
-        .initialState(OrderState.CREATED)
-        .endStates(OrderState.COMPLETED, OrderState.CANCELLED)
-
-        // State with entry/exit actions
-        .stateWithEntry(OrderState.PAID, ctx -> sendConfirmation(ctx))
-        .stateWithExit(OrderState.PAID, ctx -> logExit(ctx))
-
-        // Basic transition
-        .transition()
-            .from(OrderState.CREATED)
-            .on(OrderEvent.PAY)
-            .to(OrderState.PAID)
-            .guard(ctx -> ctx.getBusinessContext().isPaymentValid())
-            .perform(ctx -> processPayment(ctx))
-        .and()
-
-        // Internal transition (state doesn't change)
-        .transition()
-            .from(OrderState.PAID)
-            .on(OrderEvent.UPDATE_ADDRESS)
-            .to(OrderState.PAID)
-            .internal()
-            .perform(ctx -> updateAddress(ctx))
-        .and()
-
-        .build();
-```
-
-### 3.2 Configurer Adapter (Spring Style)
-
-```java
-public class OrderStateMachineConfig
-        extends StateMachineConfigurerAdapter<OrderState, OrderEvent, OrderContext> {
-
-    @Override
-    public void configure(StateConfigurer<OrderState, OrderEvent, OrderContext> states) {
-        states.initial(OrderState.CREATED)
-              .state(OrderState.PAID)
-              .end(OrderState.COMPLETED)
-              .end(OrderState.CANCELLED);
-    }
-
-    @Override
-    public void configure(TransitionConfigurer<OrderState, OrderEvent, OrderContext> transitions) {
-        transitions.withExternal()
-            .source(OrderState.CREATED)
-            .event(OrderEvent.PAY)
-            .target(OrderState.PAID)
-            .guard(ctx -> ctx.getBusinessContext().isPaymentValid())
-            .action(ctx -> processPayment(ctx))
-        .and().withExternal()
-            .source(OrderState.PAID)
-            .event(OrderEvent.SHIP)
-            .target(OrderState.SHIPPED);
-    }
-}
-
-// Usage
-StateMachine<OrderState, OrderEvent, OrderContext> machine =
-    StateMachineBuilder.fromConfigurer("order-machine", new OrderStateMachineConfig());
-```
-
-## 4. Listener Mechanism
-
-### 4.1 StateMachineListener Interface
-
-```java
-public interface StateMachineListener<S, E, C> {
-    default void stateMachineStarted() {}
-    default void stateMachineStopped() {}
-    default void transitionStarted(Transition<S, E, C> transition, StateContext<S, E, C> ctx) {}
-    default void transitionEnded(Transition<S, E, C> transition, StateContext<S, E, C> ctx) {}
-    default void transitionDenied(StateContext<S, E, C> ctx, String reason) {}
-    default void transitionError(StateContext<S, E, C> ctx) {}
-    default void stateChanged(StateContext<S, E, C> ctx) {}
+@FunctionalInterface
+public interface Condition<C> {
+    /**
+     * Check if the condition is satisfied.
+     * @param context the business context
+     * @return true if the transition is allowed
+     */
+    boolean isSatisfied(C context);
 }
 ```
 
-All methods have default empty implementations, so listeners only override what they need.
+### 1.4 State and Transition
 
-### 4.2 Common Listener Use Cases
-
+**State:**
 ```java
-// Audit logging
-machine.addListener(new StateMachineListener<>() {
-    @Override
-    public void stateChanged(StateContext<...> ctx) {
-        auditLog.info("State changed: {} -> {} (event={})",
-            ctx.getSourceState(), ctx.getTargetState(), ctx.getEvent());
-    }
-});
-
-// Metrics
-machine.addListener(new StateMachineListener<>() {
-    @Override
-    public void transitionEnded(Transition<...> t, StateContext<...> ctx) {
-        metrics.increment("statemachine.transition.success");
-    }
-    @Override
-    public void transitionError(StateContext<...> ctx) {
-        metrics.increment("statemachine.transition.error");
-    }
-});
-```
-
-## 5. Registry
-
-### 5.1 StateMachineRegistry
-
-A named registry for sharing state machine instances across the application.
-
-```java
-public class StateMachineRegistry {
-    private final Map<String, StateMachine<?, ?, ?>> machines = new ConcurrentHashMap<>();
-
-    public void register(StateMachine<?, ?, ?> machine) { ... }
-    public <S, E, C> StateMachine<S, E, C> get(String machineId) { ... }
-    public boolean contains(String machineId) { ... }
-    public boolean unregister(String machineId) { ... }
-    public int size() { ... }
-    public void clear() { ... }
+public interface State<S, E, C> {
+    S getId();
+    Transition<S, E, C> addTransition(E event, State<S, E, C> target, TransitionType transitionType);
+    List<Transition<S, E, C>> getEventTransitions(E event);
+    Collection<Transition<S, E, C>> getAllTransitions();
 }
 ```
 
-**Thread Safety:** `ConcurrentHashMap` for storage; `register` throws `StateMachineException` on duplicate IDs.
-
-## 6. Exception Hierarchy
-
+**Transition:**
+```java
+public interface Transition<S, E, C> {
+    State<S, E, C> getSource();
+    void setSource(State<S, E, C> state);
+    E getEvent();
+    void setEvent(E event);
+    void setType(TransitionType type);
+    State<S, E, C> getTarget();
+    void setTarget(State<S, E, C> state);
+    Action<S, E, C> getAction();
+    void setAction(Action<S, E, C> action);
+    Condition<C> getCondition();
+    void setCondition(Condition<C> condition);
+}
 ```
-RuntimeException
-└── StateMachineException
-    ├── "No transition found: state=X, event=Y"
-    ├── "Transition guard condition failed: state=X, event=Y"
-    ├── "Transition action failed: <cause message>"
-    ├── "State machine already registered: id=X"
-    └── "State machine not found: id=X"
+
+## 2. Builder DSL
+
+### 2.1 StateMachineBuilderFactory
+
+Entry point for creating state machine builders.
+
+```java
+StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> builder =
+        StateMachineBuilderFactory.create();
 ```
 
-All exceptions carry a descriptive message and, where applicable, the original cause.
+### 2.2 External Transition
 
-## 7. Performance Characteristics
+Define an external state transition (state changes).
+
+```java
+builder.externalTransition()
+        .from(ConversationState.NEW)
+        .to(ConversationState.INITIATED)
+        .on(ConversationFact.CONVERSATION_INITIATED)
+        .when(ctx -> ctx.getMarketConfig() != null)  // optional guard
+        .perform(new ConversationInitAction());
+```
+
+**Builder API order:** `from() → to() → on() → when() → perform()`
+
+### 2.3 Internal Transition
+
+Define an internal transition (state does NOT change, but action executes).
+
+```java
+builder.internalTransition()
+        .within(ConversationState.IN_PROGRESS)
+        .on(ConversationFact.SURVEY_START)
+        .perform(new SurveyStartAction());
+```
+
+### 2.4 Build and Register
+
+```java
+StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+        builder.build("conversation");
+StateMachineFactory.register(sm);
+```
+
+### 2.5 Retrieve State Machine
+
+```java
+StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+        StateMachineFactory.get("conversation");
+```
+
+## 3. StateMachineFactory
+
+Central registry for state machines.
+
+```java
+public class StateMachineFactory {
+    /**
+     * Register a state machine.
+     * @throws StateMachineException if a state machine with the same id already exists
+     */
+    public static <S, E, C> void register(StateMachine<S, E, C> stateMachine);
+
+    /**
+     * Get a registered state machine by id.
+     * @throws StateMachineException if no state machine with the given id exists
+     */
+    public static <S, E, C> StateMachine<S, E, C> get(String machineId);
+}
+```
+
+**Important:** COLA StateMachine does NOT allow rebuilding a state machine with the same id. Use factory caching pattern to prevent duplicate builds.
+
+## 4. Event Processing
+
+### 4.1 Fire Event
+
+```java
+CbolStateContext ctx = buildContext();
+ConversationState newState = sm.fireEvent(
+        ConversationState.NEW,
+        ConversationFact.CONVERSATION_INITIATED,
+        ctx);
+```
+
+**Return value:** The target state after successful transition.
+
+**Exceptions:**
+- `StateMachineException` — if no transition matches for the given source state and event
+- `StateMachineException` — if the transition action fails (action-first principle)
+
+### 4.2 Verify Event
+
+```java
+boolean canFire = sm.verify(ConversationState.NEW, ConversationFact.CONVERSATION_INITIATED);
+```
+
+## 5. Performance Characteristics
 
 | Operation | Complexity | Notes |
-|-----------|-----------|-------|
-| Transition lookup | O(1) | ConcurrentHashMap get |
-| Guard evaluation | O(n) | n = number of candidates with same (state, event) |
-| Action execution | O(1) | Direct method call |
-| Listener notification | O(m) | m = number of listeners (CopyOnWriteArrayList) |
-| Memory per machine | O(t + s) | t = transitions, s = states |
+|-----------|------------|-------|
+| `fireEvent()` | O(1) | HashMap lookup for transitions by event |
+| `verify()` | O(1) | HashMap lookup |
+| `build()` | O(n) | n = number of transitions |
+| Action execution | Synchronous | Blocking, action-first principle |
 
-**Thread Safety:** After construction, `SimpleStateMachine` is immutable and safe for concurrent use by any number of threads.
+**Key optimizations:**
+- Table-driven transition lookup (ConcurrentHashMap)
+- Stateless engine (current state injected by caller)
+- Generic type-safe (no reflection)
+- Zero external dependencies in core
+
+## 6. PlantUML Diagram Generation
+
+COLA StateMachine can generate PlantUML state diagrams automatically.
+
+```java
+String plantUml = sm.generatePlantUML();
+System.out.println(plantUml);
+```
+
+Output example:
+```
+@startuml
+[*] --> NEW
+NEW --> INITIATED : CONVERSATION_INITIATED
+INITIATED --> IN_PROGRESS : CUSTOMER_CONNECT
+IN_PROGRESS --> TRANSFERRED : TRANSFER_REQUEST
+IN_PROGRESS --> ENDING : CUSTOMER_CLOSE
+@enduml
+```
+
+## 7. Factory Caching Pattern
+
+Since COLA StateMachine does not allow rebuilding, use this caching pattern in factory classes:
+
+```java
+public static StateMachine<ConversationState, ConversationFact, CbolStateContext> build() {
+    // Try to get existing state machine first
+    try {
+        StateMachine<ConversationState, ConversationFact, CbolStateContext> existing =
+                StateMachineFactory.get(MACHINE_ID);
+        if (existing != null) {
+            return existing;
+        }
+    } catch (Exception ignored) {
+        // State machine not built yet
+    }
+
+    synchronized (ConversationStateMachineFactory.class) {
+        // Double-check after acquiring lock
+        try {
+            StateMachine<ConversationState, ConversationFact, CbolStateContext> existing =
+                    StateMachineFactory.get(MACHINE_ID);
+            if (existing != null) {
+                return existing;
+            }
+        } catch (Exception ignored) {
+            // State machine not built yet
+        }
+
+        // Build and register
+        try {
+            StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> builder =
+                    StateMachineBuilderFactory.create();
+            // ... define transitions ...
+            StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+                    builder.build(MACHINE_ID);
+            StateMachineFactory.register(sm);
+            return sm;
+        } catch (Exception e) {
+            // State machine already built, return existing instance
+            return StateMachineFactory.get(MACHINE_ID);
+        }
+    }
+}
+```
+
+## 8. References
+
+- Alibaba COLA GitHub: https://github.com/alibaba/COLA
+- COLA StateMachine module: `cola-components/cola-component-statemachine`
+- COLA StateMachine tests: `cola-components/cola-component-statemachine/src/test/java/com/alibaba/cola/test/`
+
+---
+
+*Last updated: 2026-09-04 (v3.0 — migrated to Alibaba COLA StateMachine)*

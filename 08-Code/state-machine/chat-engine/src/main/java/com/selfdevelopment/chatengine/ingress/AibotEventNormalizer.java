@@ -1,48 +1,51 @@
 package com.selfdevelopment.chatengine.ingress;
 
-import com.selfdevelopment.statemachine.event.EventNormalizer;
-import com.selfdevelopment.statemachine.event.StandardEvent;
+import com.selfdevelopment.chatengine.enums.ConversationFact;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
 
 /**
- * Normalizes AIBot webhook events into the standard {@link StandardEvent} format.
+ * Normalizes AIBot webhook events into CBOL conversation facts.
+ * <p>
+ * <b>RESERVED CODE - Currently not used in production flow.</b>
  * <p>
  * Maps AIBot event types to CBOL conversation facts:
  * <ul>
- *   <li>MESSAGE_RECEIVED → USER_MESSAGE</li>
- *   <li>BOT_REPLY → AI_RESPONSE</li>
+ *   <li>MESSAGE_RECEIVED → CUSTOMER_CONNECT (simplified mapping)</li>
  *   <li>HANDOFF → TRANSFER_REQUEST</li>
- *   <li>SESSION_ENDED → CONVERSATION_END</li>
+ *   <li>SESSION_ENDED → CUSTOMER_CLOSE</li>
  * </ul>
  * <p>
  * Events with unknown types are filtered out (return empty).
  */
-public class AibotEventNormalizer implements EventNormalizer<AibotEvent, StandardEvent> {
+public class AibotEventNormalizer {
 
     private static final Logger log = LoggerFactory.getLogger(AibotEventNormalizer.class);
 
-    /** AIBot event type → CBOL standard event type mapping */
-    private static final Map<String, String> EVENT_TYPE_MAPPING = Map.of(
-            "MESSAGE_RECEIVED", "USER_MESSAGE",
-            "BOT_REPLY", "AI_RESPONSE",
-            "HANDOFF", "TRANSFER_REQUEST",
-            "SESSION_ENDED", "CONVERSATION_END"
+    /** AIBot event type → CBOL conversation fact mapping */
+    private static final Map<String, ConversationFact> EVENT_TYPE_MAPPING = Map.of(
+            "MESSAGE_RECEIVED", ConversationFact.CUSTOMER_CONNECT,
+            "HANDOFF", ConversationFact.TRANSFER_REQUEST,
+            "SESSION_ENDED", ConversationFact.CUSTOMER_CLOSE
     );
 
-    @Override
-    public Optional<StandardEvent> normalize(AibotEvent event) {
-        if (!canNormalize(event)) {
+    /**
+     * Normalizes an AIBot event into a CBOL conversation fact.
+     *
+     * @param event the AIBot event to normalize
+     * @return Optional containing the mapped conversation fact, or empty if unknown
+     */
+    public Optional<NormalizedEvent> normalize(AibotEvent event) {
+        if (event == null || event.eventType() == null) {
             return Optional.empty();
         }
 
-        String standardEventType = EVENT_TYPE_MAPPING.get(event.eventType());
-        if (standardEventType == null) {
+        ConversationFact fact = EVENT_TYPE_MAPPING.get(event.eventType());
+        if (fact == null) {
             log.debug("Filtering unknown AIBot event type: {}", event.eventType());
             return Optional.empty();
         }
@@ -57,32 +60,31 @@ public class AibotEventNormalizer implements EventNormalizer<AibotEvent, Standar
             payload.putAll(event.metadata());
         }
 
-        StandardEvent standardEvent = StandardEvent.builder()
-                .eventId(generateEventId(event))
-                .eventType(standardEventType)
-                .source("AIBOT")
-                .entityId(event.sessionId())
-                .timestamp(event.receivedAt())
-                .traceId(UUID.randomUUID().toString())
-                .payload(payload)
-                .metadata(Map.of(
-                        "botId", event.botId() != null ? event.botId() : "",
-                        "userId", event.userId() != null ? event.userId() : ""
-                ))
-                .build();
+        NormalizedEvent normalized = new NormalizedEvent(
+                fact,
+                event.sessionId(),
+                event.receivedAt() != null ? event.receivedAt().toEpochMilli() : System.currentTimeMillis(),
+                payload
+        );
 
-        log.debug("Normalized AIBot event: {} -> {}", event.eventType(), standardEventType);
-        return Optional.of(standardEvent);
+        log.debug("Normalized AIBot event: {} -> {}", event.eventType(), fact);
+        return Optional.of(normalized);
     }
 
-    @Override
+    /**
+     * Returns the source system identifier.
+     */
     public String getSourceSystem() {
         return "AIBOT";
     }
 
-    private String generateEventId(AibotEvent event) {
-        // Use botId + sessionId + eventType + timestamp as deterministic ID for idempotency
-        return "aibot-" + event.botId() + "-" + event.sessionId() + "-" +
-                event.eventType() + "-" + event.receivedAt().toEpochMilli();
-    }
+    /**
+     * Simple normalized event record.
+     */
+    public record NormalizedEvent(
+            ConversationFact fact,
+            String sessionId,
+            long timestamp,
+            Map<String, Object> payload
+    ) {}
 }

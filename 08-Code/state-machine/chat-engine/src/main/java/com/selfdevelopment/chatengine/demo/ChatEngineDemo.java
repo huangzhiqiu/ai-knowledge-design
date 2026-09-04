@@ -1,5 +1,6 @@
 package com.selfdevelopment.chatengine.demo;
 
+import com.alibaba.cola.statemachine.impl.StateMachineException;
 import com.selfdevelopment.chatengine.config.StateMachineMarketConfig;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.context.TraceContext;
@@ -8,66 +9,31 @@ import com.selfdevelopment.chatengine.enums.ConversationState;
 import com.selfdevelopment.chatengine.model.ConversationInstance;
 import com.selfdevelopment.chatengine.service.ChatEngineStateMachineService;
 import com.selfdevelopment.chatengine.statemachine.factory.ConversationStateMachineFactory;
-import com.selfdevelopment.statemachine.core.StateContext;
-import com.selfdevelopment.statemachine.exception.StateMachineException;
 
 /**
  * Demo for the Chat Engine Conversation State Machine.
  * <p>
- * Demonstrates the complete conversation lifecycle with action execution:
- * <ul>
- *   <li>Basic flow: NEW → INITIATED → IN_PROGRESS → TRANSFERRED → IN_PROGRESS → ENDING → CLOSED</li>
- *   <li>Survey flow: IN_PROGRESS (messaging) → IN_PROGRESS (survey, internal) → ENDING → CLOSED</li>
- *   <li>Multi-market configuration (HK, SG, UK)</li>
- *   <li>Transfer failure flow with TransferFailedAction execution</li>
- *   <li>Action failure handling: action failure prevents state transition</li>
- * </ul>
- *
- * <h3>Action Execution Design</h3>
- * <p>
- * Each state transition has an associated action that must execute successfully
- * before the state changes. If an action throws an exception, the state does NOT
- * change and a {@link StateMachineException} is propagated.
- * <p>
- * <b>Actions bound to transitions:</b>
- * <ul>
- *   <li>NEW → INITIATED: {@code ConversationInitAction} (validate config, allocate resources)</li>
- *   <li>INITIATED → IN_PROGRESS: {@code CustomerConnectAction} (create record, send welcome)</li>
- *   <li>IN_PROGRESS → TRANSFERRED: {@code TransferRequestAction} (route to agent queue)</li>
- *   <li>TRANSFERRED → INITIATED: {@code TransferFailedAction} (cleanup, re-route)</li>
- *   <li>IN_PROGRESS → ENDING: {@code CustomerCloseAction} (close conversation, release resources)</li>
- *   <li>IN_PROGRESS → IN_PROGRESS (internal): {@code SurveyStartAction} (send survey invitation)</li>
- *   <li>IN_PROGRESS → ENDING: {@code SurveyCompleteAction} (save results, calculate score)</li>
- * </ul>
- *
- * <h3>Usage</h3>
- * <pre>{@code
- * // Run all demos
- * ChatEngineDemo.main(new String[]{});
- * }</pre>
+ * Uses COLA StateMachine. Demonstrates the complete conversation lifecycle with action execution.
  */
 public class ChatEngineDemo {
 
     public static void main(String[] args) {
-        DemoLogger.printTitle("Chat Engine Conversation State Machine Demo");
+        DemoLogger.printTitle("Chat Engine Conversation State Machine Demo (COLA)");
 
-        // Build and register the conversation state machine (must be done before creating service)
+        // Build and register the conversation state machine
         ConversationStateMachineFactory.build();
         DemoLogger.printInfo("State machine registered: " + ConversationStateMachineFactory.MACHINE_ID);
-        DemoLogger.printInfo("Action execution: each transition requires successful action execution");
 
         runBasicConversationFlow();
         runSurveyFlow();
         runMultiMarketDemo();
         runTransferFailureFlow();
-        runActionFailureDemo();
 
         DemoLogger.printTitle("All Demos Completed Successfully");
     }
 
     /**
      * Demo 1: Basic conversation flow with action execution.
-     * <p>
      * NEW → INITIATED → IN_PROGRESS → TRANSFERRED → IN_PROGRESS → ENDING → CLOSED
      */
     public static void runBasicConversationFlow() {
@@ -100,8 +66,8 @@ public class ChatEngineDemo {
         DemoLogger.printAction("TransferRequestAction", "Route to agent queue, initiate transfer");
         ctx = fireAndPrint(ctx, ConversationFact.TRANSFER_REQUEST, service);
 
-        // TRANSFERRED → IN_PROGRESS (reserved)
-        DemoLogger.printInfo("Transfer connected (reserved transition)");
+        // TRANSFERRED → IN_PROGRESS
+        DemoLogger.printInfo("Transfer connected");
         ctx = fireAndPrint(ctx, ConversationFact.TRANSFER_CONNECTED, service);
 
         // IN_PROGRESS → ENDING
@@ -118,7 +84,6 @@ public class ChatEngineDemo {
 
     /**
      * Demo 2: Survey flow with action execution.
-     * <p>
      * IN_PROGRESS (messaging) → IN_PROGRESS (survey, internal) → ENDING → CLOSED
      */
     public static void runSurveyFlow() {
@@ -138,28 +103,18 @@ public class ChatEngineDemo {
 
         CbolStateContext ctx = createContext(conversation, "SG");
         DemoLogger.printInitialState("IN_PROGRESS", "conv-002", "SG");
-        DemoLogger.printInfo("surveyEnabled=true, closeConversation will route to SURVEY_START");
 
-        // closeConversation automatically routes to SURVEY_START when survey is enabled
+        // IN_PROGRESS → IN_PROGRESS (internal): survey starts
         DemoLogger.printAction("SurveyStartAction", "Send survey invitation, set survey timeout");
-        StateContext<ConversationState, ConversationFact, CbolStateContext> result =
-                service.closeConversation(ctx);
-        DemoLogger.printTransition("IN_PROGRESS", "SURVEY_START", result.getTargetState().name(),
-                result.isTransitionAccepted());
-        ctx = updateContextState(ctx, result.getTargetState());
+        ctx = fireAndPrint(ctx, ConversationFact.SURVEY_START, service);
 
-        // Complete the survey
+        // IN_PROGRESS → ENDING: survey completes
         DemoLogger.printAction("SurveyCompleteAction", "Save results, calculate NPS/CSAT score");
-        result = service.completeSurvey(ctx);
-        DemoLogger.printTransition("IN_PROGRESS", "SURVEY_COMPLETE", result.getTargetState().name(),
-                result.isTransitionAccepted());
-        ctx = updateContextState(ctx, result.getTargetState());
+        ctx = fireAndPrint(ctx, ConversationFact.SURVEY_COMPLETE, service);
 
-        // Ending grace timeout → CLOSED
+        // ENDING → CLOSED
         DemoLogger.printInfo("Ending grace timeout, finalizing conversation");
-        result = service.fire(ctx, ConversationFact.SYS_ENDING_GRACE_TIMEOUT);
-        DemoLogger.printTransition("ENDING", "SYS_ENDING_GRACE_TIMEOUT", result.getTargetState().name(),
-                result.isTransitionAccepted());
+        ctx = fireAndPrint(ctx, ConversationFact.SYS_ENDING_GRACE_TIMEOUT, service);
 
         DemoLogger.printFinalState("CLOSED", "conv-002");
         DemoLogger.printDemoComplete("Survey Flow", true);
@@ -172,13 +127,13 @@ public class ChatEngineDemo {
         DemoLogger.printSection("Demo 3: Multi-Market Configuration");
         DemoLogger.resetCounter();
 
-        // HK market: default config, survey disabled
+        // HK market: default config
         StateMachineMarketConfig hkConfig = StateMachineMarketConfig.defaultConfig();
         DemoLogger.printInfo("HK Market: default configuration");
         System.out.printf("           idleTimeout=%ds, transferTimeout=%ds, surveyEnabled=%s%n",
                 hkConfig.customerIdleSeconds(), hkConfig.transferTimeoutSeconds(), hkConfig.surveyEnabled());
 
-        // SG market: survey enabled, shorter timeouts
+        // SG market: survey enabled
         StateMachineMarketConfig sgConfig = StateMachineMarketConfig.builder()
                 .customerIdleSeconds(180)
                 .transferTimeoutSeconds(120)
@@ -193,7 +148,7 @@ public class ChatEngineDemo {
                 sgConfig.customerIdleSeconds(), sgConfig.transferTimeoutSeconds(),
                 sgConfig.surveyEnabled(), sgConfig.genesysEnabled());
 
-        // UK market: transfer disabled, different fallback strategy
+        // UK market: transfer disabled
         StateMachineMarketConfig ukConfig = StateMachineMarketConfig.builder()
                 .customerIdleSeconds(600)
                 .transferTimeoutSeconds(300)
@@ -213,7 +168,6 @@ public class ChatEngineDemo {
 
     /**
      * Demo 4: Transfer failure flow with TransferFailedAction execution.
-     * <p>
      * IN_PROGRESS → TRANSFERRED → (transfer failed) → INITIATED (reset)
      */
     public static void runTransferFailureFlow() {
@@ -235,64 +189,15 @@ public class ChatEngineDemo {
 
         // Transfer request
         DemoLogger.printAction("TransferRequestAction", "Request routing to agent queue");
-        StateContext<ConversationState, ConversationFact, CbolStateContext> result =
-                service.fire(ctx, ConversationFact.TRANSFER_REQUEST);
-        DemoLogger.printTransition("IN_PROGRESS", "TRANSFER_REQUEST", result.getTargetState().name(),
-                result.isTransitionAccepted());
-        ctx = updateContextState(ctx, result.getTargetState());
+        ctx = fireAndPrint(ctx, ConversationFact.TRANSFER_REQUEST, service);
 
         // Transfer failed → reset to INITIATED
         DemoLogger.printAction("TransferFailedAction", "Record failure, cleanup state, trigger re-routing");
-        result = service.fire(ctx, ConversationFact.TRANSFER_FAILED);
-        DemoLogger.printTransition("TRANSFERRED", "TRANSFER_FAILED", result.getTargetState().name(),
-                result.isTransitionAccepted());
+        ctx = fireAndPrint(ctx, ConversationFact.TRANSFER_FAILED, service);
 
         DemoLogger.printFinalState("INITIATED", "conv-004");
         DemoLogger.printInfo("Conversation reset to INITIATED, ready for re-routing");
         DemoLogger.printDemoComplete("Transfer Failure Flow", true);
-    }
-
-    /**
-     * Demo 5: Action failure handling.
-     * <p>
-     * Demonstrates that when an action throws an exception, the state does NOT change.
-     */
-    public static void runActionFailureDemo() {
-        DemoLogger.printSection("Demo 5: Action Failure Handling (Action Failure Prevents State Change)");
-        DemoLogger.resetCounter();
-
-        DemoLogger.printInfo("Core design principle:");
-        System.out.println("           - Action executes BEFORE state change");
-        System.out.println("           - If action throws exception, state does NOT change");
-        System.out.println("           - StateMachineException is propagated to caller");
-
-        ChatEngineStateMachineService service = new ChatEngineStateMachineService();
-
-        ConversationInstance conversation = ConversationInstance.builder()
-                .conversationId("conv-005")
-                .market("HK")
-                .tenantId("tenant-hk-001")
-                .state(ConversationState.IN_PROGRESS)
-                .surveyEnabled(false)
-                .build();
-
-        CbolStateContext ctx = createContext(conversation, "HK");
-        DemoLogger.printInitialState("IN_PROGRESS", "conv-005", "HK");
-
-        // Try to fire an event that has no transition from IN_PROGRESS
-        DemoLogger.printInfo("Attempting invalid transition: SURVEY_COMPLETE from IN_PROGRESS (no survey started)");
-        try {
-            StateContext<ConversationState, ConversationFact, CbolStateContext> result =
-                    service.fire(ctx, ConversationFact.SURVEY_COMPLETE);
-            DemoLogger.printError("Unexpected success: transition should have failed");
-        } catch (StateMachineException e) {
-            DemoLogger.printError("StateMachineException: " + e.getMessage());
-            DemoLogger.printInfo("State remains: IN_PROGRESS (no transition, no state change)");
-        }
-
-        DemoLogger.printInfo("Note: For actual action failure testing, use FailoverStateMachine decorator");
-        DemoLogger.printInfo("      which catches action exceptions and triggers a failover event.");
-        DemoLogger.printDemoComplete("Action Failure Handling", true);
     }
 
     // ========================================================================
@@ -334,14 +239,14 @@ public class ChatEngineDemo {
             ChatEngineStateMachineService service) {
 
         ConversationState from = ctx.conversation().state();
-        StateContext<ConversationState, ConversationFact, CbolStateContext> result =
-                service.fire(ctx, fact);
-
-        ConversationState to = result.getTargetState();
-        boolean accepted = result.isTransitionAccepted();
-
-        DemoLogger.printTransition(from.name(), fact.name(), to.name(), accepted);
-
-        return updateContextState(ctx, to);
+        try {
+            ConversationState to = service.fire(ctx, fact);
+            DemoLogger.printTransition(from.name(), fact.name(), to.name(), true);
+            return updateContextState(ctx, to);
+        } catch (StateMachineException e) {
+            DemoLogger.printError("Transition failed: " + e.getMessage());
+            DemoLogger.printTransition(from.name(), fact.name(), from.name(), false);
+            return ctx;
+        }
     }
 }

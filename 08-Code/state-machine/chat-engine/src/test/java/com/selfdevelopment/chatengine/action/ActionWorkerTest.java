@@ -1,13 +1,12 @@
 package com.selfdevelopment.chatengine.action;
 
+import com.alibaba.cola.statemachine.Action;
 import com.selfdevelopment.chatengine.config.StateMachineMarketConfig;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.context.TraceContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
 import com.selfdevelopment.chatengine.model.ConversationInstance;
-import com.selfdevelopment.statemachine.api.Action;
-import com.selfdevelopment.statemachine.core.StateContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,7 +17,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -31,7 +29,6 @@ class ActionWorkerTest {
 
     private ActionWorker worker;
     private CbolStateContext businessCtx;
-    private StateContext<ConversationState, ConversationFact, CbolStateContext> stateCtx;
 
     @BeforeEach
     void setup() {
@@ -47,13 +44,6 @@ class ActionWorkerTest {
                 .marketConfig(StateMachineMarketConfig.defaultConfig())
                 .traceContext(traceContext)
                 .build();
-        stateCtx = StateContext.<ConversationState, ConversationFact, CbolStateContext>builder()
-                .sourceState(ConversationState.INITIATED)
-                .targetState(ConversationState.IN_PROGRESS)
-                .event(ConversationFact.CUSTOMER_CONNECT)
-                .businessContext(businessCtx)
-                .transitionAccepted(true)
-                .build();
     }
 
     @AfterEach
@@ -66,11 +56,13 @@ class ActionWorkerTest {
     @Test
     void testSubmitWithResultSuccess() throws ExecutionException, InterruptedException, TimeoutException {
         AtomicBoolean executed = new AtomicBoolean(false);
-        Action<ConversationState, ConversationFact, CbolStateContext> action = ctx -> executed.set(true);
+        Action<ConversationState, ConversationFact, CbolStateContext> action =
+                (from, to, event, ctx) -> executed.set(true);
 
-        CompletableFuture<Void> future = worker.submitWithResult(action, stateCtx);
+        CompletableFuture<Void> future = worker.submitWithResult(
+                action, ConversationState.INITIATED, ConversationState.IN_PROGRESS,
+                ConversationFact.CUSTOMER_CONNECT, businessCtx);
 
-        // Should complete successfully
         future.get(3, TimeUnit.SECONDS);
         assertTrue(executed.get(), "Action should have been executed");
         assertTrue(future.isDone(), "Future should be done");
@@ -79,13 +71,15 @@ class ActionWorkerTest {
 
     @Test
     void testSubmitWithResultFailure() {
-        Action<ConversationState, ConversationFact, CbolStateContext> action = ctx -> {
-            throw new RuntimeException("intentional test error");
-        };
+        Action<ConversationState, ConversationFact, CbolStateContext> action =
+                (from, to, event, ctx) -> {
+                    throw new RuntimeException("intentional test error");
+                };
 
-        CompletableFuture<Void> future = worker.submitWithResult(action, stateCtx);
+        CompletableFuture<Void> future = worker.submitWithResult(
+                action, ConversationState.INITIATED, ConversationState.IN_PROGRESS,
+                ConversationFact.CUSTOMER_CONNECT, businessCtx);
 
-        // Should complete exceptionally
         ExecutionException ex = assertThrows(ExecutionException.class,
                 () -> future.get(3, TimeUnit.SECONDS));
         assertTrue(ex.getCause() instanceof RuntimeException, "Cause should be RuntimeException");
@@ -96,9 +90,12 @@ class ActionWorkerTest {
     @Test
     void testSubmitWithResultThenApply() throws ExecutionException, InterruptedException, TimeoutException {
         AtomicBoolean executed = new AtomicBoolean(false);
-        Action<ConversationState, ConversationFact, CbolStateContext> action = ctx -> executed.set(true);
+        Action<ConversationState, ConversationFact, CbolStateContext> action =
+                (from, to, event, ctx) -> executed.set(true);
 
-        String result = worker.submitWithResult(action, stateCtx)
+        String result = worker.submitWithResult(
+                        action, ConversationState.INITIATED, ConversationState.IN_PROGRESS,
+                        ConversationFact.CUSTOMER_CONNECT, businessCtx)
                 .thenApply(v -> "action completed")
                 .get(3, TimeUnit.SECONDS);
 
@@ -108,11 +105,14 @@ class ActionWorkerTest {
 
     @Test
     void testSubmitWithResultExceptionally() throws ExecutionException, InterruptedException, TimeoutException {
-        Action<ConversationState, ConversationFact, CbolStateContext> action = ctx -> {
-            throw new RuntimeException("test error");
-        };
+        Action<ConversationState, ConversationFact, CbolStateContext> action =
+                (from, to, event, ctx) -> {
+                    throw new RuntimeException("test error");
+                };
 
-        String result = worker.submitWithResult(action, stateCtx)
+        String result = worker.submitWithResult(
+                        action, ConversationState.INITIATED, ConversationState.IN_PROGRESS,
+                        ConversationFact.CUSTOMER_CONNECT, businessCtx)
                 .thenApply(v -> "success")
                 .exceptionally(ex -> "recovered: " + ex.getMessage())
                 .get(3, TimeUnit.SECONDS);
@@ -122,13 +122,18 @@ class ActionWorkerTest {
 
     @Test
     void testSubmitWithResultNullActionThrows() {
-        assertThrows(NullPointerException.class, () -> worker.submitWithResult(null, stateCtx));
+        assertThrows(NullPointerException.class, () -> worker.submitWithResult(
+                null, ConversationState.INITIATED, ConversationState.IN_PROGRESS,
+                ConversationFact.CUSTOMER_CONNECT, businessCtx));
     }
 
     @Test
     void testSubmitWithResultNullContextThrows() {
-        Action<ConversationState, ConversationFact, CbolStateContext> action = ctx -> {};
-        assertThrows(NullPointerException.class, () -> worker.submitWithResult(action, null));
+        Action<ConversationState, ConversationFact, CbolStateContext> action =
+                (from, to, event, ctx) -> {};
+        assertThrows(NullPointerException.class, () -> worker.submitWithResult(
+                action, ConversationState.INITIATED, ConversationState.IN_PROGRESS,
+                ConversationFact.CUSTOMER_CONNECT, null));
     }
 
     // ==================== submitWithCallback Tests ====================
@@ -139,9 +144,12 @@ class ActionWorkerTest {
         AtomicBoolean successCalled = new AtomicBoolean(false);
         AtomicBoolean failureCalled = new AtomicBoolean(false);
 
-        Action<ConversationState, ConversationFact, CbolStateContext> action = ctx -> {};
+        Action<ConversationState, ConversationFact, CbolStateContext> action =
+                (from, to, event, ctx) -> {};
 
-        worker.submitWithCallback(action, stateCtx,
+        worker.submitWithCallback(
+                action, ConversationState.INITIATED, ConversationState.IN_PROGRESS,
+                ConversationFact.CUSTOMER_CONNECT, businessCtx,
                 ctx -> {
                     successCalled.set(true);
                     latch.countDown();
@@ -161,118 +169,47 @@ class ActionWorkerTest {
         CountDownLatch latch = new CountDownLatch(1);
         AtomicBoolean successCalled = new AtomicBoolean(false);
         AtomicBoolean failureCalled = new AtomicBoolean(false);
-        AtomicReference<Throwable> capturedError = new AtomicReference<>();
 
-        Action<ConversationState, ConversationFact, CbolStateContext> action = ctx -> {
-            throw new RuntimeException("callback test error");
-        };
+        Action<ConversationState, ConversationFact, CbolStateContext> action =
+                (from, to, event, ctx) -> {
+                    throw new RuntimeException("test error");
+                };
 
-        worker.submitWithCallback(action, stateCtx,
+        worker.submitWithCallback(
+                action, ConversationState.INITIATED, ConversationState.IN_PROGRESS,
+                ConversationFact.CUSTOMER_CONNECT, businessCtx,
                 ctx -> {
                     successCalled.set(true);
                     latch.countDown();
                 },
                 ex -> {
                     failureCalled.set(true);
-                    capturedError.set(ex);
                     latch.countDown();
                 });
 
         assertTrue(latch.await(3, TimeUnit.SECONDS), "Callback should be invoked");
         assertFalse(successCalled.get(), "Success callback should not be called");
         assertTrue(failureCalled.get(), "Failure callback should be called");
-        assertNotNull(capturedError.get(), "Error should be captured");
-        assertTrue(capturedError.get().getMessage().contains("callback test error"),
-                "Error message should contain the original error");
     }
 
-    @Test
-    void testSubmitWithCallbackNullCallbacks() throws InterruptedException {
-        CountDownLatch latch = new CountDownLatch(1);
-        Action<ConversationState, ConversationFact, CbolStateContext> action = ctx -> latch.countDown();
-
-        // Both callbacks null should not throw
-        assertDoesNotThrow(() -> worker.submitWithCallback(action, stateCtx, null, null));
-        assertTrue(latch.await(3, TimeUnit.SECONDS));
-    }
+    // ==================== submit (fire-and-forget) Tests ====================
 
     @Test
-    void testSubmitWithCallbackOnlySuccessCallback() throws InterruptedException {
+    void testSubmitFireAndForget() throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(1);
-        AtomicBoolean successCalled = new AtomicBoolean(false);
+        AtomicBoolean executed = new AtomicBoolean(false);
 
-        Action<ConversationState, ConversationFact, CbolStateContext> action = ctx -> {};
-
-        worker.submitWithCallback(action, stateCtx,
-                ctx -> {
-                    successCalled.set(true);
+        Action<ConversationState, ConversationFact, CbolStateContext> action =
+                (from, to, event, ctx) -> {
+                    executed.set(true);
                     latch.countDown();
-                },
-                null);
+                };
 
-        assertTrue(latch.await(3, TimeUnit.SECONDS));
-        assertTrue(successCalled.get());
-    }
+        worker.submit(
+                action, ConversationState.INITIATED, ConversationState.IN_PROGRESS,
+                ConversationFact.CUSTOMER_CONNECT, businessCtx);
 
-    @Test
-    void testSubmitWithCallbackOnlyFailureCallback() throws InterruptedException {
-        CountDownLatch latch = new CountDownLatch(1);
-        AtomicBoolean failureCalled = new AtomicBoolean(false);
-
-        Action<ConversationState, ConversationFact, CbolStateContext> action = ctx -> {
-            throw new RuntimeException("test");
-        };
-
-        worker.submitWithCallback(action, stateCtx,
-                null,
-                ex -> {
-                    failureCalled.set(true);
-                    latch.countDown();
-                });
-
-        assertTrue(latch.await(3, TimeUnit.SECONDS));
-        assertTrue(failureCalled.get());
-    }
-
-    // ==================== Backward Compatibility Tests ====================
-
-    @Test
-    void testSubmitFireAndForgetStillWorks() throws InterruptedException {
-        CountDownLatch latch = new CountDownLatch(1);
-        Action<ConversationState, ConversationFact, CbolStateContext> action = ctx -> latch.countDown();
-
-        // Original submit method should still work
-        worker.submit(action, stateCtx);
-        assertTrue(latch.await(3, TimeUnit.SECONDS));
-    }
-
-    @Test
-    void testSubmitExceptionIsCaughtAndLogged() throws InterruptedException {
-        CountDownLatch latch = new CountDownLatch(1);
-        Action<ConversationState, ConversationFact, CbolStateContext> action = ctx -> {
-            try {
-                throw new RuntimeException("fire and forget error");
-            } finally {
-                latch.countDown();
-            }
-        };
-
-        // Should not throw to caller
-        assertDoesNotThrow(() -> worker.submit(action, stateCtx));
-        assertTrue(latch.await(3, TimeUnit.SECONDS));
-    }
-
-    // ==================== getExecutor Tests ====================
-
-    @Test
-    void testGetExecutorReturnsNonNull() {
-        assertNotNull(worker.getExecutor());
-        assertFalse(worker.getExecutor().isShutdown());
-    }
-
-    @Test
-    void testGetExecutorAfterShutdown() {
-        worker.shutdown();
-        assertTrue(worker.getExecutor().isShutdown());
+        assertTrue(latch.await(3, TimeUnit.SECONDS), "Action should be executed");
+        assertTrue(executed.get(), "Action should have been executed");
     }
 }

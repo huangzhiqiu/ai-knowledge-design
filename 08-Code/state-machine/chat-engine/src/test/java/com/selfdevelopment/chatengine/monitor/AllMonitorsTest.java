@@ -1,23 +1,16 @@
 package com.selfdevelopment.chatengine.monitor;
 
-import com.selfdevelopment.statemachine.api.StateMachine;
-
-import com.selfdevelopment.statemachine.core.Transition;
-
 import com.selfdevelopment.chatengine.config.StateMachineMarketConfig;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.context.TraceContext;
-import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
 import com.selfdevelopment.chatengine.model.ConversationInstance;
-import com.selfdevelopment.statemachine.api.StateMachineRegistry;
 import com.selfdevelopment.chatengine.service.ChatEngineStateMachineService;
 import com.selfdevelopment.chatengine.statemachine.factory.ConversationStateMachineFactory;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 /**
  * Unit tests for all three monitors: CustomerIdleMonitor, TransferMonitor, EndingGraceMonitor.
@@ -30,11 +23,6 @@ class AllMonitorsTest {
     static void setUp() {
         ConversationStateMachineFactory.build();
         service = new ChatEngineStateMachineService();
-    }
-
-    @AfterAll
-    static void tearDown() {
-        StateMachineRegistry.getInstance().clear();
     }
 
     private CbolStateContext buildCtx(ConversationState state, long idleSeconds, long transferSeconds, long endingSeconds) {
@@ -66,7 +54,6 @@ class AllMonitorsTest {
         CustomerIdleMonitor monitor = new CustomerIdleMonitor(service);
         CbolStateContext ctx = buildCtx(ConversationState.IN_PROGRESS, 100, 100, 100);
         long lastActivity = System.currentTimeMillis() - 200 * 1000; // 200s ago > 100s threshold
-        // Should fire SYS_CUSTOMER_IDLE -> ENDING without exception
         assertDoesNotThrow(() -> monitor.check(ctx, lastActivity));
     }
 
@@ -75,7 +62,6 @@ class AllMonitorsTest {
         CustomerIdleMonitor monitor = new CustomerIdleMonitor(service);
         CbolStateContext ctx = buildCtx(ConversationState.IN_PROGRESS, 100, 100, 100);
         long lastActivity = System.currentTimeMillis() - 50 * 1000; // 50s ago < 100s threshold
-        // Should not fire (no transition), but should not throw
         assertDoesNotThrow(() -> monitor.check(ctx, lastActivity));
     }
 
@@ -94,7 +80,6 @@ class AllMonitorsTest {
         TransferMonitor monitor = new TransferMonitor(service);
         CbolStateContext ctx = buildCtx(ConversationState.TRANSFERRED, 100, 100, 100);
         long transferStart = System.currentTimeMillis() - 200 * 1000; // 200s > 100s threshold
-        // Should fire SYS_TRANSFER_TIMEOUT -> INITIATED
         assertDoesNotThrow(() -> monitor.check(ctx, transferStart));
     }
 
@@ -111,7 +96,6 @@ class AllMonitorsTest {
         TransferMonitor monitor = new TransferMonitor(service);
         CbolStateContext ctx = buildCtx(ConversationState.IN_PROGRESS, 100, 100, 100);
         long transferStart = System.currentTimeMillis() - 200 * 1000;
-        // Should skip entirely (no state check), should not throw
         assertDoesNotThrow(() -> monitor.check(ctx, transferStart));
     }
 
@@ -130,7 +114,6 @@ class AllMonitorsTest {
         EndingGraceMonitor monitor = new EndingGraceMonitor(service);
         CbolStateContext ctx = buildCtx(ConversationState.ENDING, 100, 100, 100);
         long enterEnding = System.currentTimeMillis() - 200 * 1000; // 200s > 100s threshold
-        // Should fire SYS_ENDING_GRACE_TIMEOUT -> CLOSED
         assertDoesNotThrow(() -> monitor.check(ctx, enterEnding));
     }
 

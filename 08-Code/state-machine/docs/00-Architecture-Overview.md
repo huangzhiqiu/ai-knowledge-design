@@ -1,18 +1,19 @@
 # State Machine Architecture Design
 
-> Version: 2.0 | Last Updated: 2026-09-02
+> Version: 3.0 | Last Updated: 2026-09-04
+> Based on Alibaba COLA StateMachine: https://github.com/alibaba/COLA
 
 ## 1. Overview
 
-This project implements a **lightweight, stateless, table-driven state machine framework** for the CBOL (AI Messaging Hub) system. The framework is inspired by Spring StateMachine's design philosophy but optimized for simplicity, zero external dependencies, and high performance.
+This project implements a **lightweight, stateless, table-driven state machine framework** for the CBOL (AI Messaging Hub) system, powered by **Alibaba COLA StateMachine**. The framework is optimized for simplicity, high performance, and type safety.
 
 The project is organized as a **multi-module Maven project** with three modules:
 
 | Module | Package | Responsibility |
 |--------|---------|----------------|
-| **statemachine-core** | `com.selfdevelopment.statemachine` | Generic, reusable state machine engine + advanced features (persistence, event sourcing, idempotency, resilience, metrics, timeout, validation, diagram generation) |
-| **chat-engine** | `com.selfdevelopment.chatengine` | Conversation state machine (business-level): 7 states, multi-market config, monitors, async actions, Aibot/ChatHistory connectors |
-| **agent-connector** | `com.selfdevelopment.agentconnector` | Interaction state machine (channel-level): 6 states, Genesys/WebSocket connectors, event normalizers |
+| **statemachine-core** | `com.alibaba.cola.statemachine` | Alibaba COLA StateMachine core engine: Action, Condition, State, Transition, Builder DSL, StateMachineFactory, PlantUML generation |
+| **chat-engine** | `com.selfdevelopment.chatengine` | Conversation state machine (business-level): 7 states, 7 actions, multi-market config, monitors, repository, demo |
+| **agent-connector** | `com.selfdevelopment.agentconnector` | Interaction state machine (channel-level): 6 states, 9 actions, channel connectors, event normalizers, demo |
 
 ### Module Dependencies
 
@@ -43,7 +44,7 @@ ConversationState newState = stateMachine.fireEvent(
     conversation.getCurrentState(),  // injected by caller
     ConversationFact.CUSTOMER_CONNECT,
     context
-).getTargetState();
+);
 conversation.setCurrentState(newState);
 repository.save(conversation);
 ```
@@ -52,318 +53,184 @@ repository.save(conversation);
 
 Transitions are stored in a `ConcurrentHashMap` keyed by `(sourceState, event)`, enabling O(1) lookup. Multiple transitions with the same key (different guards) are stored as a list and evaluated in order.
 
-### 2.3 Zero External Dependencies
+### 2.3 Action-First Transition (Core Principle)
 
-The core framework depends only on the JDK standard library. No Spring, no Apache Commons, no Guava. This makes it:
+Actions execute **before** state change. If an action fails, the state does NOT change. This ensures business logic is the gatekeeper for state transitions.
 
-- Easy to embed in any Java project
-- Lightweight core (~15 core classes, 84 total with business layer and advanced features)
-- Free from dependency conflicts
-- Fast to start (no framework initialization)
+**Execution order:**
+1. Guard/Condition check (`when()`) — if false, transition rejected
+2. **Transition action (`perform()`) — failure → `StateMachineException`, state unchanged**
+3. State transition completes
 
-### 2.4 Spring-Style Configuration
+### 2.4 COLA Builder DSL
 
-While the core has zero dependencies, the configuration API is inspired by Spring StateMachine's `StateMachineConfigurerAdapter`:
+The configuration API uses Alibaba COLA StateMachine's Builder DSL:
 
 ```java
-public class ConversationConfig extends StateMachineConfigurerAdapter<ConversationState, ConversationFact, CbolStateContext> {
-    @Override
-    public void configure(StateConfigurer<...> states) {
-        states.initial(INITIATED).state(IN_PROGRESS).end(CLOSED);
-    }
+StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> builder =
+        StateMachineBuilderFactory.create();
 
-    @Override
-    public void configure(TransitionConfigurer<...> transitions) {
-        transitions.withExternal()
-            .source(INITIATED).event(CUSTOMER_CONNECT).target(IN_PROGRESS);
-    }
-}
+builder.externalTransition()
+        .from(ConversationState.NEW)
+        .to(ConversationState.INITIATED)
+        .on(ConversationFact.CONVERSATION_INITIATED)
+        .perform(new ConversationInitAction());
+
+StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+        builder.build("conversation");
+StateMachineFactory.register(sm);
 ```
 
-## 3. Architecture Diagram
+**Builder API order:** `from() → to() → on() → when() → perform()`
 
-```mermaid
-graph TB
-    subgraph "chat-engine Module (com.selfdevelopment.chatengine)"
-        subgraph "Event Ingress Layer"
-            IN1[AibotEventNormalizer]
-            IN3[ChatEngineEventDispatcher]
-            IN1 --> IN3
-        end
+### 2.5 Generic Type-Safe
 
-        subgraph "Conversation State Machine"
-            A[ChatEngineStateMachineService] --> B[ConversationStateMachineFactory]
-            A --> C[ActionWorker]
-            D[CustomerIdleMonitor] --> A
-            E[TransferMonitor] --> A
-            F[EndingGraceMonitor] --> A
-            G[MarketConfigProvider] --> A
-            H[CbolStateContext] --> A
-            I[TraceContext / TraceMdcHelper] --> A
-            REPO[ConversationRepository] --> A
-        end
+COLA StateMachine uses Java generics for type-safe states, events, and contexts. No reflection, no runtime type errors.
 
-        subgraph "Chat Engine Connectors"
-            CN1[AibotConnector]
-            CN4[ChatHistoryOdsConnector]
-        end
-    end
+### 2.6 Independent State Machines
 
-    subgraph "agent-connector Module (com.selfdevelopment.agentconnector)"
-        subgraph "Interaction State Machine"
-            AC1[AgentConnectorStateMachineService] --> AC2[InteractionStateMachineFactory]
-            AC3[AgentConnectorStateContext] --> AC1
-        end
+Conversation and Interaction are **independent** state machines with separate contexts. They do NOT share state or context.
 
-        subgraph "Agent Connectors"
-            CN2[GenesysConnector]
-            CN3[CbolWebsocketConnector]
-            IN2[GenesysEventNormalizer]
-        end
-    end
+## 3. Package Structure
 
-    subgraph "statemachine-core Module (com.selfdevelopment.statemachine)"
-        subgraph "Decorator Layer (Advanced Features)"
-            DA[TimeoutAwareStateMachine]
-            DF[FailoverStateMachine]
-            DB[ResilientStateMachine]
-            DC[EventSourcedStateMachine]
-            DD[MonitoredStateMachine]
-            DE[IdempotentStateMachineDecorator]
-            DA --> DF --> DB --> DC --> DD --> DE
-        end
-
-        subgraph "State Machine Core Framework"
-            J[StateMachineBuilder] --> K[SimpleStateMachine]
-            K --> L[Transition]
-            K --> M[StateDef]
-            K --> N[StateContext]
-            K --> O[ExtendedState]
-            K --> P[StateMachineListener]
-            Q[StateMachineRegistry] --> K
-            V[StateMachineValidator] --> J
-        end
-
-        subgraph "Event-Driven Infrastructure"
-            EV1[StandardEvent]
-            EV2[EventNormalizer]
-            EV3[EventDispatcher]
-        end
-
-        subgraph "Supporting Infrastructure"
-            R1[StateRepository]
-            R2[StateTransitionStore]
-            R3[TimeoutScheduler]
-            R4[ProcessedEventStore]
-            R5[MeterRegistry]
-            R6[Connector Interface]
-        end
-    end
-
-    subgraph "External Systems"
-        S1[AIBot API] --> CN1
-        S2[Genesys Cloud] --> CN2
-        S3[Customer WebSocket] --> CN3
-        S4[Chat History ODS] --> CN4
-        S5[MySQL / MongoDB] --> REPO
-        S6[SLF4J / MDC] --> I
-        S7[Prometheus / Grafana] --> R5
-    end
-
-    IN3 --> A
-    A --> DA
-    DE --> K
-    A --> CN1
-    A --> CN4
-    AC1 --> DA
-    AC1 --> CN2
-    AC1 --> CN3
-    IN2 --> AC1
-    DA -.-> R3
-    DF -.-> failEventProvider
-    DB -.-> R1
-    DC -.-> R2
-    DD -.-> R5
-    DE -.-> R4
-    CN1 -.-> R6
-    CN2 -.-> R6
-    CN3 -.-> R6
-    CN4 -.-> R6
-```
-
-## 4. Package Structure
-
-### 4.1 statemachine-core Module (com.selfdevelopment.statemachine)
+### 3.1 statemachine-core (Alibaba COLA StateMachine)
 
 ```
-com.selfdevelopment.statemachine/
-├── api/                              # Core interfaces
-│   ├── StateMachine.java             # Interface (lifecycle, fireEvent, listeners, getAllTransitions)
-│   ├── Action.java                   # Functional interface for transition actions
-│   ├── Guard.java                    # Functional interface for guard conditions
-│   ├── StateMachineListener.java     # 8 callback hooks
-│   └── StateMachineRegistry.java     # Named registry for sharing machines
-├── core/                             # Core implementations
-│   ├── SimpleStateMachine.java       # Default implementation (stateless, table-driven)
-│   ├── Transition.java               # Transition rule (source, event, target, guard, action, kind)
-│   ├── StateDef.java                 # State definition (entry/exit actions, initial/end flags)
-│   ├── StateContext.java             # Context object passed through transitions
-│   ├── ExtendedState.java            # Key-value variables shared across transitions
-│   └── TransitionKind.java           # EXTERNAL / INTERNAL enum
+com.alibaba.cola.statemachine/
+├── Action.java                    # Functional interface for transition actions
+├── Condition.java                 # Functional interface for guards
+├── State.java                     # State interface
+├── StateContext.java              # Context interface
+├── StateMachine.java              # Core state machine interface
+├── StateMachineFactory.java       # Global registry
+├── Transition.java                # Transition interface
 ├── builder/
-│   └── StateMachineBuilder.java      # Fluent DSL builder + fromConfigurer() factory + build(validate)
-├── config/                            # Spring-style configuration
-│   ├── StateMachineConfigurerAdapter.java
-│   ├── StateConfigurer.java
-│   ├── DefaultStateConfigurer.java
-│   ├── TransitionConfigurer.java
-│   └── DefaultTransitionConfigurer.java
-├── connector/                         # Generic Connector interface
-│   └── Connector.java
-├── event/                             # Standard event-driven infrastructure
-│   ├── StandardEvent.java
-│   ├── EventNormalizer.java
-│   └── EventDispatcher.java
-├── persistence/                       # State persistence with optimistic locking
-│   ├── StateRepository.java
-│   ├── InMemoryStateRepository.java
-│   ├── VersionedState.java
-│   └── OptimisticLockException.java
-├── validation/                        # Build-time validation
-│   ├── StateMachineValidator.java    # 8 validation rules (ERROR/WARNING levels)
-│   └── ValidationError.java
-├── idempotency/                       # Idempotent event processing
-│   ├── ProcessedEventStore.java
-│   ├── InMemoryProcessedEventStore.java
-│   └── IdempotentStateMachineDecorator.java
-├── metrics/                           # Observability (Micrometer optional)
-│   ├── StateMachineMetrics.java
-│   └── MonitoredStateMachine.java
-├── eventsourcing/                     # Event sourcing / audit trail
-│   ├── StateTransitionEvent.java
-│   ├── StateTransitionStore.java
-│   ├── InMemoryStateTransitionStore.java
-│   └── EventSourcedStateMachine.java
-├── resilience/                        # Failure handling strategies
-│   ├── FailureHandler.java
-│   ├── ThrowFailureHandler.java
-│   ├── ReturnSourceFailureHandler.java
-│   ├── FallbackStateFailureHandler.java
-│   ├── RetryFailureHandler.java
-│   ├── ResilientStateMachine.java
-│   ├── FailoverStateMachine.java
-│   └── FailoverContext.java
-├── timeout/                           # Scheduled timeout events
-│   ├── TimeoutConfig.java
-│   ├── StateMachineTimeoutScheduler.java
-│   ├── InMemoryTimeoutScheduler.java
-│   └── TimeoutAwareStateMachine.java
-├── diagram/                           # Diagram generation
-│   └── StateMachineDiagramGenerator.java
+│   ├── StateMachineBuilder.java   # Builder DSL entry
+│   ├── StateMachineBuilderFactory.java
+│   ├── From.java, To.java, On.java, When.java, Perform.java
+│   └── TransitionBuilder.java
+├── impl/
+│   ├── StateMachineImpl.java
+│   ├── StateImpl.java
+│   ├── TransitionImpl.java
+│   └── StateContextImpl.java
 └── exception/
     └── StateMachineException.java
 ```
 
-### 4.2 chat-engine Module (com.selfdevelopment.chatengine)
+### 3.2 chat-engine
 
 ```
 com.selfdevelopment.chatengine/
-├── enums/
-│   ├── ConversationState.java          # 7 states: NEW, INITIATED, IN_PROGRESS, TRANSFERRED, ENDING, ERROR, CLOSED
-│   ├── ConversationFact.java           # 18 events (lifecycle, transfer, survey, ending, system, failover)
-│   ├── EndReason.java
-│   └── TransferOutcome.java
-├── model/
-│   ├── ConversationInstance.java       # Immutable record (conversationId, state, market, ...)
-│   ├── InteractionInstance.java        # Simplified interaction record (for context)
-│   └── StateTransitionRecord.java      # Audit record
-├── context/
-│   ├── CbolStateContext.java           # Aggregate context (conversation + interaction + marketConfig + trace)
-│   ├── TraceContext.java               # Trace identifiers (traceId, spanId)
-│   └── TraceMdcHelper.java             # SLF4J MDC propagation utility
+├── action/
+│   ├── ActionWorker.java          # RESERVED: async action executor
+│   └── impl/
+│       ├── ConversationInitAction.java
+│       ├── CustomerConnectAction.java
+│       ├── TransferRequestAction.java
+│       ├── TransferFailedAction.java
+│       ├── CustomerCloseAction.java
+│       ├── SurveyStartAction.java
+│       └── SurveyCompleteAction.java
 ├── config/
-│   ├── StateMachineMarketConfig.java   # Market-level configuration
-│   └── MarketConfigProvider.java       # Config provider
-├── ingress/                             # Event ingress layer
+│   ├── MarketConfigProvider.java
+│   └── StateMachineMarketConfig.java
+├── context/
+│   ├── CbolStateContext.java
+│   ├── TraceContext.java
+│   └── TraceMdcHelper.java
+├── demo/
+│   ├── ChatEngineDemo.java
+│   └── DemoLogger.java
+├── enums/
+│   ├── ConversationFact.java
+│   └── ConversationState.java
+├── ingress/
 │   ├── AibotEvent.java
 │   ├── AibotEventNormalizer.java
 │   └── ChatEngineEventDispatcher.java
-├── action/
-│   ├── ActionWorker.java               # [RESERVED] Async executor with bounded thread pool + MDC propagation (not used in production, reserved for future async actions)
-│   └── impl/                           # Action implementations (directly implement core Action<S,E,C>)
-│       ├── ConversationInitAction.java # NEW → INITIATED
-│       ├── CustomerConnectAction.java  # INITIATED → IN_PROGRESS
-│       ├── TransferRequestAction.java  # IN_PROGRESS → TRANSFERRED
-│       ├── TransferFailedAction.java   # TRANSFERRED → INITIATED
-│       ├── CustomerCloseAction.java    # IN_PROGRESS → ENDING
-│       ├── SurveyStartAction.java      # IN_PROGRESS → IN_PROGRESS (internal)
-│       └── SurveyCompleteAction.java   # IN_PROGRESS → ENDING
-├── statemachine/
-│   └── factory/
-│       └── ConversationStateMachineFactory.java
-├── service/
-│   └── ChatEngineStateMachineService.java  # Main service entry point
-├── connector/                           # Chat engine connectors
-│   ├── AibotConnector.java             # AIBot API connector
-│   └── ChatHistoryOdsConnector.java    # Chat history ODS connector
-├── repository/
-│   └── ConversationRepository.java
+├── model/
+│   └── ConversationInstance.java
 ├── monitor/
-│   ├── AbstractTimeoutMonitor.java
 │   ├── CustomerIdleMonitor.java
 │   ├── TransferMonitor.java
 │   └── EndingGraceMonitor.java
-└── demo/
-    └── ChatEngineDemo.java              # 4 demo scenarios
+├── repository/
+│   └── ConversationRepository.java
+├── service/
+│   └── ChatEngineStateMachineService.java
+└── statemachine/
+    └── factory/
+        └── ConversationStateMachineFactory.java
 ```
 
-### 4.3 agent-connector Module (com.selfdevelopment.agentconnector)
+### 3.3 agent-connector
 
 ```
 com.selfdevelopment.agentconnector/
-├── enums/
-│   ├── InteractionState.java           # 6 states: CONNECTING, CONNECTED, RECONNECTING, HELD, TRANSFERRING, DISCONNECTED
-│   └── InteractionFact.java            # 14 events (connection lifecycle, hold, transfer)
-├── model/
-│   └── InteractionInstance.java        # Immutable record (interactionId, channelType, state, ...)
+├── action/
+│   └── impl/
+│       ├── ConnectionEstablishedAction.java
+│       ├── ConnectionFailedAction.java
+│       ├── ConnectionDroppedAction.java
+│       ├── CloseRequestAction.java
+│       ├── ReconnectSuccessAction.java
+│       ├── HoldRequestAction.java
+│       ├── HoldResumeAction.java
+│       ├── TransferStartAction.java
+│       └── TransferCompleteAction.java
 ├── context/
 │   └── AgentConnectorStateContext.java
+├── demo/
+│   ├── AgentConnectorDemo.java
+│   └── DemoLogger.java
+├── enums/
+│   ├── InteractionFact.java
+│   └── InteractionState.java
 ├── ingress/
+│   ├── AgentConnectorEventDispatcher.java
 │   ├── GenesysEvent.java
-│   ├── GenesysEventNormalizer.java
-│   └── AgentConnectorEventDispatcher.java
-├── statemachine/
-│   └── factory/
-│       └── InteractionStateMachineFactory.java
+│   └── GenesysEventNormalizer.java
+├── model/
+│   └── InteractionInstance.java
 ├── service/
 │   └── AgentConnectorStateMachineService.java
-├── connector/
-│   ├── GenesysConnector.java           # Genesys Cloud connector
-│   └── CbolWebsocketConnector.java     # Customer WebSocket connector
-└── demo/
-    └── AgentConnectorDemo.java          # 6 demo scenarios
+└── statemachine/
+    └── factory/
+        └── InteractionStateMachineFactory.java
 ```
 
-## 5. Key Design Decisions
+## 4. Key Architecture Decisions
 
-| Decision | Rationale | Trade-off |
-|----------|-----------|-----------|
-| Stateless engine | Thread-safe, scalable, simple persistence | Caller must manage state storage |
-| Table-driven transitions | O(1) lookup, no if-else chains | Memory overhead for transition map |
-| Zero dependencies | Lightweight, no conflicts | No built-in persistence, AOP, etc. |
-| Entry/exit actions are best-effort | Side effects shouldn't block state transitions | Action failures only notified via listener |
-| Transition action failures propagate | Business logic failures should be visible | Caller must handle StateMachineException |
-| Bounded thread pool for ActionWorker | Prevents OOM under high load | CallerRunsPolicy provides backpressure |
-| Market-level configuration | Multi-market deployment requires per-market tuning | InMemoryProvider needs external refresh mechanism |
-| TraceId via SLF4J MDC | Full-chain observability with zero code changes | MDC must be cleared in finally block |
-| **Multi-module structure** | Clear separation of concerns: core vs. chat-engine vs. agent-connector | Slightly more complex build configuration |
-| **No circular dependencies** | chat-engine and agent-connector depend only on statemachine-core | Cross-module communication must go through well-defined interfaces |
-| **Survey as in-progress state** | Survey flow controlled by state machine, not boolean flags | Additional state in conversation lifecycle |
-| **Failover mechanism** | Unhandled exceptions trigger FAIL event, routed to fail branch | Additional ERROR state and retry/abort events |
+| Decision | Rationale |
+|----------|-----------|
+| **Use Alibaba COLA StateMachine** | Battle-tested, lightweight, type-safe, zero external dependencies, active community |
+| **Stateless engine** | Horizontal scaling, thread-safety, simplified persistence |
+| **Action-first transition** | Business logic is the gatekeeper for state changes |
+| **Multi-module Maven** | Clear separation of concerns, independent development/deployment |
+| **Independent state machines** | Conversation (business) and Interaction (channel) have different lifecycles |
+| **Multi-market config** | Configuration-driven per-market behavior (HK, SG, UK, etc.) |
+| **Survey as sub-phase** | SURVEY_START is internal transition (IN_PROGRESS → IN_PROGRESS), not a separate state |
+| **NEW initial state** | Conversation record created but not yet initialized |
+| **Factory caching pattern** | COLA StateMachine does not allow rebuilding; cache to prevent duplicate builds |
 
-## 6. Related Documents
+## 5. Technology Stack
 
-- [01-State-Machine-Core-Design.md](./01-State-Machine-Core-Design.md) — Core framework detailed design
-- [02-CBOL-Business-Layer-Design.md](./02-CBOL-Business-Layer-Design.md) — CBOL business layer detailed design
-- [03-State-Transition-Diagrams.md](./03-State-Transition-Diagrams.md) — State diagrams and transition tables
-- [04-Usage-Guide.md](./04-Usage-Guide.md) — Quick start and usage examples
+| Component | Technology | Version |
+|-----------|------------|---------|
+| Language | Java | 21 |
+| Build Tool | Maven | 3.x |
+| State Machine | Alibaba COLA StateMachine | 4.x |
+| Logging | SLF4J + Logback | 1.x |
+| Testing | JUnit 5 | 5.x |
+| Code Generation | Lombok | 1.x |
+
+## 6. References
+
+- Alibaba COLA GitHub: https://github.com/alibaba/COLA
+- COLA StateMachine module: `cola-components/cola-component-statemachine`
+- COLA StateMachine design philosophy: lightweight, stateless, table-driven
+
+---
+
+*Last updated: 2026-09-04 (v3.0 — migrated to Alibaba COLA StateMachine)*

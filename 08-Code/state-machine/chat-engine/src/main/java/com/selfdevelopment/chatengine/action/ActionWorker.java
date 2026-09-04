@@ -1,11 +1,10 @@
 package com.selfdevelopment.chatengine.action;
 
+import com.alibaba.cola.statemachine.Action;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.context.TraceMdcHelper;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
-import com.selfdevelopment.statemachine.api.Action;
-import com.selfdevelopment.statemachine.core.StateContext;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Objects;
@@ -34,15 +33,7 @@ import java.util.function.Consumer;
  * Uses a bounded thread pool to prevent OOM under high load.
  * Propagates trace context (MDC) to worker threads.
  * <p>
- * This worker directly uses the core {@link Action} interface from statemachine-core,
- * ensuring consistency with the state machine framework.
- * <p>
- * Supports three submission modes:
- * <ul>
- *   <li>{@link #submit(Action, StateContext)}: Fire-and-forget, exceptions are logged only</li>
- *   <li>{@link #submitWithResult(Action, StateContext)}: Returns CompletableFuture for result tracking</li>
- *   <li>{@link #submitWithCallback(Action, StateContext, Consumer, Consumer)}: Success/failure callbacks</li>
- * </ul>
+ * Uses COLA {@link Action} interface.
  */
 @Slf4j
 public class ActionWorker {
@@ -75,23 +66,21 @@ public class ActionWorker {
     /**
      * Submits an action for asynchronous execution (fire-and-forget).
      * Trace context (MDC) is automatically propagated to the worker thread.
-     * <p>
-     * Exceptions are caught and logged only. Use {@link #submitWithResult} or
-     * {@link #submitWithCallback} if you need to handle execution failures.
      *
-     * @param action the action to execute (core Action interface)
-     * @param ctx    the state context containing trace information
-     * @throws NullPointerException if action or ctx is null
+     * @param action the action to execute (COLA Action interface)
+     * @param from   the source state
+     * @param to     the target state
+     * @param event  the event that triggered the transition
+     * @param ctx    the business context
      */
     public void submit(Action<ConversationState, ConversationFact, CbolStateContext> action,
-                       StateContext<ConversationState, ConversationFact, CbolStateContext> ctx) {
+                       ConversationState from, ConversationState to, ConversationFact event, CbolStateContext ctx) {
         Objects.requireNonNull(action, "action must not be null");
         Objects.requireNonNull(ctx, "ctx must not be null");
 
-        submitWithResult(action, ctx).exceptionally(ex -> {
-            CbolStateContext businessCtx = ctx.getBusinessContext();
-            String conversationId = (businessCtx != null && businessCtx.conversation() != null)
-                    ? businessCtx.conversation().conversationId() : "unknown";
+        submitWithResult(action, from, to, event, ctx).exceptionally(ex -> {
+            String conversationId = (ctx.conversation() != null)
+                    ? ctx.conversation().conversationId() : "unknown";
             log.error("Action execution failed, conversationId={}", conversationId, ex);
             return null;
         });
@@ -100,29 +89,25 @@ public class ActionWorker {
     /**
      * Submits an action for asynchronous execution and returns a CompletableFuture.
      * Trace context (MDC) is automatically propagated to the worker thread.
-     * <p>
-     * The returned CompletableFuture completes normally when the action succeeds,
-     * or completes exceptionally if the action throws an exception.
      *
-     * @param action the action to execute (core Action interface)
-     * @param ctx    the state context containing trace information
+     * @param action the action to execute (COLA Action interface)
+     * @param from   the source state
+     * @param to     the target state
+     * @param event  the event that triggered the transition
+     * @param ctx    the business context
      * @return a CompletableFuture that completes when the action finishes
-     * @throws NullPointerException if action or ctx is null
      */
     public CompletableFuture<Void> submitWithResult(
             Action<ConversationState, ConversationFact, CbolStateContext> action,
-            StateContext<ConversationState, ConversationFact, CbolStateContext> ctx) {
+            ConversationState from, ConversationState to, ConversationFact event, CbolStateContext ctx) {
         Objects.requireNonNull(action, "action must not be null");
         Objects.requireNonNull(ctx, "ctx must not be null");
-
-        CbolStateContext businessCtx = ctx.getBusinessContext();
-        Objects.requireNonNull(businessCtx, "ctx.businessContext must not be null");
-        Objects.requireNonNull(businessCtx.traceContext(), "ctx.traceContext must not be null");
+        Objects.requireNonNull(ctx.traceContext(), "ctx.traceContext must not be null");
 
         return CompletableFuture.runAsync(() -> {
             try {
-                TraceMdcHelper.set(businessCtx.traceContext());
-                action.execute(ctx);
+                TraceMdcHelper.set(ctx.traceContext());
+                action.execute(from, to, event, ctx);
             } finally {
                 TraceMdcHelper.clear();
             }
@@ -133,21 +118,23 @@ public class ActionWorker {
      * Submits an action for asynchronous execution with success and failure callbacks.
      * Trace context (MDC) is automatically propagated to the worker thread.
      *
-     * @param action        the action to execute (core Action interface)
-     * @param ctx           the state context containing trace information
-     * @param onSuccess     callback invoked when the action succeeds (may be null)
-     * @param onFailure     callback invoked when the action fails (may be null)
-     * @throws NullPointerException if action or ctx is null
+     * @param action    the action to execute (COLA Action interface)
+     * @param from      the source state
+     * @param to        the target state
+     * @param event     the event that triggered the transition
+     * @param ctx       the business context
+     * @param onSuccess callback invoked when the action succeeds (may be null)
+     * @param onFailure callback invoked when the action fails (may be null)
      */
     public void submitWithCallback(
             Action<ConversationState, ConversationFact, CbolStateContext> action,
-            StateContext<ConversationState, ConversationFact, CbolStateContext> ctx,
-            Consumer<StateContext<ConversationState, ConversationFact, CbolStateContext>> onSuccess,
+            ConversationState from, ConversationState to, ConversationFact event, CbolStateContext ctx,
+            Consumer<CbolStateContext> onSuccess,
             Consumer<Throwable> onFailure) {
         Objects.requireNonNull(action, "action must not be null");
         Objects.requireNonNull(ctx, "ctx must not be null");
 
-        submitWithResult(action, ctx)
+        submitWithResult(action, from, to, event, ctx)
                 .thenRun(() -> {
                     if (onSuccess != null) {
                         onSuccess.accept(ctx);
@@ -163,12 +150,11 @@ public class ActionWorker {
 
     /**
      * Shuts down the worker thread pool.
-     * Waits for up to 5 seconds for running tasks to complete.
      */
     public void shutdown() {
         executor.shutdown();
         try {
-            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+            if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
                 executor.shutdownNow();
             }
         } catch (InterruptedException e) {
@@ -178,31 +164,21 @@ public class ActionWorker {
     }
 
     /**
-     * Returns the underlying executor service for advanced configuration
-     * (e.g., monitoring, metrics collection).
-     *
-     * @return the underlying ExecutorService instance
+     * Named thread factory for better debugging.
      */
-    public ExecutorService getExecutor() {
-        return executor;
-    }
-
-    /**
-     * Thread factory that creates named threads for easier debugging.
-     */
-    private static final class NamedThreadFactory implements ThreadFactory {
+    private static class NamedThreadFactory implements ThreadFactory {
+        private final String namePrefix;
         private final AtomicInteger counter = new AtomicInteger(0);
-        private final String prefix;
 
-        NamedThreadFactory(String prefix) {
-            this.prefix = prefix;
+        NamedThreadFactory(String namePrefix) {
+            this.namePrefix = namePrefix;
         }
 
         @Override
         public Thread newThread(Runnable r) {
-            Thread thread = new Thread(r, prefix + "-" + counter.incrementAndGet());
-            thread.setDaemon(false);
-            return thread;
+            Thread t = new Thread(r, namePrefix + "-" + counter.incrementAndGet());
+            t.setDaemon(true);
+            return t;
         }
     }
 }

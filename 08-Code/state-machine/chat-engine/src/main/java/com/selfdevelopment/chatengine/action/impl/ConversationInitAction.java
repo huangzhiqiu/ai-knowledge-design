@@ -1,10 +1,9 @@
 package com.selfdevelopment.chatengine.action.impl;
 
+import com.alibaba.cola.statemachine.Action;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
-import com.selfdevelopment.statemachine.api.Action;
-import com.selfdevelopment.statemachine.core.StateContext;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -27,12 +26,12 @@ public class ConversationInitAction
         implements Action<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override
-    public void execute(StateContext<ConversationState, ConversationFact, CbolStateContext> context) {
-        CbolStateContext ctx = context.getBusinessContext();
-
+    public void execute(ConversationState from, ConversationState to, ConversationFact event, CbolStateContext ctx) {
         // 1. Extract data from context
         String conversationId = ctx.conversation().conversationId();
         String market = ctx.conversation().market();
+
+        log.info("ConversationInitAction: {} --({})--> {}, conversationId={}", from, event, to, conversationId);
 
         // 2. Validate conversation configuration
         validateConversationConfig(ctx);

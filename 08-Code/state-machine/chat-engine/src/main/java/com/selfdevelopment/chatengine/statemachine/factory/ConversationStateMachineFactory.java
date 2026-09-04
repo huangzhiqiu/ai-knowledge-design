@@ -1,5 +1,9 @@
 package com.selfdevelopment.chatengine.statemachine.factory;
 
+import com.alibaba.cola.statemachine.StateMachine;
+import com.alibaba.cola.statemachine.StateMachineFactory;
+import com.alibaba.cola.statemachine.builder.StateMachineBuilder;
+import com.alibaba.cola.statemachine.builder.StateMachineBuilderFactory;
 import com.selfdevelopment.chatengine.action.impl.ConversationInitAction;
 import com.selfdevelopment.chatengine.action.impl.CustomerCloseAction;
 import com.selfdevelopment.chatengine.action.impl.CustomerConnectAction;
@@ -7,21 +11,22 @@ import com.selfdevelopment.chatengine.action.impl.SurveyCompleteAction;
 import com.selfdevelopment.chatengine.action.impl.SurveyStartAction;
 import com.selfdevelopment.chatengine.action.impl.TransferFailedAction;
 import com.selfdevelopment.chatengine.action.impl.TransferRequestAction;
-import com.selfdevelopment.chatengine.service.ChatEngineStateMachineService;
-
-import com.selfdevelopment.statemachine.api.StateMachine;
-import com.selfdevelopment.statemachine.api.StateMachineRegistry;
-import com.selfdevelopment.statemachine.builder.StateMachineBuilder;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
 
+/**
+ * Factory for building the Conversation state machine.
+ * <p>
+ * Uses COLA StateMachine builder API.
+ * <p>
+ * Conversation states: NEW, INITIATED, IN_PROGRESS, TRANSFERRED, ENDING, ERROR, CLOSED
+ */
 public class ConversationStateMachineFactory {
 
     public static final String MACHINE_ID = "conversation";
 
     // Action instances (stateless, can be shared)
-    // These actions directly implement the core Action<S, E, C> interface from statemachine-core
     private static final ConversationInitAction CONVERSATION_INIT_ACTION = new ConversationInitAction();
     private static final CustomerConnectAction CUSTOMER_CONNECT_ACTION = new CustomerConnectAction();
     private static final TransferRequestAction TRANSFER_REQUEST_ACTION = new TransferRequestAction();
@@ -31,205 +36,195 @@ public class ConversationStateMachineFactory {
     private static final SurveyCompleteAction SURVEY_COMPLETE_ACTION = new SurveyCompleteAction();
 
     public static StateMachine<ConversationState, ConversationFact, CbolStateContext> build() {
-        StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> builder =
-                StateMachineBuilder.builder(MACHINE_ID);
+        // Try to get existing state machine first
+        try {
+            StateMachine<ConversationState, ConversationFact, CbolStateContext> existing =
+                    StateMachineFactory.get(MACHINE_ID);
+            if (existing != null) {
+                return existing;
+            }
+        } catch (Exception ignored) {
+            // State machine not built yet
+        }
 
-        // Set initial state to NEW: conversation record created, but not started yet
-        builder.initialState(ConversationState.NEW);
+        synchronized (ConversationStateMachineFactory.class) {
+            // Double-check after acquiring lock
+            try {
+                StateMachine<ConversationState, ConversationFact, CbolStateContext> existing =
+                        StateMachineFactory.get(MACHINE_ID);
+                if (existing != null) {
+                    return existing;
+                }
+            } catch (Exception ignored) {
+                // State machine not built yet
+            }
 
-        // NEW → INITIATED: conversation initialization prepared, execute ConversationInitAction
-        // NEW is the initial state: conversation record created, but not started yet
-        // This transition performs preparation work: validate config, allocate resources, setup routing
-        builder.transition()
+            StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> builder =
+                    StateMachineBuilderFactory.create();
+
+        // ===== NORMAL FLOW =====
+        // COLA API order: from → to → on → when → perform
+
+        // NEW → INITIATED: conversation initialization prepared
+        builder.externalTransition()
                 .from(ConversationState.NEW)
+                .to(ConversationState.INITIATED)
                 .on(ConversationFact.CONVERSATION_INITIATED)
-                .to(ConversationState.INITIATED)
-                .perform(CONVERSATION_INIT_ACTION)
-                .and();
+                .perform(CONVERSATION_INIT_ACTION);
 
-        // INITIATED → ACTIVE: customer connects, execute CustomerConnectAction
-        // INITIATED: conversation started (first message sent), waiting for connection
-        builder.transition()
+        // INITIATED → IN_PROGRESS: customer connects
+        builder.externalTransition()
                 .from(ConversationState.INITIATED)
+                .to(ConversationState.IN_PROGRESS)
                 .on(ConversationFact.CUSTOMER_CONNECT)
-                .to(ConversationState.IN_PROGRESS)
-                .perform(CUSTOMER_CONNECT_ACTION)
-                .and();
+                .perform(CUSTOMER_CONNECT_ACTION);
 
-        // ACTIVE → TRANSFERRED: transfer requested, execute TransferRequestAction
-        builder.transition()
+        // IN_PROGRESS → TRANSFERRED: transfer requested
+        builder.externalTransition()
                 .from(ConversationState.IN_PROGRESS)
-                .on(ConversationFact.TRANSFER_REQUEST)
                 .to(ConversationState.TRANSFERRED)
-                .perform(TRANSFER_REQUEST_ACTION)
-                .and();
+                .on(ConversationFact.TRANSFER_REQUEST)
+                .perform(TRANSFER_REQUEST_ACTION);
 
-        // Agent attached (internal transition, stays in ACTIVE)
-        builder.transition()
-                .from(ConversationState.IN_PROGRESS)
-                .on(ConversationFact.AGENT_ATTACHED)
-                .to(ConversationState.IN_PROGRESS)
-                .internal()
-                .and();
+        // IN_PROGRESS → IN_PROGRESS (internal): agent attached
+        builder.internalTransition()
+                .within(ConversationState.IN_PROGRESS)
+                .on(ConversationFact.AGENT_ATTACHED);
 
-        // Transfer connected successfully → back to ACTIVE
-        builder.transition()
+        // TRANSFERRED → IN_PROGRESS: transfer connected successfully
+        builder.externalTransition()
                 .from(ConversationState.TRANSFERRED)
-                .on(ConversationFact.TRANSFER_CONNECTED)
                 .to(ConversationState.IN_PROGRESS)
-                .and();
+                .on(ConversationFact.TRANSFER_CONNECTED);
 
-        // v6: transfer failed -> INITIATED (no rollback), execute TransferFailedAction
-        builder.transition()
+        // TRANSFERRED → INITIATED: transfer failed (v6: no rollback)
+        builder.externalTransition()
                 .from(ConversationState.TRANSFERRED)
+                .to(ConversationState.INITIATED)
                 .on(ConversationFact.TRANSFER_FAILED)
-                .to(ConversationState.INITIATED)
-                .perform(TRANSFER_FAILED_ACTION)
-                .and();
+                .perform(TRANSFER_FAILED_ACTION);
 
-        builder.transition()
+        // TRANSFERRED → INITIATED: transfer timeout
+        builder.externalTransition()
                 .from(ConversationState.TRANSFERRED)
-                .on(ConversationFact.TRANSFER_TIMEOUT)
                 .to(ConversationState.INITIATED)
-                .perform(TRANSFER_FAILED_ACTION)
-                .and();
+                .on(ConversationFact.TRANSFER_TIMEOUT)
+                .perform(TRANSFER_FAILED_ACTION);
 
-        // ACTIVE → ENDING: customer closes, execute CustomerCloseAction
-        builder.transition()
+        // IN_PROGRESS → ENDING: customer closes
+        builder.externalTransition()
                 .from(ConversationState.IN_PROGRESS)
-                .on(ConversationFact.CUSTOMER_CLOSE)
                 .to(ConversationState.ENDING)
-                .perform(CUSTOMER_CLOSE_ACTION)
-                .and();
+                .on(ConversationFact.CUSTOMER_CLOSE)
+                .perform(CUSTOMER_CLOSE_ACTION);
 
         // ===== SURVEY FLOW (survey is a sub-phase within IN_PROGRESS, NOT a separate state) =====
-        // The IN_PROGRESS state encompasses both messaging and survey phases.
-        // SURVEY_START is an INTERNAL transition: state remains IN_PROGRESS, but
-        // the conversation enters the survey sub-phase (SurveyStartAction executes).
-        // When survey completes (SURVEY_COMPLETE) or times out (SYS_SURVEY_TIMEOUT),
-        // the conversation transitions directly from IN_PROGRESS to ENDING.
 
-        // IN_PROGRESS → IN_PROGRESS (internal): survey starts, execute SurveyStartAction
-        // State does NOT change — survey is a sub-phase within IN_PROGRESS
-        builder.transition()
-                .from(ConversationState.IN_PROGRESS)
+        // IN_PROGRESS → IN_PROGRESS (internal): survey starts
+        builder.internalTransition()
+                .within(ConversationState.IN_PROGRESS)
                 .on(ConversationFact.SURVEY_START)
-                .to(ConversationState.IN_PROGRESS)
-                .internal()
-                .perform(SURVEY_START_ACTION)
-                .and();
+                .perform(SURVEY_START_ACTION);
 
-        // TRANSFERRED → IN_PROGRESS: survey starts after transfer, execute SurveyStartAction
-        builder.transition()
+        // TRANSFERRED → IN_PROGRESS: survey starts after transfer
+        builder.externalTransition()
                 .from(ConversationState.TRANSFERRED)
-                .on(ConversationFact.SURVEY_START)
                 .to(ConversationState.IN_PROGRESS)
-                .perform(SURVEY_START_ACTION)
-                .and();
+                .on(ConversationFact.SURVEY_START)
+                .perform(SURVEY_START_ACTION);
 
-        // Survey completes normally → ENDING, execute SurveyCompleteAction
-        builder.transition()
+        // IN_PROGRESS → ENDING: survey completes normally
+        builder.externalTransition()
                 .from(ConversationState.IN_PROGRESS)
+                .to(ConversationState.ENDING)
                 .on(ConversationFact.SURVEY_COMPLETE)
-                .to(ConversationState.ENDING)
-                .perform(SURVEY_COMPLETE_ACTION)
-                .and();
+                .perform(SURVEY_COMPLETE_ACTION);
 
-        // Survey timeout → ENDING (system-driven)
-        builder.transition()
+        // IN_PROGRESS → ENDING: survey timeout (system-driven)
+        builder.externalTransition()
                 .from(ConversationState.IN_PROGRESS)
-                .on(ConversationFact.SYS_SURVEY_TIMEOUT)
                 .to(ConversationState.ENDING)
-                .and();
+                .on(ConversationFact.SYS_SURVEY_TIMEOUT);
 
-        // SYSTEM events (from monitors)
-        builder.transition()
+        // ===== SYSTEM EVENTS (from monitors) =====
+
+        // SYS_CUSTOMER_IDLE: various states → ENDING
+        builder.externalTransition()
                 .from(ConversationState.NEW)
-                .on(ConversationFact.SYS_CUSTOMER_IDLE)
                 .to(ConversationState.ENDING)
-                .and();
+                .on(ConversationFact.SYS_CUSTOMER_IDLE);
 
-        builder.transition()
+        builder.externalTransition()
                 .from(ConversationState.INITIATED)
-                .on(ConversationFact.SYS_CUSTOMER_IDLE)
                 .to(ConversationState.ENDING)
-                .and();
+                .on(ConversationFact.SYS_CUSTOMER_IDLE);
 
-        builder.transition()
+        builder.externalTransition()
                 .from(ConversationState.IN_PROGRESS)
-                .on(ConversationFact.SYS_CUSTOMER_IDLE)
                 .to(ConversationState.ENDING)
-                .and();
+                .on(ConversationFact.SYS_CUSTOMER_IDLE);
 
-        builder.transition()
+        builder.externalTransition()
                 .from(ConversationState.TRANSFERRED)
-                .on(ConversationFact.SYS_CUSTOMER_IDLE)
                 .to(ConversationState.ENDING)
-                .and();
+                .on(ConversationFact.SYS_CUSTOMER_IDLE);
 
-        builder.transition()
+        // SYS_TRANSFER_TIMEOUT: TRANSFERRED → INITIATED
+        builder.externalTransition()
                 .from(ConversationState.TRANSFERRED)
-                .on(ConversationFact.SYS_TRANSFER_TIMEOUT)
                 .to(ConversationState.INITIATED)
-                .perform(TRANSFER_FAILED_ACTION)
-                .and();
+                .on(ConversationFact.SYS_TRANSFER_TIMEOUT)
+                .perform(TRANSFER_FAILED_ACTION);
 
-        builder.transition()
+        // SYS_ENDING_GRACE_TIMEOUT: ENDING → CLOSED
+        builder.externalTransition()
                 .from(ConversationState.ENDING)
-                .on(ConversationFact.SYS_ENDING_GRACE_TIMEOUT)
                 .to(ConversationState.CLOSED)
-                .and();
+                .on(ConversationFact.SYS_ENDING_GRACE_TIMEOUT);
 
-        // ===== FAILOVER FLOW (action error → SYS_ACTION_FAILED → ERROR → retry/abort) =====
-        // When an action throws an unhandled RuntimeException, FailoverStateMachine automatically
-        // fires SYS_ACTION_FAILED. Each non-terminal state routes to ERROR for centralized handling.
-        // From ERROR: SYS_RETRY returns to ACTIVE, SYS_ABORT terminates to CLOSED.
+        // ===== FAILOVER FLOW =====
 
-        builder.transition()
+        // SYS_ACTION_FAILED: various states → ERROR
+        builder.externalTransition()
                 .from(ConversationState.NEW)
-                .on(ConversationFact.SYS_ACTION_FAILED)
                 .to(ConversationState.ERROR)
-                .and();
+                .on(ConversationFact.SYS_ACTION_FAILED);
 
-        builder.transition()
+        builder.externalTransition()
                 .from(ConversationState.INITIATED)
-                .on(ConversationFact.SYS_ACTION_FAILED)
                 .to(ConversationState.ERROR)
-                .and();
+                .on(ConversationFact.SYS_ACTION_FAILED);
 
-        builder.transition()
+        builder.externalTransition()
                 .from(ConversationState.IN_PROGRESS)
-                .on(ConversationFact.SYS_ACTION_FAILED)
                 .to(ConversationState.ERROR)
-                .and();
+                .on(ConversationFact.SYS_ACTION_FAILED);
 
-        builder.transition()
+        builder.externalTransition()
                 .from(ConversationState.TRANSFERRED)
-                .on(ConversationFact.SYS_ACTION_FAILED)
                 .to(ConversationState.ERROR)
-                .and();
-
-        builder.transition()
-                .from(ConversationState.IN_PROGRESS)
-                .on(ConversationFact.SYS_ACTION_FAILED)
-                .to(ConversationState.ERROR)
-                .and();
+                .on(ConversationFact.SYS_ACTION_FAILED);
 
         // ERROR state recovery paths
-        builder.transition()
+        builder.externalTransition()
                 .from(ConversationState.ERROR)
-                .on(ConversationFact.SYS_RETRY)
                 .to(ConversationState.IN_PROGRESS)
-                .and();
+                .on(ConversationFact.SYS_RETRY);
 
-        builder.transition()
+        builder.externalTransition()
                 .from(ConversationState.ERROR)
-                .on(ConversationFact.SYS_ABORT)
                 .to(ConversationState.CLOSED)
-                .and();
+                .on(ConversationFact.SYS_ABORT);
 
-        StateMachine<ConversationState, ConversationFact, CbolStateContext> sm = builder.build();
-        StateMachineRegistry.getInstance().register(sm);
-        return sm;
+        // Build and register
+        try {
+            StateMachine<ConversationState, ConversationFact, CbolStateContext> sm = builder.build(MACHINE_ID);
+            StateMachineFactory.register(sm);
+            return sm;
+        } catch (Exception e) {
+            // State machine already built, return existing instance
+            return StateMachineFactory.get(MACHINE_ID);
+        }
+        }
     }
 }

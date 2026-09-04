@@ -1,24 +1,27 @@
 # 业务层设计（Chat Engine + Agent Connector）
 
-> 版本：2.1 | 最后更新：2026-09-03
+> 版本：3.0 | 最后更新：2026-09-04
+> 基于阿里巴巴 COLA StateMachine：https://github.com/alibaba/COLA
 
 ## 1. 概述
 
-业务层使用核心状态机框架实现会话生命周期管理。它被组织为**两个独立的模块**，具有清晰的系统边界：
+业务层使用**阿里巴巴 COLA StateMachine** 作为核心引擎实现会话生命周期管理。它被组织为**两个独立的模块**，具有清晰的系统边界：
 
 | 模块 | 包名 | 职责 | 外部系统 |
 |------|------|------|----------|
-| **chat-engine** | `com.selfdevelopment.chatengine` | 会话状态机（业务层面）：7 个状态、多市场配置、监控器、异步动作 | AIBot API、聊天历史 ODS |
-| **agent-connector** | `com.selfdevelopment.agentconnector` | 交互状态机（通道层面）：6 个状态、连接器管理 | Genesys Cloud、客户 WebSocket |
+| **chat-engine** | `com.selfdevelopment.chatengine` | 会话状态机（业务层面）：7 个状态、7 个动作、多市场配置、监控器、仓库 | AIBot API、聊天历史 ODS |
+| **agent-connector** | `com.selfdevelopment.agentconnector` | 交互状态机（通道层面）：6 个状态、9 个动作、连接器管理 | Genesys Cloud、客户 WebSocket |
 
 **关键特性：**
+- **基于 COLA StateMachine**：使用 `com.alibaba.cola.statemachine` 作为核心引擎
 - **双状态模型**：Conversation（业务层面）+ Interaction（通道层面），各自在独立模块中
 - **多市场支持**：每市场配置超时和特性开关
 - **全链路追踪**：通过 SLF4J MDC 跨异步边界传播 TraceId
 - **v6 设计**：转接失败/超时返回 INITIATED（不回滚到 IN_PROGRESS）
 - **自动化监控器**：三个基于时间的监控器，用于空闲检测、转接超时和结束宽限
-- **满意度调查作为内部子阶段**：SURVEY_START 是 IN_PROGRESS 内的内部转换（不改变状态），由流程控制
-- **故障转移机制**：未处理的异常触发 FAIL 事件，路由到失败分支
+- **满意度调查作为内部子阶段**：SURVEY_START 是 IN_PROGRESS 内的内部转换（不改变状态），不是独立状态
+- **Action-first 转换**：动作在状态变更之前执行；如果动作失败，状态不变
+- **工厂缓存模式**：COLA StateMachine 不允许重新构建；工厂使用缓存防止重复构建
 
 ## 2. 会话状态模型
 

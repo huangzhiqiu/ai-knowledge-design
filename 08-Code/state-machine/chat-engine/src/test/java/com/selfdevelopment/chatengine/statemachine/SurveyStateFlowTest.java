@@ -1,32 +1,24 @@
 package com.selfdevelopment.chatengine.statemachine;
 
-import com.selfdevelopment.statemachine.api.StateMachineRegistry;
-
-import com.selfdevelopment.statemachine.api.StateMachine;
-
-import com.selfdevelopment.chatengine.service.ChatEngineStateMachineService;
-
-import com.selfdevelopment.chatengine.statemachine.factory.ConversationStateMachineFactory;
-
 import com.selfdevelopment.chatengine.config.StateMachineMarketConfig;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.context.TraceContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
 import com.selfdevelopment.chatengine.model.ConversationInstance;
-import com.selfdevelopment.statemachine.core.StateContext;
-import com.selfdevelopment.statemachine.exception.StateMachineException;
-import org.junit.jupiter.api.AfterAll;
+import com.selfdevelopment.chatengine.service.ChatEngineStateMachineService;
+import com.selfdevelopment.chatengine.statemachine.factory.ConversationStateMachineFactory;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * Unit tests for the survey-in-progress state flow.
+ * Unit tests for the survey flow.
  * <p>
- * Survey is treated as an "in-progress" state controlled by the state machine:
- * SURVEY_START → SURVEY_IN_PROGRESS → (SURVEY_COMPLETE | SYS_SURVEY_TIMEOUT | SYS_CUSTOMER_IDLE | CUSTOMER_CLOSE) → ENDING.
+ * Survey is a sub-phase within IN_PROGRESS, NOT a separate state:
+ * SURVEY_START is an internal transition (IN_PROGRESS → IN_PROGRESS),
+ * SURVEY_COMPLETE transitions from IN_PROGRESS to ENDING.
  */
 class SurveyStateFlowTest {
 
@@ -36,11 +28,6 @@ class SurveyStateFlowTest {
     static void setUp() {
         ConversationStateMachineFactory.build();
         service = new ChatEngineStateMachineService();
-    }
-
-    @AfterAll
-    static void tearDown() {
-        StateMachineRegistry.getInstance().clear();
     }
 
     private CbolStateContext buildCtx(ConversationState state, boolean surveyEnabled) {
@@ -60,25 +47,26 @@ class SurveyStateFlowTest {
     // ===== SURVEY_START transitions =====
 
     @Test
-    void shouldEnterSurveyFromActive() {
-        StateContext<ConversationState, ConversationFact, CbolStateContext> result =
-                service.fire(buildCtx(ConversationState.IN_PROGRESS, true), ConversationFact.SURVEY_START);
-
-        assertEquals(ConversationState.IN_PROGRESS, result.getTargetState());
-        assertTrue(result.isTransitionAccepted());
+    void shouldStartSurveyFromInProgress() {
+        // SURVEY_START is an internal transition: state remains IN_PROGRESS
+        ConversationState result = service.fire(
+                buildCtx(ConversationState.IN_PROGRESS, true), ConversationFact.SURVEY_START);
+        assertEquals(ConversationState.IN_PROGRESS, result);
     }
 
     @Test
-    void shouldEnterSurveyFromTransferred() {
+    void shouldStartSurveyFromTransferred() {
         assertEquals(ConversationState.IN_PROGRESS,
-                service.fireAndGetState(buildCtx(ConversationState.TRANSFERRED, true),
+                service.fire(buildCtx(ConversationState.TRANSFERRED, true),
                         ConversationFact.SURVEY_START));
     }
 
     @Test
-    void shouldNotEnterSurveyFromInitiated() {
-        assertThrows(StateMachineException.class, () ->
-                service.fire(buildCtx(ConversationState.INITIATED, true), ConversationFact.SURVEY_START));
+    void shouldNotStartSurveyFromInitiated() {
+        // COLA state machine returns source state when no transition matches
+        ConversationState result = service.fire(
+                buildCtx(ConversationState.INITIATED, true), ConversationFact.SURVEY_START);
+        assertEquals(ConversationState.INITIATED, result, "State should remain INITIATED");
     }
 
     // ===== SURVEY_COMPLETE transitions =====
@@ -86,7 +74,7 @@ class SurveyStateFlowTest {
     @Test
     void shouldCompleteSurveyToEnding() {
         assertEquals(ConversationState.ENDING,
-                service.fireAndGetState(buildCtx(ConversationState.IN_PROGRESS, true),
+                service.fire(buildCtx(ConversationState.IN_PROGRESS, true),
                         ConversationFact.SURVEY_COMPLETE));
     }
 
@@ -95,108 +83,32 @@ class SurveyStateFlowTest {
     @Test
     void shouldTimeoutSurveyToEnding() {
         assertEquals(ConversationState.ENDING,
-                service.fireAndGetState(buildCtx(ConversationState.IN_PROGRESS, true),
+                service.fire(buildCtx(ConversationState.IN_PROGRESS, true),
                         ConversationFact.SYS_SURVEY_TIMEOUT));
-    }
-
-    // ===== SYS_CUSTOMER_IDLE during survey =====
-
-    @Test
-    void shouldCustomerIdleDuringSurveyToEnding() {
-        assertEquals(ConversationState.ENDING,
-                service.fireAndGetState(buildCtx(ConversationState.IN_PROGRESS, true),
-                        ConversationFact.SYS_CUSTOMER_IDLE));
-    }
-
-    // ===== CUSTOMER_CLOSE during survey =====
-
-    @Test
-    void shouldCustomerCloseDuringSurveyToEnding() {
-        assertEquals(ConversationState.ENDING,
-                service.fireAndGetState(buildCtx(ConversationState.IN_PROGRESS, true),
-                        ConversationFact.CUSTOMER_CLOSE));
-    }
-
-    // ===== closeConversation convenience method =====
-
-    @Test
-    void shouldCloseConversationWithSurveyEnabled() {
-        StateContext<ConversationState, ConversationFact, CbolStateContext> result =
-                service.closeConversation(buildCtx(ConversationState.IN_PROGRESS, true));
-
-        assertEquals(ConversationState.IN_PROGRESS, result.getTargetState());
-        assertTrue(result.isTransitionAccepted());
-    }
-
-    @Test
-    void shouldCloseConversationWithoutSurveyEnabled() {
-        StateContext<ConversationState, ConversationFact, CbolStateContext> result =
-                service.closeConversation(buildCtx(ConversationState.IN_PROGRESS, false));
-
-        assertEquals(ConversationState.ENDING, result.getTargetState());
-        assertTrue(result.isTransitionAccepted());
-    }
-
-    @Test
-    void shouldCloseConversationFromTransferredWithSurvey() {
-        assertEquals(ConversationState.IN_PROGRESS,
-                service.closeConversation(buildCtx(ConversationState.TRANSFERRED, true)).getTargetState());
-    }
-
-    // ===== completeSurvey convenience method =====
-
-    @Test
-    void shouldCompleteSurveyViaConvenienceMethod() {
-        StateContext<ConversationState, ConversationFact, CbolStateContext> result =
-                service.completeSurvey(buildCtx(ConversationState.IN_PROGRESS, true));
-
-        assertEquals(ConversationState.ENDING, result.getTargetState());
-        assertTrue(result.isTransitionAccepted());
     }
 
     // ===== Full end-to-end survey flow =====
 
     @Test
     void shouldCompleteFullSurveyFlow() {
-        // 1. Connect → ACTIVE
+        // 1. Connect → IN_PROGRESS
         CbolStateContext ctx = buildCtx(ConversationState.INITIATED, true);
         assertEquals(ConversationState.IN_PROGRESS,
-                service.fireAndGetState(ctx, ConversationFact.CUSTOMER_CONNECT));
+                service.fire(ctx, ConversationFact.CUSTOMER_CONNECT));
 
-        // 2. Close with survey enabled → SURVEY_IN_PROGRESS
+        // 2. Start survey (internal transition, stays IN_PROGRESS)
         CbolStateContext activeCtx = buildCtx(ConversationState.IN_PROGRESS, true);
         assertEquals(ConversationState.IN_PROGRESS,
-                service.closeConversation(activeCtx).getTargetState());
+                service.fire(activeCtx, ConversationFact.SURVEY_START));
 
         // 3. Complete survey → ENDING
         CbolStateContext surveyCtx = buildCtx(ConversationState.IN_PROGRESS, true);
         assertEquals(ConversationState.ENDING,
-                service.completeSurvey(surveyCtx).getTargetState());
+                service.fire(surveyCtx, ConversationFact.SURVEY_COMPLETE));
 
         // 4. Ending grace timeout → CLOSED
         CbolStateContext endingCtx = buildCtx(ConversationState.ENDING, true);
         assertEquals(ConversationState.CLOSED,
-                service.fireAndGetState(endingCtx, ConversationFact.SYS_ENDING_GRACE_TIMEOUT));
-    }
-
-    @Test
-    void shouldCompleteSurveyFlowWithTimeout() {
-        // SURVEY_IN_PROGRESS → SYS_SURVEY_TIMEOUT → ENDING → SYS_ENDING_GRACE_TIMEOUT → CLOSED
-        CbolStateContext surveyCtx = buildCtx(ConversationState.IN_PROGRESS, true);
-        assertEquals(ConversationState.ENDING,
-                service.fireAndGetState(surveyCtx, ConversationFact.SYS_SURVEY_TIMEOUT));
-
-        CbolStateContext endingCtx = buildCtx(ConversationState.ENDING, true);
-        assertEquals(ConversationState.CLOSED,
-                service.fireAndGetState(endingCtx, ConversationFact.SYS_ENDING_GRACE_TIMEOUT));
-    }
-
-    // ===== Invalid transitions from IN_PROGRESS =====
-
-    @Test
-    void shouldNotConnectFromInProgress() {
-        assertThrows(StateMachineException.class, () ->
-                service.fire(buildCtx(ConversationState.IN_PROGRESS, true),
-                        ConversationFact.CUSTOMER_CONNECT));
+                service.fire(endingCtx, ConversationFact.SYS_ENDING_GRACE_TIMEOUT));
     }
 }

@@ -1,10 +1,9 @@
 package com.selfdevelopment.chatengine.action.impl;
 
+import com.alibaba.cola.statemachine.Action;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
-import com.selfdevelopment.statemachine.api.Action;
-import com.selfdevelopment.statemachine.core.StateContext;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -22,12 +21,12 @@ import lombok.extern.slf4j.Slf4j;
 public class TransferRequestAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override
-    public void execute(StateContext<ConversationState, ConversationFact, CbolStateContext> context) {
-        CbolStateContext ctx = context.getBusinessContext();
+    public void execute(ConversationState from, ConversationState to, ConversationFact event, CbolStateContext ctx) {
         String conversationId = ctx.conversation().conversationId();
         String market = ctx.conversation().market();
 
-        log.info("Executing TransferRequestAction: conversationId={}, market={}", conversationId, market);
+        log.info("TransferRequestAction: {} --({})--> {}, conversationId={}, market={}",
+                from, event, to, conversationId, market);
 
         // 1. Validate agent availability (simulated)
         boolean agentAvailable = checkAgentAvailability(ctx);

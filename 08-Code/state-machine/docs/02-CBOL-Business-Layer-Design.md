@@ -1,24 +1,27 @@
 # Business Layer Design (Chat Engine + Agent Connector)
 
-> Version: 2.1 | Last Updated: 2026-09-03
+> Version: 3.0 | Last Updated: 2026-09-04
+> Based on Alibaba COLA StateMachine: https://github.com/alibaba/COLA
 
 ## 1. Overview
 
-The business layer implements conversation lifecycle management using the core state machine framework. It is organized into **two separate modules** with clear system boundaries:
+The business layer implements conversation lifecycle management using **Alibaba COLA StateMachine** as the core engine. It is organized into **two separate modules** with clear system boundaries:
 
 | Module | Package | Responsibility | External Systems |
 |--------|---------|----------------|------------------|
-| **chat-engine** | `com.selfdevelopment.chatengine` | Conversation state machine (business-level): 7 states, multi-market config, monitors, async actions | AIBot API, Chat History ODS |
-| **agent-connector** | `com.selfdevelopment.agentconnector` | Interaction state machine (channel-level): 6 states, connector management | Genesys Cloud, Customer WebSocket |
+| **chat-engine** | `com.selfdevelopment.chatengine` | Conversation state machine (business-level): 7 states, 7 actions, multi-market config, monitors, repository | AIBot API, Chat History ODS |
+| **agent-connector** | `com.selfdevelopment.agentconnector` | Interaction state machine (channel-level): 6 states, 9 actions, connector management | Genesys Cloud, Customer WebSocket |
 
 **Key Characteristics:**
+- **Powered by COLA StateMachine**: Uses `com.alibaba.cola.statemachine` as the core engine
 - **Dual-state model**: Conversation (business-level) + Interaction (channel-level), each in its own module
 - **Multi-market support**: Per-market configuration for timeouts and feature flags
 - **Full-chain tracing**: TraceId propagation via SLF4J MDC across async boundaries
 - **v6 design**: Transfer failures/timeouts return to INITIATED (no rollback to IN_PROGRESS)
 - **Automated monitors**: Three time-based monitors for idle detection, transfer timeout, and ending grace
-- **Survey as in-progress**: IN_PROGRESS is a sub-state of IN_PROGRESS flow, controlled by flow
-- **Failover mechanism**: Unhandled exceptions trigger FAIL event, routed to fail branch
+- **Survey as in-progress**: SURVEY_START is an internal transition (IN_PROGRESS → IN_PROGRESS), not a separate state
+- **Action-first transition**: Actions execute before state change; if action fails, state does NOT change
+- **Factory caching pattern**: COLA StateMachine does not allow rebuilding; factories use caching to prevent duplicate builds
 
 ## 2. Conversation State Model
 

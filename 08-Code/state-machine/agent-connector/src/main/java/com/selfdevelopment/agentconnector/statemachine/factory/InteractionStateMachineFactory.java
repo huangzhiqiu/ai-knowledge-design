@@ -1,5 +1,9 @@
 package com.selfdevelopment.agentconnector.statemachine.factory;
 
+import com.alibaba.cola.statemachine.StateMachine;
+import com.alibaba.cola.statemachine.StateMachineFactory;
+import com.alibaba.cola.statemachine.builder.StateMachineBuilder;
+import com.alibaba.cola.statemachine.builder.StateMachineBuilderFactory;
 import com.selfdevelopment.agentconnector.action.impl.CloseRequestAction;
 import com.selfdevelopment.agentconnector.action.impl.ConnectionDroppedAction;
 import com.selfdevelopment.agentconnector.action.impl.ConnectionEstablishedAction;
@@ -12,12 +16,11 @@ import com.selfdevelopment.agentconnector.action.impl.TransferStartAction;
 import com.selfdevelopment.agentconnector.context.AgentConnectorStateContext;
 import com.selfdevelopment.agentconnector.enums.InteractionFact;
 import com.selfdevelopment.agentconnector.enums.InteractionState;
-import com.selfdevelopment.statemachine.api.StateMachine;
-import com.selfdevelopment.statemachine.api.StateMachineRegistry;
-import com.selfdevelopment.statemachine.builder.StateMachineBuilder;
 
 /**
  * Factory for the Interaction (channel/connection) state machine.
+ * <p>
+ * Uses COLA StateMachine builder API.
  * <p>
  * Models the lifecycle of a communication channel: connection establishment,
  * active communication, hold, transfer, reconnection, and disconnection.
@@ -31,16 +34,56 @@ public class InteractionStateMachineFactory {
 
     public static final String MACHINE_ID = "interaction";
 
+    // Action instances (stateless, can be shared)
+    private static final ConnectionEstablishedAction CONNECTION_ESTABLISHED_ACTION = new ConnectionEstablishedAction();
+    private static final ConnectionFailedAction CONNECTION_FAILED_ACTION = new ConnectionFailedAction();
+    private static final ConnectionDroppedAction CONNECTION_DROPPED_ACTION = new ConnectionDroppedAction();
+    private static final CloseRequestAction CLOSE_REQUEST_ACTION = new CloseRequestAction();
+    private static final ReconnectSuccessAction RECONNECT_SUCCESS_ACTION = new ReconnectSuccessAction();
+    private static final HoldRequestAction HOLD_REQUEST_ACTION = new HoldRequestAction();
+    private static final HoldResumeAction HOLD_RESUME_ACTION = new HoldResumeAction();
+    private static final TransferStartAction TRANSFER_START_ACTION = new TransferStartAction();
+    private static final TransferCompleteAction TRANSFER_COMPLETE_ACTION = new TransferCompleteAction();
+
     /**
      * Builds and registers the interaction state machine with all transition rules.
      *
      * @return the configured interaction state machine
      */
     public static StateMachine<InteractionState, InteractionFact, AgentConnectorStateContext> create() {
-        StateMachine<InteractionState, InteractionFact, AgentConnectorStateContext> sm = build();
-        // Register to the global registry
-        StateMachineRegistry.getInstance().register(sm);
-        return sm;
+        // Try to get existing state machine first
+        try {
+            StateMachine<InteractionState, InteractionFact, AgentConnectorStateContext> existing =
+                    StateMachineFactory.get(MACHINE_ID);
+            if (existing != null) {
+                return existing;
+            }
+        } catch (Exception ignored) {
+            // State machine not built yet
+        }
+
+        synchronized (InteractionStateMachineFactory.class) {
+            // Double-check after acquiring lock
+            try {
+                StateMachine<InteractionState, InteractionFact, AgentConnectorStateContext> existing =
+                        StateMachineFactory.get(MACHINE_ID);
+                if (existing != null) {
+                    return existing;
+                }
+            } catch (Exception ignored) {
+                // State machine not built yet
+            }
+
+            // Build and register
+            try {
+                StateMachine<InteractionState, InteractionFact, AgentConnectorStateContext> sm = build();
+                StateMachineFactory.register(sm);
+                return sm;
+            } catch (Exception e) {
+                // State machine already built, return existing instance
+                return StateMachineFactory.get(MACHINE_ID);
+            }
+        }
     }
 
     /**
@@ -50,126 +93,111 @@ public class InteractionStateMachineFactory {
      */
     public static StateMachine<InteractionState, InteractionFact, AgentConnectorStateContext> build() {
         StateMachineBuilder<InteractionState, InteractionFact, AgentConnectorStateContext> builder =
-                StateMachineBuilder.builder(MACHINE_ID);
+                StateMachineBuilderFactory.create();
 
-        builder.initialState(InteractionState.CONNECTING)
-                .endStates(InteractionState.DISCONNECTED);
+        // COLA API order: from → to → on → when → perform
 
         // === Connection Lifecycle ===
 
         // I01: CONNECTING → CONNECTED (connection established)
-        builder.transition()
+        builder.externalTransition()
                 .from(InteractionState.CONNECTING)
-                .on(InteractionFact.CONNECTION_ESTABLISHED)
                 .to(InteractionState.CONNECTED)
-                .perform(new ConnectionEstablishedAction())
-                .and();
+                .on(InteractionFact.CONNECTION_ESTABLISHED)
+                .perform(CONNECTION_ESTABLISHED_ACTION);
 
         // I02: CONNECTING → DISCONNECTED (connection failed)
-        builder.transition()
+        builder.externalTransition()
                 .from(InteractionState.CONNECTING)
-                .on(InteractionFact.CONNECTION_FAILED)
                 .to(InteractionState.DISCONNECTED)
-                .perform(new ConnectionFailedAction())
-                .and();
+                .on(InteractionFact.CONNECTION_FAILED)
+                .perform(CONNECTION_FAILED_ACTION);
 
         // I03: CONNECTED → RECONNECTING (connection dropped)
-        builder.transition()
+        builder.externalTransition()
                 .from(InteractionState.CONNECTED)
-                .on(InteractionFact.CONNECTION_DROPPED)
                 .to(InteractionState.RECONNECTING)
-                .perform(new ConnectionDroppedAction())
-                .and();
+                .on(InteractionFact.CONNECTION_DROPPED)
+                .perform(CONNECTION_DROPPED_ACTION);
 
         // I04: CONNECTED → DISCONNECTED (explicit close)
-        builder.transition()
+        builder.externalTransition()
                 .from(InteractionState.CONNECTED)
-                .on(InteractionFact.CLOSE_REQUEST)
                 .to(InteractionState.DISCONNECTED)
-                .perform(new CloseRequestAction())
-                .and();
+                .on(InteractionFact.CLOSE_REQUEST)
+                .perform(CLOSE_REQUEST_ACTION);
 
         // === Reconnection ===
 
         // I05: RECONNECTING → CONNECTED (reconnect succeeded)
-        builder.transition()
+        builder.externalTransition()
                 .from(InteractionState.RECONNECTING)
-                .on(InteractionFact.RECONNECT_SUCCESS)
                 .to(InteractionState.CONNECTED)
-                .perform(new ReconnectSuccessAction())
-                .and();
+                .on(InteractionFact.RECONNECT_SUCCESS)
+                .perform(RECONNECT_SUCCESS_ACTION);
 
         // I06: RECONNECTING → DISCONNECTED (reconnect failed)
-        builder.transition()
+        builder.externalTransition()
                 .from(InteractionState.RECONNECTING)
-                .on(InteractionFact.RECONNECT_FAILED)
                 .to(InteractionState.DISCONNECTED)
-                .and();
+                .on(InteractionFact.RECONNECT_FAILED);
 
         // I07: RECONNECTING → DISCONNECTED (max retries exhausted)
-        builder.transition()
+        builder.externalTransition()
                 .from(InteractionState.RECONNECTING)
-                .on(InteractionFact.RECONNECT_EXHAUSTED)
                 .to(InteractionState.DISCONNECTED)
-                .and();
+                .on(InteractionFact.RECONNECT_EXHAUSTED);
 
         // === Hold ===
 
         // I08: CONNECTED → HELD (agent puts on hold)
-        builder.transition()
+        builder.externalTransition()
                 .from(InteractionState.CONNECTED)
-                .on(InteractionFact.HOLD_REQUEST)
                 .to(InteractionState.HELD)
-                .perform(new HoldRequestAction())
-                .and();
+                .on(InteractionFact.HOLD_REQUEST)
+                .perform(HOLD_REQUEST_ACTION);
 
         // I09: HELD → CONNECTED (customer retrieved from hold)
-        builder.transition()
+        builder.externalTransition()
                 .from(InteractionState.HELD)
-                .on(InteractionFact.HOLD_RESUME)
                 .to(InteractionState.CONNECTED)
-                .perform(new HoldResumeAction())
-                .and();
+                .on(InteractionFact.HOLD_RESUME)
+                .perform(HOLD_RESUME_ACTION);
 
         // I10: HELD → DISCONNECTED (close while on hold)
-        builder.transition()
+        builder.externalTransition()
                 .from(InteractionState.HELD)
-                .on(InteractionFact.CLOSE_REQUEST)
                 .to(InteractionState.DISCONNECTED)
-                .and();
+                .on(InteractionFact.CLOSE_REQUEST);
 
         // === Transfer (channel-level) ===
 
         // I11: CONNECTED → TRANSFERRING (channel transfer initiated)
-        builder.transition()
+        builder.externalTransition()
                 .from(InteractionState.CONNECTED)
-                .on(InteractionFact.TRANSFER_START)
                 .to(InteractionState.TRANSFERRING)
-                .perform(new TransferStartAction())
-                .and();
+                .on(InteractionFact.TRANSFER_START)
+                .perform(TRANSFER_START_ACTION);
 
         // I12: TRANSFERRING → CONNECTED (transfer completed, now on new channel)
-        builder.transition()
+        builder.externalTransition()
                 .from(InteractionState.TRANSFERRING)
-                .on(InteractionFact.TRANSFER_COMPLETE)
                 .to(InteractionState.CONNECTED)
-                .perform(new TransferCompleteAction())
-                .and();
+                .on(InteractionFact.TRANSFER_COMPLETE)
+                .perform(TRANSFER_COMPLETE_ACTION);
 
         // I13: TRANSFERRING → CONNECTED (transfer failed, stay on original channel)
-        builder.transition()
+        builder.externalTransition()
                 .from(InteractionState.TRANSFERRING)
-                .on(InteractionFact.TRANSFER_FAILED)
                 .to(InteractionState.CONNECTED)
-                .and();
+                .on(InteractionFact.TRANSFER_FAILED);
 
         // I14: TRANSFERRING → DISCONNECTED (close during transfer)
-        builder.transition()
+        builder.externalTransition()
                 .from(InteractionState.TRANSFERRING)
-                .on(InteractionFact.CLOSE_REQUEST)
                 .to(InteractionState.DISCONNECTED)
-                .and();
+                .on(InteractionFact.CLOSE_REQUEST);
 
-        return builder.build();
+        return builder.build(MACHINE_ID);
     }
 }

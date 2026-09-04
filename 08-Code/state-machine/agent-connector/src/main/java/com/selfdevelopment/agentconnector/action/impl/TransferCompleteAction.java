@@ -1,10 +1,9 @@
 package com.selfdevelopment.agentconnector.action.impl;
 
+import com.alibaba.cola.statemachine.Action;
 import com.selfdevelopment.agentconnector.context.AgentConnectorStateContext;
 import com.selfdevelopment.agentconnector.enums.InteractionFact;
 import com.selfdevelopment.agentconnector.enums.InteractionState;
-import com.selfdevelopment.statemachine.api.Action;
-import com.selfdevelopment.statemachine.core.StateContext;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -28,12 +27,11 @@ public class TransferCompleteAction
         implements Action<InteractionState, InteractionFact, AgentConnectorStateContext> {
 
     @Override
-    public void execute(StateContext<InteractionState, InteractionFact, AgentConnectorStateContext> context) {
-        AgentConnectorStateContext ctx = context.getBusinessContext();
+    public void execute(InteractionState from, InteractionState to, InteractionFact event, AgentConnectorStateContext ctx) {
         String interactionId = ctx.interaction().interactionId();
 
-        log.info("Executing TransferCompleteAction: interactionId={}, channel={}",
-                interactionId, ctx.interaction().channelType());
+        log.info("TransferCompleteAction: {} --({})--> {}, interactionId={}, channel={}",
+                from, event, to, interactionId, ctx.interaction().channelType());
 
         // 1. Verify channel state integrity
         log.debug("Verifying channel state integrity on new channel: interactionId={}", interactionId);
