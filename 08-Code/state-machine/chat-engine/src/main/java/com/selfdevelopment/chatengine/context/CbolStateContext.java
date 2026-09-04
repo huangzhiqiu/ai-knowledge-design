@@ -20,6 +20,10 @@ import lombok.Builder;
 public record CbolStateContext(
         ConversationInstance conversation,
         StateMachineMarketConfig marketConfig,
-        TraceContext traceContext
+        TraceContext traceContext,
+        // Failover fields - populated when an action fails and SYS_ACTION_FAILED is triggered
+        String failedAction,
+        String errorMessage,
+        Integer retryCount
 ) {
 }
