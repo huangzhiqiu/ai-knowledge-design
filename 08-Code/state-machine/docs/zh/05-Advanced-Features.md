@@ -1,618 +1,564 @@
-# 05 — 高级特性
+# 05 — 高级功能
 
-> 生产级能力：持久化、校验、幂等性、可观测性、事件溯源、弹性、超时和图表生成。
-
----
-
-## 1. 状态持久化与乐观锁
-
-### 问题
-
-在并发环境中，多个线程或服务可能同时尝试迁移同一个实体。没有锁的话，"最后写入获胜"问题可能会损坏状态。
-
-### 解决方案
-
-通过版本号实现乐观锁的 `StateRepository` 接口。
-
-```java
-// 仓库接口（双泛型：状态类型 + ID 类型）
-public interface StateRepository<S, ID> {
-    VersionedState<S> load(ID id);
-    long compareAndSet(ID id, long expectedVersion, S newState);
-    long save(ID id, S state);
-    boolean exists(ID id);
-    boolean delete(ID id);
-}
-
-// 带版本的状态 record
-public record VersionedState<S>(S state, long version) {
-    public static <S> VersionedState<S> initial(S state) { ... }
-}
-
-// 乐观锁异常
-public class OptimisticLockException extends RuntimeException {
-    public OptimisticLockException(String entityId, long expected, long actual) { ... }
-}
-```
-
-### 自动重试使用
-
-```java
-ChatEngineStateMachineService service = new ChatEngineStateMachineService(machine, repository);
-
-// fireWithLock 在版本冲突时自动重试（默认 3 次）
-StateContext<ConversationState, ConversationFact, CbolStateContext> result =
-    service.fireWithLock("conv-123", ConversationFact.USER_MESSAGE, context);
-```
-
-### 流程
-
-```mermaid
-sequenceDiagram
-    participant C as 调用方
-    participant S as 服务
-    participant R as 仓库
-    participant M as 状态机
-
-    C->>S: fireWithLock(entityId, event, ctx)
-    S->>R: findById(entityId)
-    R-->>S: VersionedState(state, v=5)
-    S->>M: fireEvent(state, event, ctx)
-    M-->>S: StateContext(targetState)
-    S->>R: save(entityId, targetState, expectedVersion=5)
-    alt 版本匹配
-        R-->>S: 成功 (v=6)
-    else 版本冲突
-        R-->>S: OptimisticLockException
-        S->>S: 重试（最多 3 次）
-    end
-```
-
-### 实现
-
-| 实现 | 用例 |
-|---|---|
-| `InMemoryStateRepository` | 测试、单节点、开发 |
-| 自定义 JDBC/MongoDB | 生产（实现接口） |
+> 基于阿里巴巴 COLA StateMachine 的生产级功能：多市场配置、监控器、追踪上下文、幂等性、可观测性、PlantUML 生成和扩展模式。
 
 ---
 
-## 2. 构建时校验
+## 1. 多市场配置
 
 ### 问题
 
-无效的状态机配置（不可达状态、缺少初始状态、重复迁移）通常在运行时才被发现，导致生产事故。
+项目部署到多个市场（HK、SG、UK 等），状态流程相似但略有不同。每个市场可能有不同的超时时间、功能开关和路由策略。
 
 ### 解决方案
 
-在构建时检查 8 条规则的 `StateMachineValidator`。
-
-### 校验规则
-
-| 规则 | 级别 | 描述 |
-|---|---|---|
-| `NO_TRANSITIONS` | ERROR | 状态机有零条迁移 |
-| `INITIAL_STATE_DEFINED` | ERROR | 未配置初始状态 |
-| `INITIAL_STATE_REACHABLE` | WARNING | 初始状态没有入向迁移 |
-| `END_STATE_NO_OUTGOING` | WARNING | 终态有出向迁移 |
-| `UNREACHABLE_STATE` | WARNING | 状态没有入向迁移且不是初始状态 |
-| `DEAD_END_STATE` | WARNING | 状态没有出向迁移且不是终态 |
-| `INTERNAL_TRANSITION_MATCH` | ERROR | INTERNAL 迁移的源和目标不同 |
-| `DUPLICATE_TRANSITION_NO_GUARD` | WARNING | 同一 (state, event) 有多条迁移但没有 guard |
-
-### 使用
+使用 `StateMachineMarketConfig` record 将市场特定行为捕获为不可变快照。配置在每次状态转换开始时注入到 `CbolStateContext` 中。
 
 ```java
-// 构建期间校验
-StateMachine<OrderState, OrderEvent, OrderContext> machine =
-    StateMachineBuilder.<OrderState, OrderEvent, OrderContext>builder("order")
-        .initialState(OrderState.CREATED)
-        .transition()
-            .from(OrderState.CREATED).on(OrderEvent.PAY).to(OrderState.PAID)
-        .and()
-        .build(true);  // validate=true，ERROR 时抛出
-
-// 或单独校验
-List<ValidationError> errors = StateMachineValidator.validate(machine);
-errors.forEach(e -> System.out.println(e.level() + ": " + e.message()));
+@Builder
+public record StateMachineMarketConfig(
+    int customerIdleSeconds,       // 默认：300
+    int transferTimeoutSeconds,    // 默认：120
+    int endingGraceSeconds,        // 默认：30
+    boolean surveyEnabled,         // 默认：true
+    boolean transferEnabled,       // 默认：true
+    boolean genesysEnabled,        // 默认：true
+    String fallbackRoutingStrategy // 默认："DROP"
+) {
+    public static StateMachineMarketConfig defaultConfig() { ... }
+}
 ```
 
-### ValidationError
+### 市场配置提供者
 
 ```java
-public record ValidationError(
-    String rule,        // 例如 "UNREACHABLE_STATE"
-    Level level,        // ERROR 或 WARNING
-    String message,     // 人类可读的描述
-    String state,       // 相关状态（可能为 null）
-    String event        // 相关事件（可能为 null）
-) {}
+public interface MarketConfigProvider {
+    StateMachineMarketConfig getConfig(String market);
+
+    class InMemoryProvider implements MarketConfigProvider {
+        private final ConcurrentHashMap<String, StateMachineMarketConfig> cache = new ConcurrentHashMap<>();
+
+        public void put(String market, StateMachineMarketConfig config) {
+            cache.put(market, config);
+        }
+
+        @Override
+        public StateMachineMarketConfig getConfig(String market) {
+            return cache.getOrDefault(market, StateMachineMarketConfig.defaultConfig());
+        }
+    }
+}
 ```
+
+### 在转换中使用
+
+```java
+CbolStateContext ctx = CbolStateContext.builder()
+        .conversation(conversation)
+        .marketConfig(marketConfigProvider.getConfig("HK"))
+        .traceContext(TraceContext.generate())
+        .build();
+
+ConversationState newState = sm.fireEvent(
+        conversation.state(),
+        ConversationFact.CUSTOMER_CONNECT,
+        ctx);
+```
+
+### 设计原则
+
+- **配置即快照**：市场配置在转换开始时捕获，而不是在动作执行期间动态读取
+- **默认优先**：所有配置字段都有合理的默认值；市场只覆盖不同的部分
+- **不可变**：配置是 record，在转换期间不能被修改
+- **功能开关**：布尔字段（surveyEnabled、transferEnabled、genesysEnabled）控制哪些转换处于活动状态
 
 ---
 
-## 3. 幂等性
+## 2. 监控器（超时和健康检查）
 
 ### 问题
 
-事件可能被多次投递（网络重试、消息队列至少一次投递）。没有幂等性的话，同一个事件可能触发多次状态迁移。
+状态机需要检测和处理超时：客户空闲、转接超时、结束宽限期。这些是基于时间的事件，应该触发自动状态转换。
 
 ### 解决方案
 
-通过唯一事件 ID 去重事件的 `IdempotentStateMachineDecorator`。
+三个监控器类，检查经过的时间，并在超过阈值时触发系统事件。
+
+### 2.1 客户空闲监控器
 
 ```java
-ProcessedEventStore store = new InMemoryProcessedEventStore();
-IdempotentStateMachineDecorator<OrderState, OrderEvent, OrderContext> idempotent =
-    new IdempotentStateMachineDecorator<>(machine, store);
+public class CustomerIdleMonitor {
+    private final ChatEngineStateMachineService service;
 
-// 第一次调用：处理事件
-StateContext<...> result1 = idempotent.fireEventWithId("evt-001", OrderState.CREATED, OrderEvent.PAY, ctx);
+    public void check(CbolStateContext ctx, long lastActivityTimestamp) {
+        long idleMs = System.currentTimeMillis() - lastActivityTimestamp;
+        int threshold = ctx.marketConfig().customerIdleSeconds() * 1000;
 
-// 相同 ID 的第二次调用：返回缓存结果，不重新处理
-StateContext<...> result2 = idempotent.fireEventWithId("evt-001", OrderState.CREATED, OrderEvent.PAY, ctx);
-// result1.equals(result2)
+        if (idleMs > threshold) {
+            service.fire(ctx, ConversationFact.SYS_CUSTOMER_IDLE);
+        }
+    }
+}
 ```
 
-### ProcessedEventStore
+### 2.2 转接监控器
 
 ```java
-public interface ProcessedEventStore {
-    boolean contains(String eventId);
-    void store(String eventId, StateContext<?, ?, ?> result);
-    Optional<StateContext<?, ?, ?>> get(String eventId);
-    void clear();
+public class TransferMonitor {
+    private final ChatEngineStateMachineService service;
+
+    public void check(CbolStateContext ctx, long transferStartTimestamp) {
+        // 仅在 TRANSFERRED 状态下激活
+        if (ctx.conversation().state() != ConversationState.TRANSFERRED) {
+            return;
+        }
+
+        long elapsedMs = System.currentTimeMillis() - transferStartTimestamp;
+        int threshold = ctx.marketConfig().transferTimeoutSeconds() * 1000;
+
+        if (elapsedMs > threshold) {
+            service.fire(ctx, ConversationFact.SYS_TRANSFER_TIMEOUT);
+        }
+    }
+}
+```
+
+### 2.3 结束宽限监控器
+
+```java
+public class EndingGraceMonitor {
+    private final ChatEngineStateMachineService service;
+
+    public void check(CbolStateContext ctx, long enterEndingTimestamp) {
+        // 仅在 ENDING 状态下激活
+        if (ctx.conversation().state() != ConversationState.ENDING) {
+            return;
+        }
+
+        long elapsedMs = System.currentTimeMillis() - enterEndingTimestamp;
+        int threshold = ctx.marketConfig().endingGraceSeconds() * 1000;
+
+        if (elapsedMs > threshold) {
+            service.fire(ctx, ConversationFact.SYS_ENDING_GRACE_TIMEOUT);
+        }
+    }
+}
+```
+
+### 监控器集成模式
+
+```java
+// 定时任务（例如，@Scheduled 每 30 秒）
+@Scheduled(fixedDelay = 30000)
+public void runMonitors() {
+    List<Conversation> activeConversations = repository.findActive();
+
+    for (Conversation conv : activeConversations) {
+        CbolStateContext ctx = buildContext(conv);
+
+        customerIdleMonitor.check(ctx, conv.getLastActivityAt());
+        transferMonitor.check(ctx, conv.getTransferStartedAt());
+        endingGraceMonitor.check(ctx, conv.getEnteredEndingAt());
+    }
 }
 ```
 
 ---
 
-## 4. 可观测性 — 指标（Micrometer）
+## 3. 追踪上下文和可观测性
 
 ### 问题
 
-没有指标的话，无法监控状态机健康状况：迁移延迟、错误率、被拒绝的事件。
+在分布式系统中，状态转换需要跨服务可追踪。每次转换都应携带追踪 ID 用于日志记录和调试。
 
 ### 解决方案
 
-集成 Micrometer 的 `MonitoredStateMachine` 装饰器（可选依赖）。
+使用带有基于 UUID 的追踪 ID 的 `TraceContext` record，加上用于 SLF4J MDC 传播的 `TraceMdcHelper`。
 
-### 指标
-
-| 指标 | 类型 | 标签 | 描述 |
-|---|---|---|---|
-| `statemachine.transition.duration` | Timer | machine, from, to, event | 迁移延迟 |
-| `statemachine.transition.success` | Counter | machine, from, to, event | 成功迁移 |
-| `statemachine.transition.error` | Counter | machine, from, to, event, error | 动作失败 |
-| `statemachine.transition.denied` | Counter | machine, from, event, reason | 被拒绝（无规则/guard） |
-| `statemachine.event.received` | Counter | machine, from, event | 接收的总事件数 |
-
-### 使用
+### 3.1 追踪上下文
 
 ```java
-MeterRegistry registry = ...; // Spring 自动配置的或 SimpleMeterRegistry
-StateMachine<OrderState, OrderEvent, OrderContext> monitored =
-    new MonitoredStateMachine<>(machine, registry);
-
-// 所有 fireEvent 调用自动被检测
-monitored.fireEvent(OrderState.CREATED, OrderEvent.PAY, ctx);
-```
-
-### Spring Boot 集成
-
-```yaml
-# application.yml
-management:
-  endpoints:
-    web:
-      exposure:
-        include: prometheus,metrics
-  metrics:
-    tags:
-      application: cbol-messaging
-```
-
----
-
-## 5. 事件溯源
-
-### 问题
-
-需要所有状态变更的完整审计追踪，用于调试、合规和状态重建。
-
-### 解决方案
-
-将每次迁移记录为不可变事件的 `EventSourcedStateMachine` 装饰器。
-
-### StateTransitionEvent
-
-```java
-public record StateTransitionEvent<S, E>(
-    String entityId,          // conversation/order ID
-    String machineId,         // 状态机标识符
-    S fromState,              // 源状态
-    S toState,                // 目标状态
-    E event,                  // 触发事件
-    boolean accepted,         // 迁移是否被接受
-    String denialReason,      // 被拒绝时的原因
-    long durationMs,          // 迁移耗时
-    String traceId,           // 分布式追踪 ID
-    Instant timestamp,        // 发生时间
-    Map<String, String> metadata  // 额外上下文
-) {}
-```
-
-### Store 接口
-
-```java
-public interface StateTransitionStore<S, E> {
-    void append(StateTransitionEvent<S, E> event);
-    List<StateTransitionEvent<S, E>> replay(String entityId);
-    List<StateTransitionEvent<S, E>> replayUpTo(String entityId, Instant upTo);
-    Optional<S> reconstructState(String entityId);  // 重放被接受的事件
-    int count(String entityId);
-    Optional<StateTransitionEvent<S, E>> lastEvent(String entityId);
+public record TraceContext(
+    String traceId,
+    long timestamp
+) {
+    public static TraceContext generate() {
+        return new TraceContext(UUID.randomUUID().toString(), System.currentTimeMillis());
+    }
 }
 ```
 
-### 使用
+### 3.2 MDC 传播
 
 ```java
-StateTransitionStore<ConversationState, ConversationFact> store =
-    new InMemoryStateTransitionStore<>();
+public class TraceMdcHelper {
+    private static final String TRACE_ID_KEY = "traceId";
 
-StateMachine<ConversationState, ConversationFact, CbolStateContext> eventSourced =
-    new EventSourcedStateMachine<>(machine, store, "conv-123");
+    public static void set(TraceContext ctx) {
+        MDC.put(TRACE_ID_KEY, ctx.traceId());
+    }
 
-// 所有迁移自动被记录
-eventSourced.fireEvent(ConversationState.INITIATED, ConversationFact.USER_MESSAGE, ctx);
-
-// 重放和重建
-List<StateTransitionEvent<...>> history = store.replay("conv-123");
-Optional<ConversationState> current = store.reconstructState("conv-123");
-```
-
-### 时间旅行查询
-
-```java
-// 2026-01-01T10:00:00Z 时的状态是什么？
-Instant pointInTime = Instant.parse("2026-01-01T10:00:00Z");
-List<StateTransitionEvent<...>> eventsAtTime = store.replayUpTo("conv-123", pointInTime);
-```
-
----
-
-## 6. 弹性 — 失败处理
-
-### 问题
-
-状态机迁移可能失败（无规则、guard 失败、动作异常）。需要针对不同失败场景的可配置策略。
-
-### 解决方案
-
-带可插拔 `FailureHandler` 策略的 `ResilientStateMachine` 装饰器。
-
-### 失败类型
-
-| 类型 | 描述 |
-|---|---|
-| `NO_TRANSITION` | (state, event) 不存在迁移规则 |
-| `GUARD_FAILED` | 所有 guard 条件评估为 false |
-| `ACTION_ERROR` | 迁移动作抛出异常 |
-
-### 内置策略
-
-| 策略 | 行为 | 用例 |
-|---|---|---|
-| `ThrowFailureHandler` | 抛出 `StateMachineException` | 默认，快速失败 |
-| `ReturnSourceFailureHandler` | 返回源状态，`accepted=false` | 静默忽略，检查返回值 |
-| `FallbackStateFailureHandler` | 迁移到配置的回退状态 | 死信、ERROR 隔离 |
-| `RetryFailureHandler` | 退避重试，然后委托 | 瞬时失败、乐观锁 |
-
-### 使用
-
-```java
-// 1. 失败时抛出（默认）
-StateMachine<...> resilient = new ResilientStateMachine<>(machine, new ThrowFailureHandler<>());
-
-// 2. 返回源状态（无异常）
-StateMachine<...> resilient = new ResilientStateMachine<>(machine, new ReturnSourceFailureHandler<>());
-StateContext<...> result = resilient.fireEvent(state, event, ctx);
-if (!result.isTransitionAccepted()) {
-    // 处理拒绝
+    public static void clear() {
+        MDC.remove(TRACE_ID_KEY);
+    }
 }
-
-// 3. 回退到 ERROR 状态
-StateMachine<...> resilient = new ResilientStateMachine<>(machine,
-    new FallbackStateFailureHandler<>(OrderState.ERROR));
-
-// 4. 指数退避重试，然后回退
-FailureHandler<...> fallback = new FallbackStateFailureHandler<>(OrderState.ERROR);
-RetryFailureHandler<...> retry = RetryFailureHandler.exponentialBackoff(
-    3,           // 最大重试次数
-    fallback,    // 耗尽后的处理器
-    100,         // 初始延迟 ms
-    5000         // 最大延迟 ms
-);
-StateMachine<...> resilient = new ResilientStateMachine<>(machine, retry);
 ```
+
+### 3.3 在 Service 中使用
+
+```java
+public ConversationState fire(CbolStateContext ctx, ConversationFact fact) {
+    TraceMdcHelper.set(ctx.traceContext());
+    long start = System.currentTimeMillis();
+    try {
+        ConversationState from = ctx.conversation().state();
+        ConversationState to = convSm.fireEvent(from, fact, ctx);
+
+        log.info("状态转换：{} --({})--> {}, conversationId={}, durationMs={}",
+                from, fact, to,
+                ctx.conversation().conversationId(),
+                System.currentTimeMillis() - start);
+        return to;
+    } finally {
+        TraceMdcHelper.clear();
+    }
+}
+```
+
+### 3.4 审计日志模式
+
+每次状态转换都应产生一个审计日志条目，包含：
+- 业务 ID（conversationId / interactionId）
+- 源状态 / 目标状态
+- 事件 / Fact
+- 市场
+- 追踪 ID
+- 持续时间
+- 时间戳
 
 ---
 
-## 7. 超时事件 / 定时迁移
+## 4. 幂等性
 
 ### 问题
 
-当实体在某个状态停留过久时需要自动触发事件（空闲超时、转接超时、结束宽限）。
+在分布式系统中，事件可能被多次传递（至少一次传递）。状态机应该优雅地处理重复事件，而不会破坏状态。
 
 ### 解决方案
 
-在状态进入时自动调度超时、在状态退出时自动取消的 `TimeoutAwareStateMachine` 装饰器。
-
-### TimeoutConfig
+使用 `conversationId + event` 作为幂等键，并在触发前检查。
 
 ```java
-TimeoutConfig<ConversationState, ConversationFact> idleTimeout =
-    TimeoutConfig.<ConversationState, ConversationFact>builder()
-        .state(ConversationState.IN_PROGRESS)
-        .timeoutEvent(ConversationFact.IDLE_TIMEOUT)
-        .duration(30)
-        .timeUnit(TimeUnit.SECONDS)
-        .build();  // 默认一次性
+public class IdempotentStateMachineService {
+    private final Set<String> processedEvents = ConcurrentHashMap.newKeySet();
+    private final ChatEngineStateMachineService delegate;
 
-// 重复超时（例如每 60 秒发送提醒）
-TimeoutConfig<...> reminder = TimeoutConfig.<...>builder()
-    .state(ConversationState.WAITING)
-    .timeoutEvent(ConversationFact.SEND_REMINDER)
-    .duration(60)
-    .timeUnit(TimeUnit.SECONDS)
-    .repeat(true)
-    .build();
+    public ConversationState fire(CbolStateContext ctx, ConversationFact event) {
+        String idempotencyKey = ctx.conversation().conversationId() + ":" + event;
+
+        if (processedEvents.contains(idempotencyKey)) {
+            log.warn("检测到重复事件：{}", idempotencyKey);
+            return ctx.conversation().state(); // 返回当前状态，无操作
+        }
+
+        processedEvents.add(idempotencyKey);
+        return delegate.fire(ctx, event);
+    }
+}
 ```
 
-### 调度器
+### COLA 级别的幂等性
 
-```java
-StateMachineTimeoutScheduler<ConversationState, ConversationFact> scheduler =
-    new InMemoryTimeoutScheduler<>("conversation-timeout", 4);
-```
+COLA StateMachine 本身在以下意义上是幂等的：
+- 如果没有转换匹配 `(sourceState, event)`，它会抛出 `StateMachineException`
+- 异常时状态不变（action-first 原则）
+- 从同一状态重复触发同一事件将要么重复成功（如果动作是幂等的），要么一致地失败
 
-### 使用
-
-```java
-Map<ConversationState, TimeoutConfig<ConversationState, ConversationFact>> timeouts = Map.of(
-    ConversationState.IN_PROGRESS, idleTimeout,
-    ConversationState.TRANSFERRING, transferTimeout
-);
-
-StateMachine<ConversationState, ConversationFact, CbolStateContext> timeoutAware =
-    new TimeoutAwareStateMachine<>(machine, scheduler, timeouts, "conv-123");
-
-// 进入 IN_PROGRESS 自动启动 30 秒计时器
-timeoutAware.fireEvent(ConversationState.INITIATED, ConversationFact.USER_MESSAGE, ctx);
-
-// 离开 IN_PROGRESS 自动取消计时器
-timeoutAware.fireEvent(ConversationState.IN_PROGRESS, ConversationFact.AGENT_JOIN, ctx);
-
-// 如果 30 秒内没有离开，IDLE_TIMEOUT 自动触发
-```
-
-### 查询超时状态
-
-```java
-boolean IN_PROGRESS = timeoutAware.isTimeoutActive();
-long remainingMs = timeoutAware.getRemainingTimeoutMs();
-timeoutAware.cancelTimeout();  // 手动取消
-```
-
-### CBOL 监控器替换
-
-| 现有监控器 | 超时配置 |
-|---|---|
-| `CustomerIdleMonitor` | `IN_PROGRESS` → 30s → `IDLE_TIMEOUT` |
-| `TransferMonitor` | `TRANSFERRING` → 60s → `TRANSFER_TIMEOUT` |
-| `EndingGraceMonitor` | `ENDING` → 10s → `END_GRACE_TIMEOUT` |
+**最佳实践**：使你的 Action 实现幂等。使用数据库唯一约束或乐观锁来防止重复副作用。
 
 ---
 
-## 8. 图表生成
+## 5. PlantUML 图生成
 
 ### 问题
 
-在文档中手动维护状态图容易出错且很快过时。
+状态机可能因许多状态和转换而变得复杂。可视化文档有助于开发人员理解流程。
 
 ### 解决方案
 
-直接从状态机配置生成图表的 `StateMachineDiagramGenerator`。
-
-### Mermaid
+COLA StateMachine 有一个内置的 `generatePlantUML()` 方法，可以生成 PlantUML 状态图。
 
 ```java
-String mermaid = StateMachineDiagramGenerator.toMermaid(machine);
-// 输出：
-// stateDiagram-v2
-//     title order-machine
-//     [*] --> CREATED
-//     CREATED --> PAID : PAY
-//     PAID --> SHIPPED : SHIP
-//     SHIPPED --> DELIVERED : DELIVER
-//     DELIVERED --> [*]
+StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+        ConversationStateMachineFactory.build();
+
+String plantUml = sm.generatePlantUML();
+System.out.println(plantUml);
 ```
 
-### PlantUML
+### 输出示例
 
-```java
-String plantUml = StateMachineDiagramGenerator.toPlantUml(machine);
-// 输出：
-// @startuml
-// title order-machine
-// skinparam state { ... }
-// [*] --> CREATED
-// CREATED --> PAID : PAY
-// ...
-// @enduml
+```
+@startuml
+[*] --> NEW
+NEW --> INITIATED : CONVERSATION_INITIATED
+INITIATED --> IN_PROGRESS : CUSTOMER_CONNECT
+IN_PROGRESS --> TRANSFERRED : TRANSFER_REQUEST
+IN_PROGRESS --> ENDING : CUSTOMER_CLOSE
+TRANSFERRED --> IN_PROGRESS : TRANSFER_FAILED
+TRANSFERRED --> ENDING : TRANSFER_COMPLETE
+ENDING --> CLOSED : SYS_ENDING_GRACE_TIMEOUT
+@enduml
 ```
 
-### 迁移表
+### 渲染
 
-```java
-String table = StateMachineDiagramGenerator.toTransitionTable(machine);
-// | # | From | Event | To | Kind | Guard | Action |
-// |---|------|-------|----|------|-------|--------|
-// | 1 | CREATED | PAY | PAID | EXTERNAL | - | Yes |
+使用任何 PlantUML 渲染器：
+- 在线：https://www.plantuml.com/plantuml/
+- VS Code：PlantUML 扩展
+- IntelliJ：PlantUML 集成插件
+
+### CI/CD 集成
+
+```bash
+# 在 CI 中生成 PlantUML 并渲染为 PNG
+java -jar plantuml.jar -tpng state-machine.puml
 ```
-
-### 特性
-
-- 初始状态标记（`[*] --> STATE`）
-- 终态（`STATE --> [*]`）
-- 带 guard（`[guard]`）和 action（`/ action`）指示符的事件标签
-- 内部迁移作为自环
-- 带注释的隔离状态检测
 
 ---
 
-## 9. 装饰器组合
+## 6. 工厂缓存模式
 
-所有高级特性都实现为装饰器，允许灵活组合：
+### 问题
 
-```java
-// 组合：幂等 + 指标 + 事件溯源 + 弹性 + 超时感知
-StateMachine<OrderState, OrderEvent, OrderContext> pipeline =
-    new TimeoutAwareStateMachine<>(
-        new ResilientStateMachine<>(
-            new EventSourcedStateMachine<>(
-                new MonitoredStateMachine<>(
-                    new IdempotentStateMachineDecorator<>(
-                        machine,
-                        eventStore
-                    ),
-                    meterRegistry
-                ),
-                transitionStore,
-                "order-123"
-            ),
-            new ThrowFailureHandler<>()
-        ),
-        timeoutScheduler,
-        timeoutConfigs,
-        "order-123"
-    );
+COLA StateMachine 不允许使用相同 ID 重新构建状态机。尝试构建两次会抛出：
+```
+The state machine with id [conversation] is already built, no need to build again
 ```
 
-### 推荐顺序（从最外层到最内层）
+### 解决方案
 
-1. **TimeoutAware** — 最外层，管理所有内容周围的计时器
-2. **Failover** — 捕获所有内层的动作错误并生成失败事件
-3. **Resilient** — 在故障转移前处理失败（重试）
-4. **EventSourced** — 记录所有迁移（包括重试和故障转移）
-5. **Monitored** — 收集所有迁移的指标
-6. **Idempotent** — 最内层，处理前去重
-7. **SimpleStateMachine** — 核心引擎
+使用带有双重检查锁定的工厂缓存模式。
+
+```java
+public class ConversationStateMachineFactory {
+    public static final String MACHINE_ID = "conversation";
+    private static volatile StateMachine<ConversationState, ConversationFact, CbolStateContext> instance;
+
+    public static StateMachine<ConversationState, ConversationFact, CbolStateContext> build() {
+        // 快速路径：检查是否已构建
+        try {
+            StateMachine<ConversationState, ConversationFact, CbolStateContext> existing =
+                    StateMachineFactory.get(MACHINE_ID);
+            if (existing != null) {
+                return existing;
+            }
+        } catch (Exception ignored) {
+            // 尚未构建
+        }
+
+        // 慢速路径：同步构建
+        synchronized (ConversationStateMachineFactory.class) {
+            // 双重检查
+            try {
+                StateMachine<ConversationState, ConversationFact, CbolStateContext> existing =
+                        StateMachineFactory.get(MACHINE_ID);
+                if (existing != null) {
+                    return existing;
+                }
+            } catch (Exception ignored) {
+                // 尚未构建
+            }
+
+            // 构建
+            StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> builder =
+                    StateMachineBuilderFactory.create();
+
+            // ... 定义转换 ...
+
+            StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+                    builder.build(MACHINE_ID);
+            StateMachineFactory.register(sm);
+            return sm;
+        }
+    }
+}
+```
+
+### 测试隔离
+
+对于需要全新状态机的测试，每个测试类使用唯一的机器 ID：
+
+```java
+class MyTest {
+    private static final String TEST_MACHINE_ID = "conversation-test-" + UUID.randomUUID();
+
+    @BeforeEach
+    void setUp() {
+        // 使用唯一 ID 构建
+    }
+}
+```
 
 ---
 
-## 10. 故障转移（动作错误 → 失败事件）
+## 7. Action-First 原则和错误处理
 
-### 10.1 概述
+### 问题
 
-`FailoverStateMachine` 是一个装饰器，当动作抛出未处理异常时自动生成**失败事件**。失败事件然后通过状态机重新触发，以遵循预定义的**失败分支**（例如 ERROR 状态）。
+当 Action 在状态转换期间抛出异常时会发生什么？
 
-这与 `ResilientStateMachine`（重试或返回回退状态）不同：故障转移将异常视为驱动状态机通过专用错误处理流程的事件。
+### 解决方案
 
-### 10.2 关键设计决策
-
-| 决策 | 理由 |
-|----------|-----------|
-| 仅处理**动作错误**（带 cause 的 StateMachineException），不处理逻辑错误（无迁移 / guard 失败） | 逻辑错误是调用方 bug，不是系统失败 |
-| **失败事件不会触发另一次故障转移** | 防止失败分支本身失败时的无限循环 |
-| **可与 ResilientStateMachine 组合** | 先重试（瞬时错误），再故障转移（永久错误） |
-| 失败事件由可配置的 `failEventProvider` 生成 | 每个领域可以定义自己的失败事件（例如 `SYS_ACTION_FAILED`） |
-
-### 10.3 使用
+COLA StateMachine 遵循 **action-first 原则**：
+1. Action 在状态变更**之前**执行
+2. 如果动作成功 → 状态变更为目标状态
+3. 如果动作失败 → 抛出 `StateMachineException`，状态保持不变
 
 ```java
-StateMachine<OrderState, OrderEvent, OrderContext> machine = ...;
+try {
+    ConversationState newState = sm.fireEvent(
+            ConversationState.IN_PROGRESS,
+            ConversationFact.CUSTOMER_CLOSE,
+            ctx);
+    // 状态成功变更
+} catch (StateMachineException e) {
+    // 动作失败或没有匹配的转换
+    // 状态保持 IN_PROGRESS
+    log.error("转换失败", e);
 
-// 故障转移：动作错误时，触发 ORDER_FAILED 事件
-StateMachine<OrderState, OrderEvent, OrderContext> failover = new FailoverStateMachine<>(
-    machine,
-    ctx -> OrderEvent.ORDER_FAILED,                              // 失败事件提供者
-    event -> event == OrderEvent.ORDER_FAILED                    // 失败事件谓词（循环预防）
-);
-
-// 当动作抛出时：
-//   1. COLA StateMachine 抛出 StateMachineException
-//   2. 状态保持不变（action-first 原则）
-//   3. 业务层应捕获异常并处理故障转移逻辑
-// 注意：FailoverStateMachine/ResilientStateMachine 是 v3.0 中移除的自定义功能
-// COLA StateMachine 使用 action-first 原则：动作失败抛出异常，状态不变
-ConversationState result = machine.fireEvent(ConversationState.IN_PROGRESS, ConversationFact.CUSTOMER_CLOSE, ctx);
-// result == ConversationState.ENDING（如果动作成功）
-// 抛出 StateMachineException（如果动作失败，状态保持 IN_PROGRESS）
+    // 业务层可以决定：重试、故障转移或告警
+    handleFailure(ctx, e);
+}
 ```
 
-### 10.4 与重试组合（推荐模式）
+### 故障转移模式（业务层）
+
+虽然 COLA 没有内置的故障转移状态机，但业务层可以实现一个：
 
 ```java
-// 1. 指数退避重试 3 次
-FailureHandler<...> fallback = new FallbackStateFailureHandler<>(OrderState.ERROR);
-RetryFailureHandler<...> retry = RetryFailureHandler.exponentialBackoff(3, fallback, 100, 5000);
-StateMachine<...> resilient = new ResilientStateMachine<>(machine, retry);
+public ConversationState fireWithFailover(CbolStateContext ctx, ConversationFact event) {
+    try {
+        return sm.fireEvent(ctx.conversation().state(), event, ctx);
+    } catch (StateMachineException e) {
+        log.warn("主转换失败，尝试故障转移：{}", e.getMessage());
 
-// 2. 如果重试耗尽，通过失败事件故障转移到 ERROR 状态
-StateMachine<...> withFailover = new FailoverStateMachine<>(
-    resilient,
-    ctx -> OrderEvent.ORDER_FAILED,
-    event -> event == OrderEvent.ORDER_FAILED
-);
+        // 尝试故障转移事件（例如，SYSTEM_ERROR）
+        try {
+            return sm.fireEvent(ctx.conversation().state(), ConversationFact.SYSTEM_ERROR, ctx);
+        } catch (StateMachineException e2) {
+            log.error("故障转移也失败了", e2);
+            throw e2;
+        }
+    }
+}
 ```
-
-### 10.5 CBOL 集成
-
-对于 CBOL 会话状态机：
-
-- **失败事件**：`SYS_ACTION_FAILED`
-- **失败分支**：所有非终态 → `ERROR`
-- **恢复**：`ERROR` → `IN_PROGRESS`（`SYS_RETRY`）或 `CLOSED`（`SYS_ABORT`）
-
-```java
-StateMachine<ConversationState, ConversationFact, CbolStateContext> base =
-    ConversationStateMachineFactory.build();
-
-FailoverStateMachine<ConversationState, ConversationFact, CbolStateContext> failover =
-    new FailoverStateMachine<>(
-        base,
-        ctx -> ConversationFact.SYS_ACTION_FAILED,
-        event -> event == ConversationFact.SYS_ACTION_FAILED
-    );
-```
-
-### 10.6 FailoverContext
-
-`failEventProvider` 接收包含以下内容的 `FailoverContext`：
-
-- `sourceState` — 失败事件前的状态
-- `originalEvent` — 触发失败动作的事件
-- `context` — 业务上下文
-- `cause` — 原始 RuntimeException
-- `causeMessage()` / `causeType()` — 用于日志记录的便捷方法
-
-这允许失败事件携带诊断信息（例如存储在 ExtendedState 或上下文中供以后分析）。
 
 ---
 
-## 11. 汇总表
+## 8. 扩展模式
 
-| 特性 | 包 | 关键类 | 依赖 |
-|---|---|---|---|
-| 持久化 | `statemachine.persistence` | `StateRepository`, `InMemoryStateRepository` | 无 |
-| 校验 | `statemachine.validation` | `StateMachineValidator` | 无 |
-| 幂等性 | `statemachine.idempotency` | `IdempotentStateMachineDecorator` | 无 |
-| 指标 | `statemachine.metrics` | `MonitoredStateMachine` | Micrometer（可选） |
-| 事件溯源 | `statemachine.eventsourcing` | `EventSourcedStateMachine` | 无 |
-| 弹性 | `statemachine.resilience` | `ResilientStateMachine` | 无 |
-| 故障转移 | `statemachine.resilience` | `FailoverStateMachine` | 无 |
-| 超时 | `statemachine.timeout` | `TimeoutAwareStateMachine` | 无 |
-| 图表 | `statemachine.diagram` | `StateMachineDiagramGenerator` | 无 |
-| 事件驱动 | `statemachine.event` | `StandardEvent`, `EventDispatcher` | 无 |
+### 8.1 自定义 Action 组合
+
+将多个动作组合成一个：
+
+```java
+public class CompositeAction<S, E, C> implements Action<S, E, C> {
+    private final List<Action<S, E, C>> actions;
+
+    @Override
+    public void execute(S from, S to, E event, C context) {
+        for (Action<S, E, C> action : actions) {
+            action.execute(from, to, event, context);
+        }
+    }
+}
+```
+
+### 8.2 带重试的 Action
+
+用重试逻辑包装一个动作：
+
+```java
+public class RetryAction<S, E, C> implements Action<S, E, C> {
+    private final Action<S, E, C> delegate;
+    private final int maxRetries;
+    private final long backoffMs;
+
+    @Override
+    public void execute(S from, S to, E event, C context) {
+        int attempts = 0;
+        while (true) {
+            try {
+                delegate.execute(from, to, event, context);
+                return;
+            } catch (Exception e) {
+                if (++attempts >= maxRetries) {
+                    throw e;
+                }
+                try {
+                    Thread.sleep(backoffMs * attempts);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw e;
+                }
+            }
+        }
+    }
+}
+```
+
+### 8.3 异步 Action Worker（预留）
+
+`ActionWorker` 是预留的工具类，供未来异步动作执行使用。当前设计使用同步的 action-first 转换。
+
+```java
+// 预留：供未来异步动作执行使用
+public class ActionWorker {
+    private final ExecutorService executor = Executors.newCachedThreadPool();
+
+    public CompletableFuture<Void> submit(
+            Action<ConversationState, ConversationFact, CbolStateContext> action,
+            ConversationState from, ConversationState to,
+            ConversationFact event, CbolStateContext ctx) {
+        return CompletableFuture.runAsync(() -> {
+            TraceMdcHelper.set(ctx.traceContext());
+            try {
+                action.execute(from, to, event, ctx);
+            } finally {
+                TraceMdcHelper.clear();
+            }
+        }, executor);
+    }
+}
+```
+
+---
+
+## 9. 总结表
+
+| 功能 | 实现 | 位置 |
+|------|------|------|
+| 多市场配置 | `StateMachineMarketConfig` record | chat-engine/config |
+| 客户空闲监控器 | `CustomerIdleMonitor` | chat-engine/monitor |
+| 转接监控器 | `TransferMonitor` | chat-engine/monitor |
+| 结束宽限监控器 | `EndingGraceMonitor` | chat-engine/monitor |
+| 追踪上下文 | `TraceContext` + `TraceMdcHelper` | chat-engine/context |
+| 幂等性 | 业务层模式 | 应用代码 |
+| PlantUML 生成 | COLA 内置 `generatePlantUML()` | statemachine-core |
+| 工厂缓存 | 双重检查锁定模式 | chat-engine/statemachine/factory |
+| Action-first 错误处理 | COLA 内置 | statemachine-core |
+| 故障转移 | 业务层模式 | 应用代码 |
+| 异步 Action Worker | 预留工具类 | chat-engine/action |
+
+---
+
+## 10. 参考资料
+
+- 阿里巴巴 COLA GitHub：https://github.com/alibaba/COLA
+- COLA StateMachine 模块：`cola-components/cola-component-statemachine`
+- COLA StateMachine 测试：`cola-components/cola-component-statemachine/src/test/java/com/alibaba/cola/test/`
+
+---
+
+*最后更新：2026-09-05（v3.0 — 为阿里巴巴 COLA StateMachine 重写）*

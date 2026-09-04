@@ -504,19 +504,19 @@ builder.transition()
 ### 7.5.4 Action Failure Handling
 
 When an action throws an unhandled `RuntimeException`:
-1. The state does **NOT** change (source state is preserved)
-2. `StateMachineException` is thrown with the cause
+1. The state does **NOT** change (source state is preserved) — COLA action-first principle
+2. `StateMachineException` is thrown
 3. The caller can catch and handle (retry, escalate, or trigger failover)
-4. Use `FailoverStateMachine` decorator for automatic failover (triggers `SYS_ACTION_FAILED` event → ERROR state)
+4. Implement failover in the business layer (catch `StateMachineException`, then fire `SYS_ACTION_FAILED` event → ERROR state)
 
 ```java
 try {
-    StateContext<...> result = machine.fireEvent(state, event, ctx);
+    ConversationState newState = machine.fireEvent(state, event, ctx);
 } catch (StateMachineException e) {
     // Action failed, state unchanged
     log.error("Transition failed: {}", e.getMessage());
     // Option 1: Retry
-    // Option 2: Trigger failover (use FailoverStateMachine)
+    // Option 2: Trigger failover (business layer fires SYS_ACTION_FAILED)
     // Option 3: Escalate to human
 }
 ```

@@ -1,618 +1,564 @@
 # 05 — Advanced Features
 
-> Production-ready capabilities: persistence, validation, idempotency, observability, event sourcing, resilience, timeouts, and diagram generation.
+> Production-ready capabilities built on Alibaba COLA StateMachine: multi-market configuration, monitors, trace context, idempotency, observability, PlantUML generation, and extensibility patterns.
 
 ---
 
-## 1. State Persistence & Optimistic Locking
+## 1. Multi-Market Configuration
 
 ### Problem
 
-In a concurrent environment, multiple threads or services may attempt to transition the same entity simultaneously. Without locking, the "last write wins" problem can corrupt state.
+The project deploys to multiple markets (HK, SG, UK, etc.) with similar but slightly different state flows. Each market may have different timeouts, feature toggles, and routing strategies.
 
 ### Solution
 
-A `StateRepository` interface with optimistic locking via version numbers.
+A `StateMachineMarketConfig` record that captures market-specific behavior as an immutable snapshot. The config is injected into `CbolStateContext` at the start of each state transition.
 
 ```java
-// Repository interface (dual generic: state type + ID type)
-public interface StateRepository<S, ID> {
-    VersionedState<S> load(ID id);
-    long compareAndSet(ID id, long expectedVersion, S newState);
-    long save(ID id, S state);
-    boolean exists(ID id);
-    boolean delete(ID id);
-}
-
-// Versioned state record
-public record VersionedState<S>(S state, long version) {
-    public static <S> VersionedState<S> initial(S state) { ... }
-}
-
-// Optimistic lock exception
-public class OptimisticLockException extends RuntimeException {
-    public OptimisticLockException(String entityId, long expected, long actual) { ... }
+@Builder
+public record StateMachineMarketConfig(
+    int customerIdleSeconds,       // Default: 300
+    int transferTimeoutSeconds,    // Default: 120
+    int endingGraceSeconds,        // Default: 30
+    boolean surveyEnabled,         // Default: true
+    boolean transferEnabled,       // Default: true
+    boolean genesysEnabled,        // Default: true
+    String fallbackRoutingStrategy // Default: "DROP"
+) {
+    public static StateMachineMarketConfig defaultConfig() { ... }
 }
 ```
 
-### Usage with Auto-Retry
+### Market Config Provider
 
 ```java
-ChatEngineStateMachineService service = new ChatEngineStateMachineService(machine, repository);
+public interface MarketConfigProvider {
+    StateMachineMarketConfig getConfig(String market);
 
-// fireWithLock automatically retries on version conflict (default 3 retries)
-StateContext<ConversationState, ConversationFact, CbolStateContext> result =
-    service.fireWithLock("conv-123", ConversationFact.USER_MESSAGE, context);
-```
+    class InMemoryProvider implements MarketConfigProvider {
+        private final ConcurrentHashMap<String, StateMachineMarketConfig> cache = new ConcurrentHashMap<>();
 
-### Flow
+        public void put(String market, StateMachineMarketConfig config) {
+            cache.put(market, config);
+        }
 
-```mermaid
-sequenceDiagram
-    participant C as Caller
-    participant S as Service
-    participant R as Repository
-    participant M as StateMachine
-
-    C->>S: fireWithLock(entityId, event, ctx)
-    S->>R: findById(entityId)
-    R-->>S: VersionedState(state, v=5)
-    S->>M: fireEvent(state, event, ctx)
-    M-->>S: StateContext(targetState)
-    S->>R: save(entityId, targetState, expectedVersion=5)
-    alt version matches
-        R-->>S: success (v=6)
-    else version conflict
-        R-->>S: OptimisticLockException
-        S->>S: retry (up to 3 times)
-    end
-```
-
-### Implementations
-
-| Implementation | Use Case |
-|---|---|
-| `InMemoryStateRepository` | Testing, single-node, development |
-| Custom JDBC/MongoDB | Production (implement the interface) |
-
----
-
-## 2. Build-Time Validation
-
-### Problem
-
-Invalid state machine configurations (unreachable states, missing initial state, duplicate transitions) are often discovered at runtime, causing production incidents.
-
-### Solution
-
-A `StateMachineValidator` that checks 8 rules at build time.
-
-### Validation Rules
-
-| Rule | Level | Description |
-|---|---|---|
-| `NO_TRANSITIONS` | ERROR | Machine has zero transitions |
-| `INITIAL_STATE_DEFINED` | ERROR | No initial state configured |
-| `INITIAL_STATE_REACHABLE` | WARNING | Initial state has no incoming transitions |
-| `END_STATE_NO_OUTGOING` | WARNING | End state has outgoing transitions |
-| `UNREACHABLE_STATE` | WARNING | State has no incoming transitions and is not initial |
-| `DEAD_END_STATE` | WARNING | State has no outgoing transitions and is not an end state |
-| `INTERNAL_TRANSITION_MATCH` | ERROR | INTERNAL transition has different source and target |
-| `DUPLICATE_TRANSITION_NO_GUARD` | WARNING | Multiple transitions for same (state, event) without guards |
-
-### Usage
-
-```java
-// Validate during build
-StateMachine<OrderState, OrderEvent, OrderContext> machine =
-    StateMachineBuilder.<OrderState, OrderEvent, OrderContext>builder("order")
-        .initialState(OrderState.CREATED)
-        .transition()
-            .from(OrderState.CREATED).on(OrderEvent.PAY).to(OrderState.PAID)
-        .and()
-        .build(true);  // validate=true, throws on ERROR
-
-// Or validate separately
-List<ValidationError> errors = StateMachineValidator.validate(machine);
-errors.forEach(e -> System.out.println(e.level() + ": " + e.message()));
-```
-
-### ValidationError
-
-```java
-public record ValidationError(
-    String rule,        // e.g., "UNREACHABLE_STATE"
-    Level level,        // ERROR or WARNING
-    String message,     // human-readable description
-    String state,       // related state (may be null)
-    String event        // related event (may be null)
-) {}
-```
-
----
-
-## 3. Idempotency
-
-### Problem
-
-Events may be delivered multiple times (network retries, message queue at-least-once delivery). Without idempotency, the same event could trigger multiple state transitions.
-
-### Solution
-
-An `IdempotentStateMachineDecorator` that deduplicates events by a unique event ID.
-
-```java
-ProcessedEventStore store = new InMemoryProcessedEventStore();
-IdempotentStateMachineDecorator<OrderState, OrderEvent, OrderContext> idempotent =
-    new IdempotentStateMachineDecorator<>(machine, store);
-
-// First call: processes the event
-StateContext<...> result1 = idempotent.fireEventWithId("evt-001", OrderState.CREATED, OrderEvent.PAY, ctx);
-
-// Second call with same ID: returns cached result, does NOT re-process
-StateContext<...> result2 = idempotent.fireEventWithId("evt-001", OrderState.CREATED, OrderEvent.PAY, ctx);
-// result1.equals(result2)
-```
-
-### ProcessedEventStore
-
-```java
-public interface ProcessedEventStore {
-    boolean contains(String eventId);
-    void store(String eventId, StateContext<?, ?, ?> result);
-    Optional<StateContext<?, ?, ?>> get(String eventId);
-    void clear();
+        @Override
+        public StateMachineMarketConfig getConfig(String market) {
+            return cache.getOrDefault(market, StateMachineMarketConfig.defaultConfig());
+        }
+    }
 }
 ```
 
----
-
-## 4. Observability — Metrics (Micrometer)
-
-### Problem
-
-Without metrics, it's impossible to monitor state machine health: transition latency, error rates, denied events.
-
-### Solution
-
-`MonitoredStateMachine` decorator with Micrometer integration (optional dependency).
-
-### Metrics
-
-| Metric | Type | Tags | Description |
-|---|---|---|---|
-| `statemachine.transition.duration` | Timer | machine, from, to, event | Transition latency |
-| `statemachine.transition.success` | Counter | machine, from, to, event | Successful transitions |
-| `statemachine.transition.error` | Counter | machine, from, to, event, error | Action failures |
-| `statemachine.transition.denied` | Counter | machine, from, event, reason | Denied (no rule/guard) |
-| `statemachine.event.received` | Counter | machine, from, event | Total events received |
-
-### Usage
+### Usage in Transition
 
 ```java
-MeterRegistry registry = ...; // Spring's auto-configured or SimpleMeterRegistry
-StateMachine<OrderState, OrderEvent, OrderContext> monitored =
-    new MonitoredStateMachine<>(machine, registry);
-
-// All fireEvent calls are automatically instrumented
-monitored.fireEvent(OrderState.CREATED, OrderEvent.PAY, ctx);
-```
-
-### Spring Boot Integration
-
-```yaml
-# application.yml
-management:
-  endpoints:
-    web:
-      exposure:
-        include: prometheus,metrics
-  metrics:
-    tags:
-      application: cbol-messaging
-```
-
----
-
-## 5. Event Sourcing
-
-### Problem
-
-Need a full audit trail of all state changes for debugging, compliance, and state reconstruction.
-
-### Solution
-
-`EventSourcedStateMachine` decorator that records every transition as an immutable event.
-
-### StateTransitionEvent
-
-```java
-public record StateTransitionEvent<S, E>(
-    String entityId,          // conversation/order ID
-    String machineId,         // state machine identifier
-    S fromState,              // source state
-    S toState,                // target state
-    E event,                  // triggering event
-    boolean accepted,         // whether the transition was accepted
-    String denialReason,      // reason if denied
-    long durationMs,          // transition duration
-    String traceId,           // distributed trace ID
-    Instant timestamp,        // when it happened
-    Map<String, String> metadata  // extra context
-) {}
-```
-
-### Store Interface
-
-```java
-public interface StateTransitionStore<S, E> {
-    void append(StateTransitionEvent<S, E> event);
-    List<StateTransitionEvent<S, E>> replay(String entityId);
-    List<StateTransitionEvent<S, E>> replayUpTo(String entityId, Instant upTo);
-    Optional<S> reconstructState(String entityId);  // replay accepted events
-    int count(String entityId);
-    Optional<StateTransitionEvent<S, E>> lastEvent(String entityId);
-}
-```
-
-### Usage
-
-```java
-StateTransitionStore<ConversationState, ConversationFact> store =
-    new InMemoryStateTransitionStore<>();
-
-StateMachine<ConversationState, ConversationFact, CbolStateContext> eventSourced =
-    new EventSourcedStateMachine<>(machine, store, "conv-123");
-
-// All transitions are automatically recorded
-eventSourced.fireEvent(ConversationState.INITIATED, ConversationFact.USER_MESSAGE, ctx);
-
-// Replay and reconstruct
-List<StateTransitionEvent<...>> history = store.replay("conv-123");
-Optional<ConversationState> current = store.reconstructState("conv-123");
-```
-
-### Time-Travel Query
-
-```java
-// What was the state at 2026-01-01T10:00:00Z?
-Instant pointInTime = Instant.parse("2026-01-01T10:00:00Z");
-List<StateTransitionEvent<...>> eventsAtTime = store.replayUpTo("conv-123", pointInTime);
-```
-
----
-
-## 6. Resilience — Failure Handling
-
-### Problem
-
-State machine transitions can fail (no rule, guard failed, action exception). Need configurable strategies for different failure scenarios.
-
-### Solution
-
-`ResilientStateMachine` decorator with pluggable `FailureHandler` strategies.
-
-### Failure Types
-
-| Type | Description |
-|---|---|
-| `NO_TRANSITION` | No transition rule exists for (state, event) |
-| `GUARD_FAILED` | All guard conditions evaluated to false |
-| `ACTION_ERROR` | Transition action threw an exception |
-
-### Built-in Strategies
-
-| Strategy | Behavior | Use Case |
-|---|---|---|
-| `ThrowFailureHandler` | Throws `StateMachineException` | Default, fail fast |
-| `ReturnSourceFailureHandler` | Returns source state, `accepted=false` | Silent ignore, check return value |
-| `FallbackStateFailureHandler` | Transitions to configured fallback state | Dead letter, ERROR quarantine |
-| `RetryFailureHandler` | Retries with backoff, then delegates | Transient failures, optimistic lock |
-
-### Usage
-
-```java
-// 1. Throw on failure (default)
-StateMachine<...> resilient = new ResilientStateMachine<>(machine, new ThrowFailureHandler<>());
-
-// 2. Return source state (no exceptions)
-StateMachine<...> resilient = new ResilientStateMachine<>(machine, new ReturnSourceFailureHandler<>());
-StateContext<...> result = resilient.fireEvent(state, event, ctx);
-if (!result.isTransitionAccepted()) {
-    // handle denial
-}
-
-// 3. Fallback to ERROR state
-StateMachine<...> resilient = new ResilientStateMachine<>(machine,
-    new FallbackStateFailureHandler<>(OrderState.ERROR));
-
-// 4. Retry with exponential backoff, then fallback
-FailureHandler<...> fallback = new FallbackStateFailureHandler<>(OrderState.ERROR);
-RetryFailureHandler<...> retry = RetryFailureHandler.exponentialBackoff(
-    3,           // max retries
-    fallback,    // handler after exhaustion
-    100,         // initial delay ms
-    5000         // max delay ms
-);
-StateMachine<...> resilient = new ResilientStateMachine<>(machine, retry);
-```
-
----
-
-## 7. Timeout Events / Scheduled Transitions
-
-### Problem
-
-Need to automatically trigger events when an entity stays in a state too long (idle timeout, transfer timeout, ending grace).
-
-### Solution
-
-`TimeoutAwareStateMachine` decorator that auto-schedules timeouts on state entry and auto-cancels on state exit.
-
-### TimeoutConfig
-
-```java
-TimeoutConfig<ConversationState, ConversationFact> idleTimeout =
-    TimeoutConfig.<ConversationState, ConversationFact>builder()
-        .state(ConversationState.IN_PROGRESS)
-        .timeoutEvent(ConversationFact.IDLE_TIMEOUT)
-        .duration(30)
-        .timeUnit(TimeUnit.SECONDS)
-        .build();  // one-shot by default
-
-// Repeating timeout (e.g., send reminder every 60s)
-TimeoutConfig<...> reminder = TimeoutConfig.<...>builder()
-        .state(ConversationState.WAITING)
-        .timeoutEvent(ConversationFact.SEND_REMINDER)
-        .duration(60)
-        .timeUnit(TimeUnit.SECONDS)
-        .repeat(true)
+CbolStateContext ctx = CbolStateContext.builder()
+        .conversation(conversation)
+        .marketConfig(marketConfigProvider.getConfig("HK"))
+        .traceContext(TraceContext.generate())
         .build();
+
+ConversationState newState = sm.fireEvent(
+        conversation.state(),
+        ConversationFact.CUSTOMER_CONNECT,
+        ctx);
 ```
 
-### Scheduler
+### Design Principles
 
-```java
-StateMachineTimeoutScheduler<ConversationState, ConversationFact> scheduler =
-    new InMemoryTimeoutScheduler<>("conversation-timeout", 4);
-```
-
-### Usage
-
-```java
-Map<ConversationState, TimeoutConfig<ConversationState, ConversationFact>> timeouts = Map.of(
-    ConversationState.IN_PROGRESS, idleTimeout,
-    ConversationState.TRANSFERRING, transferTimeout
-);
-
-StateMachine<ConversationState, ConversationFact, CbolStateContext> timeoutAware =
-    new TimeoutAwareStateMachine<>(machine, scheduler, timeouts, "conv-123");
-
-// Entering IN_PROGRESS automatically starts 30s timer
-timeoutAware.fireEvent(ConversationState.INITIATED, ConversationFact.USER_MESSAGE, ctx);
-
-// Leaving IN_PROGRESS automatically cancels the timer
-timeoutAware.fireEvent(ConversationState.IN_PROGRESS, ConversationFact.AGENT_JOIN, ctx);
-
-// If 30s pass without leaving, IDLE_TIMEOUT fires automatically
-```
-
-### Querying Timeout Status
-
-```java
-boolean IN_PROGRESS = timeoutAware.isTimeoutActive();
-long remainingMs = timeoutAware.getRemainingTimeoutMs();
-timeoutAware.cancelTimeout();  // manual cancel
-```
-
-### CBOL Monitor Replacement
-
-| Existing Monitor | Timeout Config |
-|---|---|
-| `CustomerIdleMonitor` | `IN_PROGRESS` → 30s → `IDLE_TIMEOUT` |
-| `TransferMonitor` | `TRANSFERRING` → 60s → `TRANSFER_TIMEOUT` |
-| `EndingGraceMonitor` | `ENDING` → 10s → `END_GRACE_TIMEOUT` |
+- **Config as snapshot**: Market config is captured at transition start, not read dynamically during action execution
+- **Default-first**: All config fields have sensible defaults; markets only override what differs
+- **Immutable**: Config is a record, cannot be mutated during transition
+- **Feature toggles**: Boolean fields (surveyEnabled, transferEnabled, genesysEnabled) control which transitions are active
 
 ---
 
-## 8. Diagram Generation
+## 2. Monitors (Timeout & Health Checks)
 
 ### Problem
 
-Manually maintaining state diagrams in documentation is error-prone and quickly becomes outdated.
+State machines need to detect and handle timeouts: customer idle, transfer timeout, ending grace period. These are time-based events that should trigger automatic state transitions.
 
 ### Solution
 
-`StateMachineDiagramGenerator` generates diagrams directly from the state machine configuration.
+Three monitor classes that check elapsed time and fire system events when thresholds are exceeded.
 
-### Mermaid
-
-```java
-String mermaid = StateMachineDiagramGenerator.toMermaid(machine);
-// Output:
-// stateDiagram-v2
-//     title order-machine
-//     [*] --> CREATED
-//     CREATED --> PAID : PAY
-//     PAID --> SHIPPED : SHIP
-//     SHIPPED --> DELIVERED : DELIVER
-//     DELIVERED --> [*]
-```
-
-### PlantUML
+### 2.1 Customer Idle Monitor
 
 ```java
-String plantUml = StateMachineDiagramGenerator.toPlantUml(machine);
-// Output:
-// @startuml
-// title order-machine
-// skinparam state { ... }
-// [*] --> CREATED
-// CREATED --> PAID : PAY
-// ...
-// @enduml
+public class CustomerIdleMonitor {
+    private final ChatEngineStateMachineService service;
+
+    public void check(CbolStateContext ctx, long lastActivityTimestamp) {
+        long idleMs = System.currentTimeMillis() - lastActivityTimestamp;
+        int threshold = ctx.marketConfig().customerIdleSeconds() * 1000;
+
+        if (idleMs > threshold) {
+            service.fire(ctx, ConversationFact.SYS_CUSTOMER_IDLE);
+        }
+    }
+}
 ```
 
-### Transition Table
+### 2.2 Transfer Monitor
 
 ```java
-String table = StateMachineDiagramGenerator.toTransitionTable(machine);
-// | # | From | Event | To | Kind | Guard | Action |
-// |---|------|-------|----|------|-------|--------|
-// | 1 | CREATED | PAY | PAID | EXTERNAL | - | Yes |
+public class TransferMonitor {
+    private final ChatEngineStateMachineService service;
+
+    public void check(CbolStateContext ctx, long transferStartTimestamp) {
+        // Only active in TRANSFERRED state
+        if (ctx.conversation().state() != ConversationState.TRANSFERRED) {
+            return;
+        }
+
+        long elapsedMs = System.currentTimeMillis() - transferStartTimestamp;
+        int threshold = ctx.marketConfig().transferTimeoutSeconds() * 1000;
+
+        if (elapsedMs > threshold) {
+            service.fire(ctx, ConversationFact.SYS_TRANSFER_TIMEOUT);
+        }
+    }
+}
 ```
 
-### Features
+### 2.3 Ending Grace Monitor
 
-- Initial state marker (`[*] --> STATE`)
-- End states (`STATE --> [*]`)
-- Event labels with guard (`[guard]`) and action (`/ action`) indicators
-- Internal transitions as self-loops
-- Isolated state detection with notes
+```java
+public class EndingGraceMonitor {
+    private final ChatEngineStateMachineService service;
+
+    public void check(CbolStateContext ctx, long enterEndingTimestamp) {
+        // Only active in ENDING state
+        if (ctx.conversation().state() != ConversationState.ENDING) {
+            return;
+        }
+
+        long elapsedMs = System.currentTimeMillis() - enterEndingTimestamp;
+        int threshold = ctx.marketConfig().endingGraceSeconds() * 1000;
+
+        if (elapsedMs > threshold) {
+            service.fire(ctx, ConversationFact.SYS_ENDING_GRACE_TIMEOUT);
+        }
+    }
+}
+```
+
+### Monitor Integration Pattern
+
+```java
+// Scheduled task (e.g., @Scheduled every 30 seconds)
+@Scheduled(fixedDelay = 30000)
+public void runMonitors() {
+    List<Conversation> activeConversations = repository.findActive();
+
+    for (Conversation conv : activeConversations) {
+        CbolStateContext ctx = buildContext(conv);
+
+        customerIdleMonitor.check(ctx, conv.getLastActivityAt());
+        transferMonitor.check(ctx, conv.getTransferStartedAt());
+        endingGraceMonitor.check(ctx, conv.getEnteredEndingAt());
+    }
+}
+```
 
 ---
 
-## 9. Decorator Composition
+## 3. Trace Context & Observability
 
-All advanced features are implemented as decorators, allowing flexible composition:
+### Problem
+
+In a distributed system, state transitions need to be traceable across services. Each transition should carry a trace ID for logging and debugging.
+
+### Solution
+
+A `TraceContext` record with UUID-based trace ID, plus `TraceMdcHelper` for SLF4J MDC propagation.
+
+### 3.1 Trace Context
 
 ```java
-// Compose: idempotent + monitored + event-sourced + resilient + timeout-aware
-StateMachine<OrderState, OrderEvent, OrderContext> pipeline =
-    new TimeoutAwareStateMachine<>(
-        new ResilientStateMachine<>(
-            new EventSourcedStateMachine<>(
-                new MonitoredStateMachine<>(
-                    new IdempotentStateMachineDecorator<>(
-                        machine,
-                        eventStore
-                    ),
-                    meterRegistry
-                ),
-                transitionStore,
-                "order-123"
-            ),
-            new ThrowFailureHandler<>()
-        ),
-        timeoutScheduler,
-        timeoutConfigs,
-        "order-123"
-    );
+public record TraceContext(
+    String traceId,
+    long timestamp
+) {
+    public static TraceContext generate() {
+        return new TraceContext(UUID.randomUUID().toString(), System.currentTimeMillis());
+    }
+}
 ```
 
-### Recommended Order (outermost to innermost)
+### 3.2 MDC Propagation
 
-1. **TimeoutAware** — outermost, manages timers around everything
-2. **Failover** — catches action errors from all inner layers and generates fail events
-3. **Resilient** — handles failures (retries) before failover
-4. **EventSourced** — records all transitions (including retries and failovers)
-5. **Monitored** — collects metrics for all transitions
-6. **Idempotent** — innermost, deduplicates before processing
-7. **SimpleStateMachine** — core engine
+```java
+public class TraceMdcHelper {
+    private static final String TRACE_ID_KEY = "traceId";
+
+    public static void set(TraceContext ctx) {
+        MDC.put(TRACE_ID_KEY, ctx.traceId());
+    }
+
+    public static void clear() {
+        MDC.remove(TRACE_ID_KEY);
+    }
+}
+```
+
+### 3.3 Usage in Service
+
+```java
+public ConversationState fire(CbolStateContext ctx, ConversationFact fact) {
+    TraceMdcHelper.set(ctx.traceContext());
+    long start = System.currentTimeMillis();
+    try {
+        ConversationState from = ctx.conversation().state();
+        ConversationState to = convSm.fireEvent(from, fact, ctx);
+
+        log.info("State transition: {} --({})--> {}, conversationId={}, durationMs={}",
+                from, fact, to,
+                ctx.conversation().conversationId(),
+                System.currentTimeMillis() - start);
+        return to;
+    } finally {
+        TraceMdcHelper.clear();
+    }
+}
+```
+
+### 3.4 Audit Logging Pattern
+
+Every state transition should produce an audit log entry with:
+- Business ID (conversationId / interactionId)
+- From state / To state
+- Event / Fact
+- Market
+- Trace ID
+- Duration
+- Timestamp
 
 ---
 
-## 10. Failover (Action Error → Fail Event)
+## 4. Idempotency
 
-### 9.1 Overview
+### Problem
 
-`FailoverStateMachine` is a decorator that automatically generates a **fail event** when an action throws an unhandled exception. The fail event is then re-fired through the state machine to follow a predefined **fail branch** (e.g., an ERROR state).
+In a distributed system, events may be delivered multiple times (at-least-once delivery). The state machine should handle duplicate events gracefully without corrupting state.
 
-This is different from `ResilientStateMachine` (which retries or returns a fallback state): failover treats the exception as an event that drives the state machine through a dedicated error-handling flow.
+### Solution
 
-### 9.2 Key Design Decisions
-
-| Decision | Rationale |
-|----------|-----------|
-| Only handles **action errors** (StateMachineException with cause), not logical errors (no transition / guard failed) | Logical errors are caller bugs, not system failures |
-| **Fail events do NOT trigger another failover** | Prevents infinite loops when the fail branch itself fails |
-| **Composable with ResilientStateMachine** | Retry first (transient errors), then failover (permanent errors) |
-| Fail event generated by configurable `failEventProvider` | Each domain can define its own fail event (e.g., `SYS_ACTION_FAILED`) |
-
-### 9.3 Usage
+Use `conversationId + event` as an idempotency key, and check before firing.
 
 ```java
-StateMachine<OrderState, OrderEvent, OrderContext> machine = ...;
+public class IdempotentStateMachineService {
+    private final Set<String> processedEvents = ConcurrentHashMap.newKeySet();
+    private final ChatEngineStateMachineService delegate;
 
-// Failover: on action error, fire ORDER_FAILED event
-StateMachine<OrderState, OrderEvent, OrderContext> failover = new FailoverStateMachine<>(
-    machine,
-    ctx -> OrderEvent.ORDER_FAILED,                              // fail event provider
-    event -> event == OrderEvent.ORDER_FAILED                    // fail event predicate (loop prevention)
-);
+    public ConversationState fire(CbolStateContext ctx, ConversationFact event) {
+        String idempotencyKey = ctx.conversation().conversationId() + ":" + event;
 
-// When an action throws:
-//   1. COLA StateMachine throws StateMachineException
-//   2. State remains unchanged (action-first principle)
-//   3. Business layer should catch exception and handle failover logic
-// Note: FailoverStateMachine/ResilientStateMachine were custom features removed in v3.0
-// COLA StateMachine uses action-first principle: action failure throws exception, state unchanged
-ConversationState result = machine.fireEvent(ConversationState.IN_PROGRESS, ConversationFact.CUSTOMER_CLOSE, ctx);
-// result == ConversationState.ENDING (if action succeeds)
-// StateMachineException thrown (if action fails, state remains IN_PROGRESS)
+        if (processedEvents.contains(idempotencyKey)) {
+            log.warn("Duplicate event detected: {}", idempotencyKey);
+            return ctx.conversation().state(); // Return current state, no-op
+        }
+
+        processedEvents.add(idempotencyKey);
+        return delegate.fire(ctx, event);
+    }
+}
 ```
 
-### 9.4 Combined with Retry (Recommended Pattern)
+### COLA-Level Idempotency
 
-```java
-// 1. Retry 3 times with exponential backoff
-FailureHandler<...> fallback = new FallbackStateFailureHandler<>(OrderState.ERROR);
-RetryFailureHandler<...> retry = RetryFailureHandler.exponentialBackoff(3, fallback, 100, 5000);
-StateMachine<...> resilient = new ResilientStateMachine<>(machine, retry);
+COLA StateMachine itself is idempotent in the sense that:
+- If no transition matches `(sourceState, event)`, it throws `StateMachineException`
+- The state does NOT change on exception (action-first principle)
+- Firing the same event from the same state repeatedly will either succeed repeatedly (if action is idempotent) or fail consistently
 
-// 2. If retries are exhausted, failover to ERROR state via fail event
-StateMachine<...> withFailover = new FailoverStateMachine<>(
-    resilient,
-    ctx -> OrderEvent.ORDER_FAILED,
-    event -> event == OrderEvent.ORDER_FAILED
-);
-```
-
-### 9.5 CBOL Integration
-
-For the CBOL conversation state machine:
-
-- **Fail event**: `SYS_ACTION_FAILED`
-- **Fail branch**: All non-terminal states → `ERROR`
-- **Recovery**: `ERROR` → `IN_PROGRESS` (`SYS_RETRY`) or `CLOSED` (`SYS_ABORT`)
-
-```java
-StateMachine<ConversationState, ConversationFact, CbolStateContext> base =
-    ConversationStateMachineFactory.build();
-
-FailoverStateMachine<ConversationState, ConversationFact, CbolStateContext> failover =
-    new FailoverStateMachine<>(
-        base,
-        ctx -> ConversationFact.SYS_ACTION_FAILED,
-        event -> event == ConversationFact.SYS_ACTION_FAILED
-    );
-```
-
-### 9.6 FailoverContext
-
-The `failEventProvider` receives a `FailoverContext` containing:
-
-- `sourceState` — the state before the failed event
-- `originalEvent` — the event that triggered the failing action
-- `context` — the business context
-- `cause` — the original RuntimeException
-- `causeMessage()` / `causeType()` — convenience methods for logging
-
-This allows the fail event to carry diagnostic information (e.g., store in ExtendedState or context for later analysis).
+**Best practice**: Make your Action implementations idempotent. Use database unique constraints or optimistic locking to prevent duplicate side effects.
 
 ---
 
-## 11. Summary Table
+## 5. PlantUML Diagram Generation
 
-| Feature | Package | Key Class | Dependency |
-|---|---|---|---|
-| Persistence | `statemachine.persistence` | `StateRepository`, `InMemoryStateRepository` | None |
-| Validation | `statemachine.validation` | `StateMachineValidator` | None |
-| Idempotency | `statemachine.idempotency` | `IdempotentStateMachineDecorator` | None |
-| Metrics | `statemachine.metrics` | `MonitoredStateMachine` | Micrometer (optional) |
-| Event Sourcing | `statemachine.eventsourcing` | `EventSourcedStateMachine` | None |
-| Resilience | `statemachine.resilience` | `ResilientStateMachine` | None |
-| Failover | `statemachine.resilience` | `FailoverStateMachine` | None |
-| Timeout | `statemachine.timeout` | `TimeoutAwareStateMachine` | None |
-| Diagram | `statemachine.diagram` | `StateMachineDiagramGenerator` | None |
-| Event-Driven | `statemachine.event` | `StandardEvent`, `EventDispatcher` | None |
+### Problem
+
+State machines can become complex with many states and transitions. Visual documentation helps developers understand the flow.
+
+### Solution
+
+COLA StateMachine has a built-in `generatePlantUML()` method that produces a PlantUML state diagram.
+
+```java
+StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+        ConversationStateMachineFactory.build();
+
+String plantUml = sm.generatePlantUML();
+System.out.println(plantUml);
+```
+
+### Output Example
+
+```
+@startuml
+[*] --> NEW
+NEW --> INITIATED : CONVERSATION_INITIATED
+INITIATED --> IN_PROGRESS : CUSTOMER_CONNECT
+IN_PROGRESS --> TRANSFERRED : TRANSFER_REQUEST
+IN_PROGRESS --> ENDING : CUSTOMER_CLOSE
+TRANSFERRED --> IN_PROGRESS : TRANSFER_FAILED
+TRANSFERRED --> ENDING : TRANSFER_COMPLETE
+ENDING --> CLOSED : SYS_ENDING_GRACE_TIMEOUT
+@enduml
+```
+
+### Rendering
+
+Use any PlantUML renderer:
+- Online: https://www.plantuml.com/plantuml/
+- VS Code: PlantUML extension
+- IntelliJ: PlantUML integration plugin
+
+### CI/CD Integration
+
+```bash
+# Generate PlantUML and render to PNG in CI
+java -jar plantuml.jar -tpng state-machine.puml
+```
+
+---
+
+## 6. Factory Caching Pattern
+
+### Problem
+
+COLA StateMachine does NOT allow rebuilding a state machine with the same ID. Attempting to build twice throws:
+```
+The state machine with id [conversation] is already built, no need to build again
+```
+
+### Solution
+
+Use a factory caching pattern with double-checked locking.
+
+```java
+public class ConversationStateMachineFactory {
+    public static final String MACHINE_ID = "conversation";
+    private static volatile StateMachine<ConversationState, ConversationFact, CbolStateContext> instance;
+
+    public static StateMachine<ConversationState, ConversationFact, CbolStateContext> build() {
+        // Fast path: check if already built
+        try {
+            StateMachine<ConversationState, ConversationFact, CbolStateContext> existing =
+                    StateMachineFactory.get(MACHINE_ID);
+            if (existing != null) {
+                return existing;
+            }
+        } catch (Exception ignored) {
+            // Not built yet
+        }
+
+        // Slow path: build with synchronization
+        synchronized (ConversationStateMachineFactory.class) {
+            // Double-check
+            try {
+                StateMachine<ConversationState, ConversationFact, CbolStateContext> existing =
+                        StateMachineFactory.get(MACHINE_ID);
+                if (existing != null) {
+                    return existing;
+                }
+            } catch (Exception ignored) {
+                // Not built yet
+            }
+
+            // Build
+            StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> builder =
+                    StateMachineBuilderFactory.create();
+
+            // ... define transitions ...
+
+            StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+                    builder.build(MACHINE_ID);
+            StateMachineFactory.register(sm);
+            return sm;
+        }
+    }
+}
+```
+
+### Test Isolation
+
+For tests that need a fresh state machine, use a unique machine ID per test class:
+
+```java
+class MyTest {
+    private static final String TEST_MACHINE_ID = "conversation-test-" + UUID.randomUUID();
+
+    @BeforeEach
+    void setUp() {
+        // Build with unique ID
+    }
+}
+```
+
+---
+
+## 7. Action-First Principle & Error Handling
+
+### Problem
+
+What happens when an Action throws an exception during a state transition?
+
+### Solution
+
+COLA StateMachine follows the **action-first principle**:
+1. Action executes **before** state change
+2. If action succeeds → state changes to target state
+3. If action fails → `StateMachineException` is thrown, state remains unchanged
+
+```java
+try {
+    ConversationState newState = sm.fireEvent(
+            ConversationState.IN_PROGRESS,
+            ConversationFact.CUSTOMER_CLOSE,
+            ctx);
+    // State changed successfully
+} catch (StateMachineException e) {
+    // Action failed OR no transition matched
+    // State remains IN_PROGRESS
+    log.error("Transition failed", e);
+
+    // Business layer can decide: retry, failover, or alert
+    handleFailure(ctx, e);
+}
+```
+
+### Failover Pattern (Business Layer)
+
+While COLA doesn't have a built-in failover state machine, the business layer can implement one:
+
+```java
+public ConversationState fireWithFailover(CbolStateContext ctx, ConversationFact event) {
+    try {
+        return sm.fireEvent(ctx.conversation().state(), event, ctx);
+    } catch (StateMachineException e) {
+        log.warn("Primary transition failed, attempting failover: {}", e.getMessage());
+
+        // Try failover event (e.g., SYSTEM_ERROR)
+        try {
+            return sm.fireEvent(ctx.conversation().state(), ConversationFact.SYSTEM_ERROR, ctx);
+        } catch (StateMachineException e2) {
+            log.error("Failover also failed", e2);
+            throw e2;
+        }
+    }
+}
+```
+
+---
+
+## 8. Extensibility Patterns
+
+### 8.1 Custom Action Composition
+
+Compose multiple actions into one:
+
+```java
+public class CompositeAction<S, E, C> implements Action<S, E, C> {
+    private final List<Action<S, E, C>> actions;
+
+    @Override
+    public void execute(S from, S to, E event, C context) {
+        for (Action<S, E, C> action : actions) {
+            action.execute(from, to, event, context);
+        }
+    }
+}
+```
+
+### 8.2 Action with Retry
+
+Wrap an action with retry logic:
+
+```java
+public class RetryAction<S, E, C> implements Action<S, E, C> {
+    private final Action<S, E, C> delegate;
+    private final int maxRetries;
+    private final long backoffMs;
+
+    @Override
+    public void execute(S from, S to, E event, C context) {
+        int attempts = 0;
+        while (true) {
+            try {
+                delegate.execute(from, to, event, context);
+                return;
+            } catch (Exception e) {
+                if (++attempts >= maxRetries) {
+                    throw e;
+                }
+                try {
+                    Thread.sleep(backoffMs * attempts);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw e;
+                }
+            }
+        }
+    }
+}
+```
+
+### 8.3 Async Action Worker (Reserved)
+
+`ActionWorker` is a reserved utility class for future async action execution. Current design uses synchronous action-first transitions.
+
+```java
+// RESERVED: For future async action execution
+public class ActionWorker {
+    private final ExecutorService executor = Executors.newCachedThreadPool();
+
+    public CompletableFuture<Void> submit(
+            Action<ConversationState, ConversationFact, CbolStateContext> action,
+            ConversationState from, ConversationState to,
+            ConversationFact event, CbolStateContext ctx) {
+        return CompletableFuture.runAsync(() -> {
+            TraceMdcHelper.set(ctx.traceContext());
+            try {
+                action.execute(from, to, event, ctx);
+            } finally {
+                TraceMdcHelper.clear();
+            }
+        }, executor);
+    }
+}
+```
+
+---
+
+## 9. Summary Table
+
+| Feature | Implementation | Location |
+|---------|---------------|----------|
+| Multi-market config | `StateMachineMarketConfig` record | chat-engine/config |
+| Customer idle monitor | `CustomerIdleMonitor` | chat-engine/monitor |
+| Transfer monitor | `TransferMonitor` | chat-engine/monitor |
+| Ending grace monitor | `EndingGraceMonitor` | chat-engine/monitor |
+| Trace context | `TraceContext` + `TraceMdcHelper` | chat-engine/context |
+| Idempotency | Business layer pattern | Application code |
+| PlantUML generation | COLA built-in `generatePlantUML()` | statemachine-core |
+| Factory caching | Double-checked locking pattern | chat-engine/statemachine/factory |
+| Action-first error handling | COLA built-in | statemachine-core |
+| Failover | Business layer pattern | Application code |
+| Async action worker | Reserved utility class | chat-engine/action |
+
+---
+
+## 10. References
+
+- Alibaba COLA GitHub: https://github.com/alibaba/COLA
+- COLA StateMachine module: `cola-components/cola-component-statemachine`
+- COLA StateMachine tests: `cola-components/cola-component-statemachine/src/test/java/com/alibaba/cola/test/`
+
+---
+
+*Last updated: 2026-09-05 (v3.0 — rewritten for Alibaba COLA StateMachine)*

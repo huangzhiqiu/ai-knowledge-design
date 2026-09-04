@@ -43,7 +43,7 @@ stateDiagram-v2
 
 > **Survey as internal sub-phase**: When `surveyEnabled=true`, `SURVEY_START` is an internal transition within `IN_PROGRESS` (IN_PROGRESS → IN_PROGRESS). It does not change the state but executes the SurveyStartAction. `SURVEY_COMPLETE` and `SYS_SURVEY_TIMEOUT` transition directly from `IN_PROGRESS` to `ENDING`.
 
-> **Failover (action error → fail event)**: When an action throws an unhandled exception, `FailoverStateMachine` automatically fires `SYS_ACTION_FAILED` to enter `ERROR` state. From `ERROR`, the system can retry (`SYS_RETRY` → IN_PROGRESS) or abort (`SYS_ABORT` → CLOSED). Fail events themselves do NOT trigger another failover (loop prevention).
+> **Failover (action error → business layer handling)**: COLA StateMachine follows the action-first principle. When an action throws an unhandled exception, `StateMachineException` is thrown and the state remains unchanged. The business layer can catch this exception and implement failover logic: fire `SYS_ACTION_FAILED` to enter `ERROR` state, then retry (`SYS_RETRY` → IN_PROGRESS) or abort (`SYS_ABORT` → CLOSED). See `05-Advanced-Features.md` §7 for the failover pattern.
 
 ### 1.2 Transition Table
 
@@ -64,11 +64,11 @@ stateDiagram-v2
 | T12 | IN_PROGRESS | SURVEY_START | IN_PROGRESS | surveyEnabled | SurveyStartAction | - | **Internal transition: survey as sub-phase** |
 | T13 | IN_PROGRESS | SURVEY_COMPLETE | ENDING | - | SurveyCompleteAction | - | Survey completed normally |
 | T14 | IN_PROGRESS | SYS_SURVEY_TIMEOUT | ENDING | - | - | SurveyTimeoutMonitor | Survey timed out |
-| T15 | NEW | SYS_ACTION_FAILED | ERROR | - | Log error, alert | FailoverStateMachine | **Failover: action error** |
-| T16 | INITIATED | SYS_ACTION_FAILED | ERROR | - | Log error, alert | FailoverStateMachine | **Failover: action error** |
-| T17 | IN_PROGRESS | SYS_ACTION_FAILED | ERROR | - | Log error, alert | FailoverStateMachine | **Failover: action error** |
-| T18 | TRANSFERRED | SYS_ACTION_FAILED | ERROR | - | Log error, alert | FailoverStateMachine | **Failover: action error** |
-| T19 | ENDING | SYS_ACTION_FAILED | ERROR | - | Log error, alert | FailoverStateMachine | **Failover: action error** |
+| T15 | NEW | SYS_ACTION_FAILED | ERROR | - | Log error, alert | Business layer | **Failover: action error (business layer catches StateMachineException)** |
+| T16 | INITIATED | SYS_ACTION_FAILED | ERROR | - | Log error, alert | Business layer | **Failover: action error (business layer catches StateMachineException)** |
+| T17 | IN_PROGRESS | SYS_ACTION_FAILED | ERROR | - | Log error, alert | Business layer | **Failover: action error (business layer catches StateMachineException)** |
+| T18 | TRANSFERRED | SYS_ACTION_FAILED | ERROR | - | Log error, alert | Business layer | **Failover: action error (business layer catches StateMachineException)** |
+| T19 | ENDING | SYS_ACTION_FAILED | ERROR | - | Log error, alert | Business layer | **Failover: action error (business layer catches StateMachineException)** |
 | T20 | ERROR | SYS_RETRY | IN_PROGRESS | - | Re-initialize resources | - | Manual or system retry |
 | T21 | ERROR | SYS_ABORT | CLOSED | - | Clean up, notify | - | Unrecoverable error |
 
@@ -261,9 +261,9 @@ flowchart TD
     I --> J[Execute transition action]
     J --> K{Action threw exception?}
 
-    K -->|Yes| L[FailoverStateMachine intercepts]
-    L --> M[Generate SYS_ACTION_FAILED event]
-    M --> N[Re-fire fail event<br/>→ enter ERROR state]
+    K -->|Yes| L[Throw StateMachineException<br/>State remains unchanged (action-first)]
+    L --> M[Business layer catches exception]
+    M --> N[Business layer can fire SYS_ACTION_FAILED<br/>→ enter ERROR state (optional failover pattern)]
     N --> O{Fail event also failed?}
     O -->|Yes| P[Throw StateMachineException<br/>loop prevention]
     O -->|No| Q[Continue with ERROR state result]
@@ -271,7 +271,7 @@ flowchart TD
     K -->|No| R[Execute entry action<br/>best-effort]
     Q --> R
     R --> S[Notify listeners<br/>8 callback points]
-    S --> T[Return StateContext]
+    S --> T[Return target state (ConversationState)]
 
     F --> U[Exception propagates to caller]
     H --> U

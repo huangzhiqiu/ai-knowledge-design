@@ -43,7 +43,7 @@ stateDiagram-v2
 
 > **满意度调查作为内部子阶段**：当 `surveyEnabled=true` 时，`SURVEY_START` 是 `IN_PROGRESS` 内的内部转换（IN_PROGRESS → IN_PROGRESS）。它不会改变状态，但会执行 SurveyStartAction。`SURVEY_COMPLETE` 和 `SYS_SURVEY_TIMEOUT` 直接从 `IN_PROGRESS` 转换到 `ENDING`。
 
-> **故障转移（动作错误 → 失败事件）**：当动作抛出未处理异常时，`FailoverStateMachine` 自动触发 `SYS_ACTION_FAILED` 进入 `ERROR` 状态。从 `ERROR` 状态，系统可以重试（`SYS_RETRY` → IN_PROGRESS）或中止（`SYS_ABORT` → CLOSED）。失败事件本身不会触发另一次故障转移（循环预防）。
+> **故障转移（动作错误 → 业务层处理）**：COLA StateMachine 遵循 action-first 原则。当动作抛出未处理异常时，抛出 `StateMachineException`，状态保持不变。业务层可以捕获此异常并实现故障转移逻辑：触发 `SYS_ACTION_FAILED` 进入 `ERROR` 状态，然后重试（`SYS_RETRY` → IN_PROGRESS）或中止（`SYS_ABORT` → CLOSED）。故障转移模式请参见 `05-Advanced-Features.md` §7。
 
 ### 1.2 迁移表
 
@@ -64,11 +64,11 @@ stateDiagram-v2
 | T12 | IN_PROGRESS | SURVEY_START | IN_PROGRESS | surveyEnabled | SurveyStartAction | - | **内部转换：调查作为子阶段** |
 | T13 | IN_PROGRESS | SURVEY_COMPLETE | ENDING | - | SurveyCompleteAction | - | 满意度调查正常完成 |
 | T14 | IN_PROGRESS | SYS_SURVEY_TIMEOUT | ENDING | - | - | SurveyTimeoutMonitor | 满意度调查超时 |
-| T15 | NEW | SYS_ACTION_FAILED | ERROR | - | 记录错误，告警 | FailoverStateMachine | **故障转移：动作错误** |
-| T16 | INITIATED | SYS_ACTION_FAILED | ERROR | - | 记录错误，告警 | FailoverStateMachine | **故障转移：动作错误** |
-| T17 | IN_PROGRESS | SYS_ACTION_FAILED | ERROR | - | 记录错误，告警 | FailoverStateMachine | **故障转移：动作错误** |
-| T18 | TRANSFERRED | SYS_ACTION_FAILED | ERROR | - | 记录错误，告警 | FailoverStateMachine | **故障转移：动作错误** |
-| T19 | ENDING | SYS_ACTION_FAILED | ERROR | - | 记录错误，告警 | FailoverStateMachine | **故障转移：动作错误** |
+| T15 | NEW | SYS_ACTION_FAILED | ERROR | - | 记录错误，告警 | 业务层 | **故障转移：动作错误（业务层捕获 StateMachineException）** |
+| T16 | INITIATED | SYS_ACTION_FAILED | ERROR | - | 记录错误，告警 | 业务层 | **故障转移：动作错误（业务层捕获 StateMachineException）** |
+| T17 | IN_PROGRESS | SYS_ACTION_FAILED | ERROR | - | 记录错误，告警 | 业务层 | **故障转移：动作错误（业务层捕获 StateMachineException）** |
+| T18 | TRANSFERRED | SYS_ACTION_FAILED | ERROR | - | 记录错误，告警 | 业务层 | **故障转移：动作错误（业务层捕获 StateMachineException）** |
+| T19 | ENDING | SYS_ACTION_FAILED | ERROR | - | 记录错误，告警 | 业务层 | **故障转移：动作错误（业务层捕获 StateMachineException）** |
 | T20 | ERROR | SYS_RETRY | IN_PROGRESS | - | 重新初始化资源 | - | 手动或系统重试 |
 | T21 | ERROR | SYS_ABORT | CLOSED | - | 清理，通知 | - | 不可恢复的错误 |
 
@@ -261,9 +261,9 @@ flowchart TD
     I --> J[执行迁移动作]
     J --> K{动作抛出异常?}
 
-    K -->|是| L[FailoverStateMachine 拦截]
-    L --> M[生成 SYS_ACTION_FAILED 事件]
-    M --> N[重新触发失败事件<br/>→ 进入 ERROR 状态]
+    K -->|是| L[抛出 StateMachineException<br/>状态保持不变（action-first）]
+    L --> M[业务层捕获异常]
+    M --> N[业务层可触发 SYS_ACTION_FAILED<br/>→ 进入 ERROR 状态（可选故障转移模式）]
     N --> O{失败事件也失败?}
     O -->|是| P[抛出 StateMachineException<br/>循环预防]
     O -->|否| Q[继续 ERROR 状态结果]
@@ -271,7 +271,7 @@ flowchart TD
     K -->|否| R[执行 entry 动作<br/>尽力执行]
     Q --> R
     R --> S[通知监听器<br/>8 个回调点]
-    S --> T[返回 StateContext]
+    S --> T[返回目标状态（ConversationState）]
 
     F --> U[异常传播到调用方]
     H --> U
