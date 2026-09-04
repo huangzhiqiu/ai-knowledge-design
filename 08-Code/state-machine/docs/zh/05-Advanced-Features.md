@@ -542,11 +542,14 @@ StateMachine<OrderState, OrderEvent, OrderContext> failover = new FailoverStateM
 );
 
 // 当动作抛出时：
-//   1. FailoverStateMachine 捕获异常
-//   2. 生成 ORDER_FAILED 事件
-//   3. 重新触发 ORDER_FAILED → 状态机遵循失败分支 → ERROR 状态
-StateContext<...> result = failover.fireEvent(OrderState.PROCESSING, OrderEvent.PAY, ctx);
-// result.getTargetState() == OrderState.ERROR
+//   1. COLA StateMachine 抛出 StateMachineException
+//   2. 状态保持不变（action-first 原则）
+//   3. 业务层应捕获异常并处理故障转移逻辑
+// 注意：FailoverStateMachine/ResilientStateMachine 是 v3.0 中移除的自定义功能
+// COLA StateMachine 使用 action-first 原则：动作失败抛出异常，状态不变
+ConversationState result = machine.fireEvent(ConversationState.IN_PROGRESS, ConversationFact.CUSTOMER_CLOSE, ctx);
+// result == ConversationState.ENDING（如果动作成功）
+// 抛出 StateMachineException（如果动作失败，状态保持 IN_PROGRESS）
 ```
 
 ### 10.4 与重试组合（推荐模式）

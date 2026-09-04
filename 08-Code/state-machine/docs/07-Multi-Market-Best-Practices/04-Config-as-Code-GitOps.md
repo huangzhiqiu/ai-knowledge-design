@@ -359,10 +359,13 @@ public class GitConfigService implements ConfigProvider {
 Every state transition record includes the config version:
 
 ```java
+// COLA StateMachine returns target state directly
+ConversationState to = sm.fireEvent(from, fact, ctx);
+
 StateTransitionRecord record = StateTransitionRecord.builder()
         .businessId(conversationId)
         .fromState(from.name())
-        .toState(result.getTargetState().name())
+        .toState(to.name())
         .fact(fact.name())
         .market(market)
         .configVersion(configService.getConfigVersion())  // Git commit hash

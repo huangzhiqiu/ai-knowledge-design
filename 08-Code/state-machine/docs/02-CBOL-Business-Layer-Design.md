@@ -530,10 +530,10 @@ public class ChatEngineStateMachineService {
     private final StateMachine<ConversationState, ConversationFact, CbolStateContext> convSm;
 
     public ChatEngineStateMachineService() {
-        this.convSm = StateMachineRegistry.getInstance().get(ConversationStateMachineFactory.MACHINE_ID);
+        this.convSm = StateMachineFactory.get(ConversationStateMachineFactory.MACHINE_ID);
     }
 
-    public StateContext<ConversationState, ConversationFact, CbolStateContext> fire(
+    public ConversationState fire(
             CbolStateContext ctx, ConversationFact fact) {
         // Null validation
         Objects.requireNonNull(ctx, "ctx must not be null");
@@ -543,21 +543,15 @@ public class ChatEngineStateMachineService {
         long start = System.currentTimeMillis();
         try {
             ConversationState from = ctx.conversation().state();
-            StateContext<...> result = convSm.fireEvent(from, fact, ctx);
+            ConversationState to = convSm.fireEvent(from, fact, ctx);
 
             // Audit logging
-            StateTransitionRecord record = StateTransitionRecord.builder()
-                .businessId(ctx.conversation().conversationId())
-                .fromState(from.name())
-                .toState(result.getTargetState().name())
-                .fact(fact.name())
-                .guardResult(result.isTransitionAccepted())
-                .timestampMs(System.currentTimeMillis())
-                .traceId(ctx.traceContext().traceId())
-                .durationMs(System.currentTimeMillis() - start)
-                .build();
-            log.info("StateTransitionRecord: {}", record);
-            return result;
+            log.info("State transition: {} --({})--> {}, conversationId={}, traceId={}, durationMs={}",
+                    from, fact, to,
+                    ctx.conversation().conversationId(),
+                    ctx.traceContext().traceId(),
+                    System.currentTimeMillis() - start);
+            return to;
         } finally {
             TraceMdcHelper.clear();
         }
@@ -605,30 +599,40 @@ public class ConversationStateMachineFactory {
 
         // ... (all 10 transitions)
 
-        StateMachine<...> sm = builder.build();
-        StateMachineRegistry.getInstance().register(sm);
+        StateMachine<...> sm = builder.build(MACHINE_ID);
+        StateMachineFactory.register(sm);
         return sm;
     }
 }
 ```
 
-### 9.2 State Machine Registry
+### 9.2 State Machine Factory (COLA)
 
-The chat-engine module uses the global singleton `StateMachineRegistry` from statemachine-core for state machine registration and lookup. This eliminates the need for a module-specific registry wrapper.
+The chat-engine module uses Alibaba COLA's `StateMachineFactory` for state machine registration and lookup. COLA StateMachine does NOT allow rebuilding a state machine with the same ID, so factories use a caching pattern.
 
 ```java
 // Register a state machine
-StateMachineRegistry.getInstance().register(machine);
+StateMachineFactory.register(machine);
 
 // Look up a state machine by ID
 StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
-    StateMachineRegistry.getInstance().get(ConversationStateMachineFactory.MACHINE_ID);
+    StateMachineFactory.get(ConversationStateMachineFactory.MACHINE_ID);
 
-// Clear all registered machines (for test isolation)
-StateMachineRegistry.getInstance().clear();
+// Factory caching pattern (recommended)
+public static StateMachine<...> build() {
+    try {
+        StateMachine<...> existing = StateMachineFactory.get(MACHINE_ID);
+        if (existing != null) return existing;
+    } catch (Exception ignored) {
+        // Not built yet
+    }
+    synchronized (Factory.class) {
+        // Double-check + build + register
+    }
+}
 ```
 
-**Design note**: Both chat-engine and agent-connector share the same global registry. Since each state machine has a unique machine ID (`conversation` vs `interaction`), there are no conflicts. The global singleton approach simplifies the API and eliminates duplicate registry holder classes.
+**Design note**: Both chat-engine and agent-connector share the same `StateMachineFactory`. Since each state machine has a unique machine ID (`conversation` vs `interaction`), there are no conflicts. COLA's `StateMachineFactory` is a global singleton that simplifies the API and eliminates duplicate registry holder classes.
 
 ## 10. Typical Usage Flow
 

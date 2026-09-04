@@ -239,7 +239,7 @@ flowchart TD
     C --> D[StateMachineValidator<br/>8 build-time rules]
     D --> E{Validation passed?}
     E -->|No| F[Throw IllegalStateException<br/>with all validation errors]
-    E -->|Yes| G[Register in StateMachineRegistry]
+    E -->|Yes| G[Register in StateMachineFactory]
     G --> H[State machine ready<br/>id = conversation-sm]
 ```
 

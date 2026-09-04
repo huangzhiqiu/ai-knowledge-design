@@ -239,7 +239,7 @@ flowchart TD
     C --> D[StateMachineValidator<br/>8 条构建时规则]
     D --> E{校验通过?}
     E -->|否| F[抛出 IllegalStateException<br/>带所有校验错误]
-    E -->|是| G[注册到 StateMachineRegistry]
+    E -->|是| G[注册到 StateMachineFactory]
     G --> H[状态机就绪<br/>id = conversation-sm]
 ```
 

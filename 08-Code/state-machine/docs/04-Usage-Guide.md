@@ -1,6 +1,7 @@
 # Usage Guide
 
-> Version: 2.1 | Last Updated: 2026-09-03
+> Version: 3.0 | Last Updated: 2026-09-05
+> Based on Alibaba COLA StateMachine: https://github.com/alibaba/COLA
 
 ## 1. Quick Start
 
@@ -10,7 +11,7 @@ This is a multi-module Maven project with three modules:
 
 | Module | ArtifactId | Package | Responsibility |
 |--------|-----------|---------|----------------|
-| **statemachine-core** | `statemachine-core` | `com.selfdevelopment.statemachine` | Generic state machine engine + advanced features |
+| **statemachine-core** | `statemachine-core` | `com.alibaba.cola.statemachine` | Alibaba COLA StateMachine core engine |
 | **chat-engine** | `chat-engine` | `com.selfdevelopment.chatengine` | Conversation state machine (business layer) |
 | **agent-connector** | `agent-connector` | `com.selfdevelopment.agentconnector` | Interaction state machine (channel layer) |
 
@@ -19,7 +20,7 @@ This is a multi-module Maven project with three modules:
 Add the appropriate module to your `pom.xml`:
 
 ```xml
-<!-- Core state machine engine (always needed) -->
+<!-- Core state machine engine (Alibaba COLA StateMachine, always needed) -->
 <dependency>
     <groupId>com.selfdevelopment</groupId>
     <artifactId>statemachine-core</artifactId>
@@ -45,406 +46,421 @@ Add the appropriate module to your `pom.xml`:
 
 ```java
 import com.selfdevelopment.chatengine.statemachine.factory.ConversationStateMachineFactory;
-import com.selfdevelopment.statemachine.api.StateMachine;
+import com.alibaba.cola.statemachine.StateMachine;
 
 // Build and register (call once at application startup)
-StateMachine<ConversationState, ConversationFact, CbolStateContext> machine =
-    ConversationStateMachineFactory.build();
+// Factory uses caching pattern to prevent duplicate builds
+StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+        ConversationStateMachineFactory.build();
 ```
 
 ### 1.4 Fire an Event
 
 ```java
-import com.selfdevelopment.chatengine.service.ChatEngineStateMachineService;
-import com.selfdevelopment.chatengine.context.CbolStateContext;
-import com.selfdevelopment.chatengine.context.TraceContext;
-import com.selfdevelopment.chatengine.config.StateMachineMarketConfig;
-import com.selfdevelopment.chatengine.model.ConversationInstance;
-import com.selfdevelopment.statemachine.core.StateContext;
-
-// 1. Build context
+// Build context
 CbolStateContext ctx = CbolStateContext.builder()
-    .conversation(ConversationInstance.builder()
-        .conversationId("conv-001")
-        .state(ConversationState.INITIATED)
-        .market("HK")
-        .lastActivityTs(System.currentTimeMillis())
-        .build())
-    .marketConfig(StateMachineMarketConfig.defaultConfig())
-    .traceContext(TraceContext.generate())
-    .build();
-
-// 2. Fire event
-ChatEngineStateMachineService service = new ChatEngineStateMachineService();
-StateContext<ConversationState, ConversationFact, CbolStateContext> result =
-    service.fire(ctx, ConversationFact.CUSTOMER_CONNECT);
-
-// 3. Use result
-System.out.println("New state: " + result.getTargetState());  // IN_PROGRESS
-```
-
-## 2. Building a Custom State Machine
-
-### 2.1 Using the Builder DSL
-
-```java
-StateMachine<OrderState, OrderEvent, OrderContext> machine =
-    StateMachineBuilder.<OrderState, OrderEvent, OrderContext>builder("order-machine")
-        .initialState(OrderState.CREATED)
-        .endStates(OrderState.COMPLETED, OrderState.CANCELLED)
-
-        // State with entry/exit actions
-        .stateWithEntry(OrderState.PAID, ctx -> sendEmail(ctx))
-        .stateWithExit(OrderState.PAID, ctx -> logExit(ctx))
-
-        // Transition with guard and action
-        .transition()
-            .from(OrderState.CREATED)
-            .on(OrderEvent.PAY)
-            .to(OrderState.PAID)
-            .guard(ctx -> ctx.getBusinessContext().isPaymentValid())
-            .perform(ctx -> processPayment(ctx))
-        .and()
-
-        // Internal transition (state doesn't change)
-        .transition()
-            .from(OrderState.PAID)
-            .on(OrderEvent.UPDATE_ADDRESS)
-            .to(OrderState.PAID)
-            .internal()
-            .perform(ctx -> updateAddress(ctx))
-        .and()
-
-        .build();
-```
-
-### 2.2 Using Configurer Adapter (Spring Style)
-
-```java
-public class OrderStateMachineConfig
-        extends StateMachineConfigurerAdapter<OrderState, OrderEvent, OrderContext> {
-
-    @Override
-    public void configure(StateConfigurer<OrderState, OrderEvent, OrderContext> states) {
-        states.initial(OrderState.CREATED)
-              .state(OrderState.PAID)
-              .state(OrderState.SHIPPED)
-              .end(OrderState.COMPLETED)
-              .end(OrderState.CANCELLED);
-    }
-
-    @Override
-    public void configure(TransitionConfigurer<OrderState, OrderEvent, OrderContext> transitions) {
-        transitions.withExternal()
-            .source(OrderState.CREATED)
-            .event(OrderEvent.PAY)
-            .target(OrderState.PAID)
-            .guard(ctx -> ctx.getBusinessContext().isPaymentValid())
-            .action(ctx -> processPayment(ctx))
-        .and().withExternal()
-            .source(OrderState.PAID)
-            .event(OrderEvent.SHIP)
-            .target(OrderState.SHIPPED)
-        .and().withExternal()
-            .source(OrderState.SHIPPED)
-            .event(OrderEvent.DELIVER)
-            .target(OrderState.COMPLETED);
-    }
-}
-
-// Usage
-StateMachine<OrderState, OrderEvent, OrderContext> machine =
-    StateMachineBuilder.fromConfigurer("order-machine", new OrderStateMachineConfig());
-```
-
-## 3. Working with Listeners
-
-### 3.1 Audit Logging Listener
-
-```java
-machine.addListener(new StateMachineListener<OrderState, OrderEvent, OrderContext>() {
-    @Override
-    public void stateChanged(StateContext<OrderState, OrderEvent, OrderContext> ctx) {
-        log.info("Order {}: {} -> {} (event={})",
-            ctx.getBusinessContext().getOrderId(),
-            ctx.getSourceState(),
-            ctx.getTargetState(),
-            ctx.getEvent());
-    }
-
-    @Override
-    public void transitionError(StateContext<OrderState, OrderEvent, OrderContext> ctx) {
-        log.error("Transition error: {} -> {} on {}",
-            ctx.getSourceState(), ctx.getTargetState(), ctx.getEvent(),
-            ctx.getException());
-    }
-});
-```
-
-### 3.2 Metrics Listener
-
-```java
-machine.addListener(new StateMachineListener<>() {
-    @Override
-    public void transitionEnded(Transition<...> t, StateContext<...> ctx) {
-        metrics.increment("statemachine.transition.success",
-            Tags.of("machine", ctx.getMachineId()));
-    }
-
-    @Override
-    public void transitionDenied(StateContext<...> ctx, String reason) {
-        metrics.increment("statemachine.transition.denied",
-            Tags.of("reason", reason));
-    }
-});
-```
-
-## 4. Using ExtendedState
-
-```java
-// Create extended state for a conversation
-ExtendedState ext = new ExtendedState();
-ext.set("retryCount", 0);
-ext.set("lastError", null);
-
-// Fire first event
-StateContext<...> result1 = machine.fireEvent(
-    OrderState.CREATED, OrderEvent.PAY, context, ext);
-
-// Read extended state after transition
-int retryCount = result1.getExtendedState().get("retryCount", Integer.class);
-
-// Use in guard
-.guard(ctx -> {
-    Integer retries = ctx.getExtendedState().get("retryCount", Integer.class);
-    return retries != null && retries < 3;
-})
-```
-
-## 5. Multi-Market Configuration
-
-### 5.1 Using InMemoryProvider
-
-```java
-MarketConfigProvider.InMemoryProvider provider = new MarketConfigProvider.InMemoryProvider();
-
-// Configure per-market settings
-provider.put("HK", StateMachineMarketConfig.builder()
-    .customerIdleSeconds(180)      // 3 min for HK market
-    .transferTimeoutSeconds(120)    // 2 min
-    .endingGraceSeconds(60)          // 1 min
-    .surveyEnabled(true)
-    .build());
-
-provider.put("SG", StateMachineMarketConfig.builder()
-    .customerIdleSeconds(300)
-    .transferTimeoutSeconds(180)
-    .build());
-
-// Get config for a market (falls back to default if unknown)
-StateMachineMarketConfig config = provider.getConfig("HK");
-```
-
-### 5.2 Building Context with Market Config
-
-```java
-CbolStateContext ctx = CbolStateContext.builder()
-    .conversation(conversation)
-    .marketConfig(marketConfigProvider.getConfig(conversation.market()))
-    .traceContext(TraceContext.generate())
-    .build();
-```
-
-## 6. Using Monitors
-
-### 6.1 Setting Up Monitors
-
-```java
-ChatEngineStateMachineService service = new ChatEngineStateMachineService();
-
-CustomerIdleMonitor idleMonitor = new CustomerIdleMonitor(service);
-TransferMonitor transferMonitor = new TransferMonitor(service);
-EndingGraceMonitor endingMonitor = new EndingGraceMonitor(service);
-```
-
-### 6.2 Scheduled Monitor Execution
-
-```java
-@Scheduled(fixedDelay = 30000)  // Every 30 seconds
-public void checkCustomerIdle() {
-    List<Conversation> activeConversations = repository.findActiveConversations();
-    for (Conversation conv : activeConversations) {
-        CbolStateContext ctx = buildContext(conv);
-        idleMonitor.check(ctx, conv.getLastActivityTs());
-    }
-}
-
-@Scheduled(fixedDelay = 15000)  // Every 15 seconds
-public void checkTransferTimeout() {
-    List<Conversation> transferring = repository.findTransferringConversations();
-    for (Conversation conv : transferring) {
-        CbolStateContext ctx = buildContext(conv);
-        transferMonitor.check(ctx, conv.getTransferStartTs());
-    }
-}
-```
-
-## 7. Async Action Execution
-
-### 7.1 Using ActionWorker
-
-> **[RESERVED - Not used in production]** ActionWorker is a reserved utility for future async actions.
-> The current state machine executes actions synchronously (action-first transition).
-
-```java
-ActionWorker worker = new ActionWorker();  // Default: core=CPU, max=CPU*2, queue=1000
-
-// Or with custom configuration
-ActionWorker customWorker = new ActionWorker(4, 8, 60, 500);
-
-// Submit async action (implement core Action interface)
-Action<ConversationState, ConversationFact, CbolStateContext> sendNotification = ctx -> {
-    CbolStateContext businessCtx = ctx.getBusinessContext();
-    notificationService.send(businessCtx.conversation().tenantId(), "Your conversation is IN_PROGRESS");
-};
-
-// Create StateContext wrapper
-StateContext<ConversationState, ConversationFact, CbolStateContext> stateCtx = 
-    StateContext.<ConversationState, ConversationFact, CbolStateContext>builder()
-        .sourceState(ConversationState.IN_PROGRESS)
-        .targetState(ConversationState.IN_PROGRESS)
-        .event(ConversationFact.AGENT_ATTACHED)
-        .businessContext(ctx)
+        .conversation(conversation)
+        .marketConfig(StateMachineMarketConfig.defaultConfig())
+        .traceContext(TraceContext.generate())
         .build();
 
-worker.submit(sendNotification, stateCtx);
+// Fire event and get new state (COLA API returns target state directly)
+ConversationState newState = sm.fireEvent(
+        ConversationState.NEW,
+        ConversationFact.CONVERSATION_INITIATED,
+        ctx);
 
-// Shutdown at application exit
-worker.shutdown();
+// Update conversation state
+conversation.setState(newState);
 ```
 
-### 7.2 Core Action Interface
+## 2. COLA Builder DSL
 
-Actions directly implement the core `Action<S, E, C>` interface from `statemachine-core`:
+### 2.1 External Transition
+
+Define an external state transition (state changes):
 
 ```java
-@FunctionalInterface
-public interface Action<S, E, C> {
-    void execute(StateContext<S, E, C> context);
+StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> builder =
+        StateMachineBuilderFactory.create();
+
+builder.externalTransition()
+        .from(ConversationState.NEW)
+        .to(ConversationState.INITIATED)
+        .on(ConversationFact.CONVERSATION_INITIATED)
+        .when(ctx -> ctx.getMarketConfig() != null)  // optional guard
+        .perform(new ConversationInitAction());
+```
+
+**Builder API order:** `from() → to() → on() → when() → perform()`
+
+### 2.2 Internal Transition
+
+Define an internal transition (state does NOT change, but action executes):
+
+```java
+builder.internalTransition()
+        .within(ConversationState.IN_PROGRESS)
+        .on(ConversationFact.SURVEY_START)
+        .perform(new SurveyStartAction());
+```
+
+### 2.3 Build and Register
+
+```java
+StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+        builder.build("conversation");
+StateMachineFactory.register(sm);
+```
+
+### 2.4 Retrieve State Machine
+
+```java
+StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+        StateMachineFactory.get("conversation");
+```
+
+## 3. Action Interface
+
+### 3.1 Implement an Action
+
+```java
+import com.alibaba.cola.statemachine.Action;
+
+public class CustomerConnectAction
+        implements Action<ConversationState, ConversationFact, CbolStateContext> {
+
+    @Override
+    public void execute(ConversationState from, ConversationState to,
+                        ConversationFact event, CbolStateContext ctx) {
+        // Your business logic here
+        log.info("Customer connected: conversationId={}",
+                ctx.getConversation().getConversationId());
+    }
 }
 ```
 
-**Action-First Transition Principle**: Action executes BEFORE state change. If action fails, state does NOT change.
+### 3.2 Action-First Principle
 
-See [Concrete Action Implementations](../02-CBOL-Business-Layer-Design.md#75-concrete-action-implementations) for the 6 built-in actions in chat-engine.
-
-## 8. Error Handling Patterns
-
-### 8.1 Handling StateMachineException
+Actions execute **before** state change. If an action fails, the state does NOT change:
 
 ```java
 try {
-    StateContext<...> result = service.fire(ctx, ConversationFact.TRANSFER_REQUEST);
-    // Update conversation state
-    conversation.setState(result.getTargetState());
-    repository.save(conversation);
+    ConversationState newState = sm.fireEvent(
+            ConversationState.INITIATED,
+            ConversationFact.CUSTOMER_CONNECT,
+            ctx);
+    // State changed successfully
 } catch (StateMachineException e) {
-    String message = e.getMessage();
-    if (message.contains("No transition found")) {
-        // Invalid event for current state
-        return ResponseEntity.badRequest().body("Invalid action");
-    } else if (message.contains("guard condition failed")) {
-        // Business condition not met
-        return ResponseEntity.status(409).body("Transfer not available");
-    } else if (message.contains("action failed")) {
-        // Action execution error
-        log.error("Action failed", e);
-        return ResponseEntity.status(500).body("Processing error");
+    // Action failed or no transition matched
+    // State remains INITIATED
+    log.error("Transition failed", e);
+}
+```
+
+## 4. Condition (Guard) Interface
+
+### 4.1 Implement a Condition
+
+```java
+import com.alibaba.cola.statemachine.Condition;
+
+public class SurveyEnabledCondition implements Condition<CbolStateContext> {
+
+    @Override
+    public boolean isSatisfied(CbolStateContext ctx) {
+        return ctx.getMarketConfig().isSurveyEnabled();
     }
-    throw e;
 }
 ```
 
-### 8.2 Checking Before Firing
+### 4.2 Use Condition in Transition
 
 ```java
-// Check if transition exists (no guard evaluation)
-if (machine.hasTransition(conversation.getState(), event)) {
-    // Proceed
-}
+builder.externalTransition()
+        .from(ConversationState.IN_PROGRESS)
+        .to(ConversationState.ENDING)
+        .on(ConversationFact.SURVEY_COMPLETE)
+        .when(ctx -> ctx.getMarketConfig().isSurveyEnabled())
+        .perform(new SurveyCompleteAction());
+```
 
-// Check if event can be fired (including guard evaluation)
-if (machine.canFire(conversation.getState(), event, context)) {
-    machine.fireEvent(conversation.getState(), event, context);
+## 5. Chat Engine Usage
+
+### 5.1 Conversation States
+
+```java
+public enum ConversationState {
+    NEW,                // Initial state, conversation record created but not initialized
+    INITIATED,          // Conversation initialized, waiting for customer connection
+    IN_PROGRESS,        // Customer connected, actively handling (includes survey as sub-phase)
+    TRANSFERRED,        // Transfer to human agent in progress
+    ENDING,             // Conversation ending, grace period for cleanup
+    ERROR,              // Action failed, failover state
+    CLOSED              // Terminal state
 }
 ```
 
-## 9. Testing
-
-### 9.1 Unit Test Example
+### 5.2 Use ChatEngineStateMachineService
 
 ```java
-@Test
-void shouldTransitionFromInitiatedToActiveOnCustomerConnect() {
-    // Given
+// Initialize (call once at startup)
+ConversationStateMachineFactory.build();
+ChatEngineStateMachineService service = new ChatEngineStateMachineService();
+
+// Build context
+CbolStateContext ctx = buildContext();
+
+// Fire event (returns ConversationState directly)
+ConversationState newState = service.fire(ctx, ConversationFact.CUSTOMER_CONNECT);
+```
+
+### 5.3 Run Chat Engine Demo
+
+```bash
+cd 08-Code/state-machine
+mvnw.cmd compile -pl chat-engine
+java -cp chat-engine/target/classes:statemachine-core/target/classes com.selfdevelopment.chatengine.demo.ChatEngineDemo
+```
+
+## 6. Agent Connector Usage
+
+### 6.1 Interaction States
+
+```java
+public enum InteractionState {
+    CONNECTING,     // Connection being established
+    CONNECTED,      // Active connection
+    RECONNECTING,   // Reconnection in progress
+    HELD,           // Connection on hold
+    TRANSFERRING,   // Channel transfer in progress
+    DISCONNECTED    // Terminal state, connection closed
+}
+```
+
+### 6.2 Use AgentConnectorStateMachineService
+
+```java
+// Initialize (call once at startup)
+InteractionStateMachineFactory.create();
+AgentConnectorStateMachineService service = new AgentConnectorStateMachineService();
+
+// Build context
+AgentConnectorStateContext ctx = buildContext();
+
+// Fire event (returns InteractionState directly)
+InteractionState newState = service.fire(ctx, InteractionFact.CONNECTION_ESTABLISHED);
+```
+
+### 6.3 Run Agent Connector Demo
+
+```bash
+cd 08-Code/state-machine
+mvnw.cmd compile -pl agent-connector
+java -cp agent-connector/target/classes:statemachine-core/target/classes com.selfdevelopment.agentconnector.demo.AgentConnectorDemo
+```
+
+## 7. Multi-Market Configuration
+
+### 7.1 Default Configuration
+
+```java
+StateMachineMarketConfig config = StateMachineMarketConfig.defaultConfig();
+// customerIdleSeconds=300, transferTimeoutSeconds=120, endingGraceSeconds=30
+// surveyEnabled=true, transferEnabled=true, genesysEnabled=true
+```
+
+### 7.2 Custom Configuration
+
+```java
+StateMachineMarketConfig config = StateMachineMarketConfig.builder()
+        .customerIdleSeconds(600)
+        .transferTimeoutSeconds(200)
+        .endingGraceSeconds(60)
+        .surveyEnabled(true)
+        .transferEnabled(true)
+        .genesysEnabled(false)
+        .fallbackRoutingStrategy("DROP")
+        .build();
+```
+
+### 7.3 Market Config Provider
+
+```java
+MarketConfigProvider.InMemoryProvider provider = new MarketConfigProvider.InMemoryProvider();
+provider.put("HK", customConfig);
+
+StateMachineMarketConfig cfg = provider.getConfig("HK");
+```
+
+## 8. Monitors
+
+### 8.1 Customer Idle Monitor
+
+```java
+CustomerIdleMonitor monitor = new CustomerIdleMonitor(service);
+long lastActivity = System.currentTimeMillis() - 400 * 1000; // 400s ago
+monitor.check(ctx, lastActivity);
+// Fires SYS_CUSTOMER_IDLE if idle > customerIdleSeconds
+```
+
+### 8.2 Transfer Monitor
+
+```java
+TransferMonitor monitor = new TransferMonitor(service);
+long transferStart = System.currentTimeMillis() - 200 * 1000; // 200s ago
+monitor.check(ctx, transferStart);
+// Fires SYS_TRANSFER_TIMEOUT if transfer > transferTimeoutSeconds
+// Only active in TRANSFERRED state
+```
+
+### 8.3 Ending Grace Monitor
+
+```java
+EndingGraceMonitor monitor = new EndingGraceMonitor(service);
+long enterEnding = System.currentTimeMillis() - 60 * 1000; // 60s ago
+monitor.check(ctx, enterEnding);
+// Fires SYS_ENDING_GRACE_TIMEOUT if ending > endingGraceSeconds
+// Only active in ENDING state
+```
+
+## 9. Trace Context
+
+### 9.1 Generate Trace Context
+
+```java
+TraceContext traceContext = TraceContext.generate();
+// traceId = UUID, timestamp = current time
+```
+
+### 9.2 MDC Propagation
+
+```java
+// Set MDC for logging
+TraceMdcHelper.set(traceContext);
+try {
+    // Your code here - all logs will include traceId
+} finally {
+    TraceMdcHelper.clear();
+}
+```
+
+### 9.3 Async Action Worker (Reserved)
+
+```java
+// ActionWorker is a RESERVED utility class for future use
+// Current design uses synchronous action-first transitions
+ActionWorker worker = new ActionWorker();
+worker.submit(action, from, to, event, ctx);
+```
+
+## 10. PlantUML Diagram Generation
+
+```java
+StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+        ConversationStateMachineFactory.build();
+
+String plantUml = sm.generatePlantUML();
+System.out.println(plantUml);
+```
+
+Output:
+```
+@startuml
+[*] --> NEW
+NEW --> INITIATED : CONVERSATION_INITIATED
+INITIATED --> IN_PROGRESS : CUSTOMER_CONNECT
+IN_PROGRESS --> TRANSFERRED : TRANSFER_REQUEST
+IN_PROGRESS --> ENDING : CUSTOMER_CLOSE
+@enduml
+```
+
+## 11. Testing
+
+### 11.1 Run All Tests
+
+```bash
+cd 08-Code/state-machine
+mvnw.cmd clean test
+```
+
+### 11.2 Run Module Tests
+
+```bash
+# Chat engine tests
+mvnw.cmd test -pl chat-engine
+
+# Agent connector tests
+mvnw.cmd test -pl agent-connector
+
+# Core tests (COLA)
+mvnw.cmd test -pl statemachine-core
+```
+
+### 11.3 Test Coverage
+
+- statemachine-core: 219 COLA tests
+- chat-engine: 36 tests
+- agent-connector: (tests to be added)
+
+## 12. Best Practices
+
+### 12.1 State Machine Initialization
+
+```java
+// Call once at application startup
+@PostConstruct
+public void init() {
     ConversationStateMachineFactory.build();
-    ChatEngineStateMachineService service = new ChatEngineStateMachineService();
-    CbolStateContext ctx = buildTestContext(ConversationState.INITIATED);
-
-    // When
-    StateContext<ConversationState, ConversationFact, CbolStateContext> result =
-        service.fire(ctx, ConversationFact.CUSTOMER_CONNECT);
-
-    // Then
-    assertEquals(ConversationState.IN_PROGRESS, result.getTargetState());
-    assertTrue(result.isTransitionAccepted());
-}
-
-@Test
-void shouldThrowWhenNoTransitionExists() {
-    ChatEngineStateMachineService service = new ChatEngineStateMachineService();
-    CbolStateContext ctx = buildTestContext(ConversationState.CLOSED);
-
-    assertThrows(StateMachineException.class,
-        () -> service.fire(ctx, ConversationFact.CUSTOMER_CONNECT));
+    InteractionStateMachineFactory.create();
 }
 ```
 
-### 9.2 Test Isolation
+### 12.2 Factory Caching Pattern
+
+COLA StateMachine does NOT allow rebuilding. Use caching pattern:
 
 ```java
-@AfterEach
-void tearDown() {
-    StateMachineRegistry.getInstance().clear();  // Clear registry between tests
+public static StateMachine<...> build() {
+    try {
+        StateMachine<...> existing = StateMachineFactory.get(MACHINE_ID);
+        if (existing != null) return existing;
+    } catch (Exception ignored) {
+        // Not built yet
+    }
+    synchronized (Factory.class) {
+        // Double-check + build + register
+    }
 }
 ```
 
-## 10. Best Practices
+### 12.3 Error Handling
 
-### 10.1 DO
+```java
+try {
+    ConversationState newState = sm.fireEvent(source, event, ctx);
+} catch (StateMachineException e) {
+    // No transition matched or action failed
+    // State remains unchanged
+    log.error("State transition failed: source={}, event={}", source, event, e);
+    throw new BusinessException("Transition failed", e);
+}
+```
 
-- **DO** manage state persistence in the caller (repository/service layer)
-- **DO** capture market config as a snapshot in CbolStateContext
-- **DO** use TraceContext.generate() at the entry point of each request
-- **DO** wrap TraceMdcHelper.set() in try-finally with clear()
-- **DO** use bounded thread pools (ActionWorker default is safe)
-- **DO** register state machines once at application startup
-- **DO** use listeners for cross-cutting concerns (logging, metrics, audit)
-- **DO** keep actions idempotent where possible
+### 12.4 Idempotency
 
-### 10.2 DON'T
+```java
+// Use conversationId + event as idempotency key
+String idempotencyKey = ctx.getConversation().getConversationId() + ":" + event;
+if (processedEvents.contains(idempotencyKey)) {
+    return currentState; // Already processed
+}
+processedEvents.add(idempotencyKey);
+```
 
-- **DON'T** store current state in the state machine engine (it's stateless by design)
-- **DON'T** use `Executors.newCachedThreadPool()` (unbounded, OOM risk)
-- **DON'T** forget to call `TraceMdcHelper.clear()` in finally blocks
-- **DON'T** throw checked exceptions from actions (wrap in RuntimeException)
-- **DON'T** mutate CbolStateContext during transitions (it's an immutable record)
-- **DON'T** register the same machine ID twice (throws StateMachineException)
-- **DON'T** rely on entry/exit action failures to block transitions (they're best-effort)
+## 13. Spring Boot Integration
 
-## 11. Integration with Spring Boot
-
-### 11.1 Configuration Class
+### 13.1 Configuration Class
 
 ```java
 @Configuration
@@ -456,254 +472,36 @@ public class StateMachineConfig {
     }
 
     @Bean
-    public ChatEngineStateMachineService ChatEngineStateMachineService() {
+    public ChatEngineStateMachineService chatEngineStateMachineService() {
         return new ChatEngineStateMachineService();
     }
+}
+```
 
-    @Bean
-    public ActionWorker actionWorker() {
-        return new ActionWorker();
-    }
+### 13.2 Service Usage
 
-    @Bean
-    public MarketConfigProvider marketConfigProvider() {
-        MarketConfigProvider.InMemoryProvider provider =
-            new MarketConfigProvider.InMemoryProvider();
-        // Load from config center / Redis
-        return provider;
-    }
+```java
+@Service
+public class ConversationService {
 
-    @PreDestroy
-    public void shutdown() {
-        actionWorker().shutdown();
+    @Autowired
+    private ChatEngineStateMachineService stateMachineService;
+
+    public Conversation handleEvent(Conversation conversation, ConversationFact event) {
+        CbolStateContext ctx = buildContext(conversation);
+        ConversationState newState = stateMachineService.fire(ctx, event);
+        conversation.setState(newState);
+        return conversation;
     }
 }
 ```
 
-## 12. Advanced Features
+## 14. References
 
-### 12.1 Build-Time Validation
-
-Validate the state machine configuration at build time to catch errors early:
-
-```java
-// Validate during build (throws on ERROR-level issues)
-StateMachine<OrderState, OrderEvent, OrderContext> machine =
-    StateMachineBuilder.<OrderState, OrderEvent, OrderContext>builder("order")
-        .initialState(OrderState.CREATED)
-        .transition()
-            .from(OrderState.CREATED).on(OrderEvent.PAY).to(OrderState.PAID)
-        .and()
-        .build(true);  // validate=true
-
-// Or validate separately to get all errors
-List<ValidationError> errors = StateMachineValidator.validate(machine);
-errors.forEach(e -> System.out.println(e.level() + ": " + e.message()));
-```
-
-Validation rules: `NO_TRANSITIONS`, `INITIAL_STATE_DEFINED`, `INITIAL_STATE_REACHABLE`, `END_STATE_NO_OUTGOING`, `UNREACHABLE_STATE`, `DEAD_END_STATE`, `INTERNAL_TRANSITION_MATCH`, `DUPLICATE_TRANSITION_NO_GUARD`.
-
-### 12.2 Persistence with Optimistic Locking
-
-Use the built-in repository pattern with version-based optimistic locking:
-
-```java
-StateRepository<ConversationState> repository = new InMemoryStateRepository<>();
-
-// Save initial state
-repository.save("conv-123", ConversationState.INITIATED, 0);
-
-// Load and transition with optimistic lock
-ChatEngineStateMachineService service = new ChatEngineStateMachineService(machine, repository);
-StateContext<...> result = service.fireWithLock("conv-123", ConversationFact.USER_MESSAGE, ctx);
-// Automatically retries up to 3 times on version conflict
-```
-
-For production, implement `StateRepository` with JDBC/MongoDB:
-
-```java
-public class JdbcStateRepository<S> implements StateRepository<S> {
-    // SELECT state, version FROM conversations WHERE id = ?
-    // UPDATE conversations SET state = ?, version = version + 1 WHERE id = ? AND version = ?
-}
-```
-
-### 12.3 Idempotent Event Processing
-
-Prevent duplicate event processing with event ID deduplication:
-
-```java
-ProcessedEventStore store = new InMemoryProcessedEventStore();
-IdempotentStateMachineDecorator<OrderState, OrderEvent, OrderContext> idempotent =
-    new IdempotentStateMachineDecorator<>(machine, store);
-
-// First call: processes the event
-StateContext<...> result1 = idempotent.fireEventWithId(
-    "evt-001", OrderState.CREATED, OrderEvent.PAY, ctx);
-
-// Second call with same ID: returns cached result, does NOT re-process
-StateContext<...> result2 = idempotent.fireEventWithId(
-    "evt-001", OrderState.CREATED, OrderEvent.PAY, ctx);
-```
-
-### 12.4 Metrics with Micrometer
-
-Auto-instrument the state machine with Micrometer metrics:
-
-```java
-MeterRegistry registry = new SimpleMeterRegistry();  // or Spring's auto-configured registry
-StateMachine<OrderState, OrderEvent, OrderContext> monitored =
-    new MonitoredStateMachine<>(machine, registry);
-
-// All fireEvent calls are automatically instrumented
-monitored.fireEvent(OrderState.CREATED, OrderEvent.PAY, ctx);
-
-// Available metrics:
-// - statemachine.transition.duration (Timer)
-// - statemachine.transition.success (Counter)
-// - statemachine.transition.error (Counter)
-// - statemachine.transition.denied (Counter)
-// - statemachine.event.received (Counter)
-```
-
-### 12.5 Event Sourcing / Audit Trail
-
-Automatically record all transitions for audit and replay:
-
-```java
-StateTransitionStore<ConversationState, ConversationFact> store =
-    new InMemoryStateTransitionStore<>();
-
-StateMachine<ConversationState, ConversationFact, CbolStateContext> eventSourced =
-    new EventSourcedStateMachine<>(machine, store, "conv-123");
-
-// All transitions are automatically recorded
-eventSourced.fireEvent(ConversationState.INITIATED, ConversationFact.USER_MESSAGE, ctx);
-
-// Replay full history
-List<StateTransitionEvent<...>> history = store.replay("conv-123");
-
-// Reconstruct current state
-Optional<ConversationState> current = store.reconstructState("conv-123");
-
-// Time-travel query
-List<...> stateAtTime = store.replayUpTo("conv-123", Instant.parse("2026-01-01T10:00:00Z"));
-```
-
-### 12.6 Resilience / Failure Handling
-
-Choose a failure handling strategy based on your use case:
-
-```java
-// 1. Throw on failure (default)
-StateMachine<...> resilient = new ResilientStateMachine<>(machine, new ThrowFailureHandler<>());
-
-// 2. Return source state (no exceptions, check return value)
-StateMachine<...> resilient = new ResilientStateMachine<>(machine, new ReturnSourceFailureHandler<>());
-StateContext<...> result = resilient.fireEvent(state, event, ctx);
-if (!result.isTransitionAccepted()) {
-    // handle denial
-}
-
-// 3. Fallback to ERROR state
-StateMachine<...> resilient = new ResilientStateMachine<>(machine,
-    new FallbackStateFailureHandler<>(OrderState.ERROR));
-
-// 4. Retry with exponential backoff, then fallback
-FailureHandler<...> fallback = new FallbackStateFailureHandler<>(OrderState.ERROR);
-RetryFailureHandler<...> retry = RetryFailureHandler.exponentialBackoff(
-    3, fallback, 100, 5000);
-StateMachine<...> resilient = new ResilientStateMachine<>(machine, retry);
-```
-
-### 12.7 Timeout Events / Scheduled Transitions
-
-Automatically trigger events when an entity stays in a state too long:
-
-```java
-// Configure timeouts
-Map<ConversationState, TimeoutConfig<ConversationState, ConversationFact>> timeouts = Map.of(
-    ConversationState.IN_PROGRESS, TimeoutConfig.<ConversationState, ConversationFact>builder()
-        .state(ConversationState.IN_PROGRESS)
-        .timeoutEvent(ConversationFact.IDLE_TIMEOUT)
-        .duration(30).timeUnit(TimeUnit.SECONDS).build(),
-    ConversationState.TRANSFERRING, TimeoutConfig.<ConversationState, ConversationFact>builder()
-        .state(ConversationState.TRANSFERRING)
-        .timeoutEvent(ConversationFact.TRANSFER_TIMEOUT)
-        .duration(60).timeUnit(TimeUnit.SECONDS).build()
-);
-
-// Create scheduler
-StateMachineTimeoutScheduler<ConversationState, ConversationFact> scheduler =
-    new InMemoryTimeoutScheduler<>("conversation-timeout", 4);
-
-// Wrap the machine
-StateMachine<ConversationState, ConversationFact, CbolStateContext> timeoutAware =
-    new TimeoutAwareStateMachine<>(machine, scheduler, timeouts, "conv-123");
-
-// Entering IN_PROGRESS automatically starts 30s timer
-timeoutAware.fireEvent(ConversationState.INITIATED, ConversationFact.USER_MESSAGE, ctx);
-
-// Leaving IN_PROGRESS automatically cancels the timer
-timeoutAware.fireEvent(ConversationState.IN_PROGRESS, ConversationFact.AGENT_JOIN, ctx);
-
-// Query timeout status
-boolean IN_PROGRESS = timeoutAware.isTimeoutActive();
-long remainingMs = timeoutAware.getRemainingTimeoutMs();
-timeoutAware.cancelTimeout();  // manual cancel
-```
-
-This replaces the need for external Monitor classes (CustomerIdleMonitor, TransferMonitor, EndingGraceMonitor).
-
-### 12.8 Diagram Generation
-
-Generate documentation diagrams directly from the state machine configuration:
-
-```java
-// Mermaid (for GitHub / Markdown)
-String mermaid = StateMachineDiagramGenerator.toMermaid(machine);
-
-// PlantUML (for Confluence / enterprise docs)
-String plantUml = StateMachineDiagramGenerator.toPlantUml(machine);
-
-// Transition table (Markdown)
-String table = StateMachineDiagramGenerator.toTransitionTable(machine);
-
-// Write to files
-Files.writeString(Path.of("state-diagram.mmd"), mermaid);
-Files.writeString(Path.of("state-diagram.puml"), plantUml);
-Files.writeString(Path.of("transitions.md"), table);
-```
-
-### 12.9 Decorator Composition
-
-Compose multiple decorators for a full-featured pipeline:
-
-```java
-StateMachine<OrderState, OrderEvent, OrderContext> pipeline =
-    new TimeoutAwareStateMachine<>(          // 1. Outermost: timeout management
-        new ResilientStateMachine<>(         // 2. Failure handling
-            new EventSourcedStateMachine<>(  // 3. Audit trail
-                new MonitoredStateMachine<>( // 4. Metrics
-                    new IdempotentStateMachineDecorator<>( // 5. Innermost: deduplication
-                        machine,
-                        eventStore
-                    ),
-                    meterRegistry
-                ),
-                transitionStore,
-                "order-123"
-            ),
-            new ThrowFailureHandler<>()
-        ),
-        timeoutScheduler,
-        timeoutConfigs,
-        "order-123"
-    );
-```
-
-**Recommended order (outermost to innermost):** TimeoutAware → Resilient → EventSourced → Monitored → Idempotent → SimpleStateMachine
+- Alibaba COLA GitHub: https://github.com/alibaba/COLA
+- COLA StateMachine module: `cola-components/cola-component-statemachine`
+- COLA StateMachine tests: `cola-components/cola-component-statemachine/src/test/java/com/alibaba/cola/test/`
 
 ---
 
-*For detailed design of each advanced feature, see [05-Advanced-Features.md](./05-Advanced-Features.md).*
+*Last updated: 2026-09-05 (v3.0 — migrated to Alibaba COLA StateMachine)*

@@ -250,8 +250,8 @@ class MarketCompatibilityTest {
     void shouldTransitionSuccessfully(String market, ConversationState from,
                                         ConversationFact event, ConversationState expectedTo) {
         StateMachineMarketConfig config = configLoader.load(market);
-        StateContext<...> result = fireEvent(config, from, event);
-        assertEquals(expectedTo, result.getTargetState());
+        ConversationState result = fireEvent(config, from, event);
+        assertEquals(expectedTo, result);
     }
 
     @ParameterizedTest

@@ -208,12 +208,10 @@ class MarketBehaviorTest {
     @MethodSource("allActiveTransitions")
     void shouldTransitionSuccessfully(MarketTestCase testCase) {
         StateMachineMarketConfig config = loadConfig(testCase.market());
-        StateContext<...> result = processor.fireEvent(
+        ConversationState result = processor.fireEvent(
                 testCase.sourceState(), testCase.event(), config);
 
-        assertTrue(result.isTransitionAccepted(),
-                "Expected transition accepted: " + testCase.description());
-        assertEquals(testCase.expectedTarget(), result.getTargetState(),
+        assertEquals(testCase.expectedTarget(), result,
                 "Unexpected target state: " + testCase.description());
     }
 
@@ -324,7 +322,7 @@ public class CrossMarketComparisonTest {
                     for (String market : markets) {
                         StateMachineMarketConfig config = loadConfig(market);
                         try {
-                            targets.add(fire(config, state, event).getTargetState());
+                            targets.add(fire(config, state, event));
                         } catch (StateMachineException e) {
                             targets.add(null); // null = 拒绝
                         }

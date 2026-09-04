@@ -364,10 +364,13 @@ public class GitConfigService implements ConfigProvider {
 每个状态迁移记录包含配置版本：
 
 ```java
+// COLA StateMachine 直接返回目标状态
+ConversationState to = sm.fireEvent(from, fact, ctx);
+
 StateTransitionRecord record = StateTransitionRecord.builder()
         .businessId(conversationId)
         .fromState(from.name())
-        .toState(result.getTargetState().name())
+        .toState(to.name())
         .fact(fact.name())
         .market(market)
         .configVersion(configService.getConfigVersion())  // Git 提交哈希

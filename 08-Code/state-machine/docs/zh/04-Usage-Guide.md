@@ -1,25 +1,26 @@
 # 使用指南
 
-> 版本：2.1 | 最后更新：2026-09-03
+> 版本：3.0 | 最后更新：2026-09-05
+> 基于阿里巴巴 COLA StateMachine：https://github.com/alibaba/COLA
 
 ## 1. 快速开始
 
 ### 1.1 项目结构
 
-这是一个多模块 Maven 项目，包含三个模块：
+这是一个包含三个模块的多模块 Maven 项目：
 
 | 模块 | ArtifactId | 包名 | 职责 |
 |------|-----------|------|------|
-| **statemachine-core** | `statemachine-core` | `com.selfdevelopment.statemachine` | 通用状态机引擎 + 高级特性 |
+| **statemachine-core** | `statemachine-core` | `com.alibaba.cola.statemachine` | 阿里巴巴 COLA StateMachine 核心引擎 |
 | **chat-engine** | `chat-engine` | `com.selfdevelopment.chatengine` | 会话状态机（业务层） |
 | **agent-connector** | `agent-connector` | `com.selfdevelopment.agentconnector` | 交互状态机（通道层） |
 
 ### 1.2 添加依赖
 
-将相应的模块添加到你的 `pom.xml`：
+在 `pom.xml` 中添加相应的模块：
 
 ```xml
-<!-- 核心状态机引擎（始终需要） -->
+<!-- 核心状态机引擎（阿里巴巴 COLA StateMachine，必需） -->
 <dependency>
     <groupId>com.selfdevelopment</groupId>
     <artifactId>statemachine-core</artifactId>
@@ -41,397 +42,425 @@
 </dependency>
 ```
 
-### 1.2 构建并注册状态机
+### 1.3 构建和注册状态机
 
 ```java
-import com.selfdevelopment.chatengine.statemachine.ConversationStateMachineFactory;
-import com.selfdevelopment.statemachine.core.StateMachine;
+import com.selfdevelopment.chatengine.statemachine.factory.ConversationStateMachineFactory;
+import com.alibaba.cola.statemachine.StateMachine;
 
-// 构建并注册（在应用启动时调用一次）
-StateMachine<ConversationState, ConversationFact, CbolStateContext> machine =
-    ConversationStateMachineFactory.build();
+// 构建和注册（在应用启动时调用一次）
+// 工厂使用缓存模式防止重复构建
+StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+        ConversationStateMachineFactory.build();
 ```
 
-### 1.3 触发事件
+### 1.4 触发事件
 
 ```java
-import com.selfdevelopment.chatengine.statemachine.ChatEngineStateMachineService;
-import com.selfdevelopment.chatengine.context.CbolStateContext;
-import com.selfdevelopment.chatengine.context.TraceContext;
-import com.selfdevelopment.chatengine.config.StateMachineMarketConfig;
-import com.selfdevelopment.chatengine.model.ConversationInstance;
-import com.selfdevelopment.statemachine.core.StateContext;
-
-// 1. 构建上下文
+// 构建上下文
 CbolStateContext ctx = CbolStateContext.builder()
-    .conversation(ConversationInstance.builder()
-        .conversationId("conv-001")
-        .state(ConversationState.INITIATED)
-        .market("HK")
-        .lastActivityTs(System.currentTimeMillis())
-        .build())
-    .marketConfig(StateMachineMarketConfig.defaultConfig())
-    .traceContext(TraceContext.generate())
-    .build();
-
-// 2. 触发事件
-ChatEngineStateMachineService service = new ChatEngineStateMachineService();
-StateContext<ConversationState, ConversationFact, CbolStateContext> result =
-    service.fire(ctx, ConversationFact.CUSTOMER_CONNECT);
-
-// 3. 使用结果
-System.out.println("New state: " + result.getTargetState());  // IN_PROGRESS
-```
-
-## 2. 构建自定义状态机
-
-### 2.1 使用 Builder DSL
-
-```java
-StateMachine<OrderState, OrderEvent, OrderContext> machine =
-    StateMachineBuilder.<OrderState, OrderEvent, OrderContext>builder("order-machine")
-        .initialState(OrderState.CREATED)
-        .endStates(OrderState.COMPLETED, OrderState.CANCELLED)
-
-        // 带 entry/exit 动作的状态
-        .stateWithEntry(OrderState.PAID, ctx -> sendEmail(ctx))
-        .stateWithExit(OrderState.PAID, ctx -> logExit(ctx))
-
-        // 带 guard 和 action 的迁移
-        .transition()
-            .from(OrderState.CREATED)
-            .on(OrderEvent.PAY)
-            .to(OrderState.PAID)
-            .guard(ctx -> ctx.getBusinessContext().isPaymentValid())
-            .perform(ctx -> processPayment(ctx))
-        .and()
-
-        // 内部迁移（状态不改变）
-        .transition()
-            .from(OrderState.PAID)
-            .on(OrderEvent.UPDATE_ADDRESS)
-            .to(OrderState.PAID)
-            .internal()
-            .perform(ctx -> updateAddress(ctx))
-        .and()
-
+        .conversation(conversation)
+        .marketConfig(StateMachineMarketConfig.defaultConfig())
+        .traceContext(TraceContext.generate())
         .build();
+
+// 触发事件并获取新状态（COLA API 直接返回目标状态）
+ConversationState newState = sm.fireEvent(
+        ConversationState.NEW,
+        ConversationFact.CONVERSATION_INITIATED,
+        ctx);
+
+// 更新会话状态
+conversation.setState(newState);
 ```
 
-### 2.2 使用 Configurer 适配器（Spring 风格）
+## 2. COLA Builder DSL
+
+### 2.1 外部转换
+
+定义外部状态转换（状态会改变）：
 
 ```java
-public class OrderStateMachineConfig
-        extends StateMachineConfigurerAdapter<OrderState, OrderEvent, OrderContext> {
+StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> builder =
+        StateMachineBuilderFactory.create();
+
+builder.externalTransition()
+        .from(ConversationState.NEW)
+        .to(ConversationState.INITIATED)
+        .on(ConversationFact.CONVERSATION_INITIATED)
+        .when(ctx -> ctx.getMarketConfig() != null)  // 可选守卫
+        .perform(new ConversationInitAction());
+```
+
+**Builder API 顺序：** `from() → to() → on() → when() → perform()`
+
+### 2.2 内部转换
+
+定义内部转换（状态不变，但动作执行）：
+
+```java
+builder.internalTransition()
+        .within(ConversationState.IN_PROGRESS)
+        .on(ConversationFact.SURVEY_START)
+        .perform(new SurveyStartAction());
+```
+
+### 2.3 构建和注册
+
+```java
+StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+        builder.build("conversation");
+StateMachineFactory.register(sm);
+```
+
+### 2.4 获取状态机
+
+```java
+StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+        StateMachineFactory.get("conversation");
+```
+
+## 3. Action 接口
+
+### 3.1 实现 Action
+
+```java
+import com.alibaba.cola.statemachine.Action;
+
+public class CustomerConnectAction
+        implements Action<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override
-    public void configure(StateConfigurer<OrderState, OrderEvent, OrderContext> states) {
-        states.initial(OrderState.CREATED)
-              .state(OrderState.PAID)
-              .state(OrderState.SHIPPED)
-              .end(OrderState.COMPLETED)
-              .end(OrderState.CANCELLED);
-    }
-
-    @Override
-    public void configure(TransitionConfigurer<OrderState, OrderEvent, OrderContext> transitions) {
-        transitions.withExternal()
-            .source(OrderState.CREATED)
-            .event(OrderEvent.PAY)
-            .target(OrderState.PAID)
-            .guard(ctx -> ctx.getBusinessContext().isPaymentValid())
-            .action(ctx -> processPayment(ctx))
-        .and().withExternal()
-            .source(OrderState.PAID)
-            .event(OrderEvent.SHIP)
-            .target(OrderState.SHIPPED)
-        .and().withExternal()
-            .source(OrderState.SHIPPED)
-            .event(OrderEvent.DELIVER)
-            .target(OrderState.COMPLETED);
-    }
-}
-
-// 使用
-StateMachine<OrderState, OrderEvent, OrderContext> machine =
-    StateMachineBuilder.fromConfigurer("order-machine", new OrderStateMachineConfig());
-```
-
-## 3. 使用监听器
-
-### 3.1 审计日志监听器
-
-```java
-machine.addListener(new StateMachineListener<OrderState, OrderEvent, OrderContext>() {
-    @Override
-    public void stateChanged(StateContext<OrderState, OrderEvent, OrderContext> ctx) {
-        log.info("Order {}: {} -> {} (event={})",
-            ctx.getBusinessContext().getOrderId(),
-            ctx.getSourceState(),
-            ctx.getTargetState(),
-            ctx.getEvent());
-    }
-
-    @Override
-    public void transitionError(StateContext<OrderState, OrderEvent, OrderContext> ctx) {
-        log.error("Transition error: {} -> {} on {}",
-            ctx.getSourceState(), ctx.getTargetState(), ctx.getEvent(),
-            ctx.getException());
-    }
-});
-```
-
-### 3.2 指标监听器
-
-```java
-machine.addListener(new StateMachineListener<>() {
-    @Override
-    public void transitionEnded(Transition<...> t, StateContext<...> ctx) {
-        metrics.increment("statemachine.transition.success",
-            Tags.of("machine", ctx.getMachineId()));
-    }
-
-    @Override
-    public void transitionDenied(StateContext<...> ctx, String reason) {
-        metrics.increment("statemachine.transition.denied",
-            Tags.of("reason", reason));
-    }
-});
-```
-
-## 4. 使用 ExtendedState
-
-```java
-// 为会话创建扩展状态
-ExtendedState ext = new ExtendedState();
-ext.set("retryCount", 0);
-ext.set("lastError", null);
-
-// 触发第一个事件
-StateContext<...> result1 = machine.fireEvent(
-    OrderState.CREATED, OrderEvent.PAY, context, ext);
-
-// 迁移后读取扩展状态
-int retryCount = result1.getExtendedState().get("retryCount", Integer.class);
-
-// 在 guard 中使用
-.guard(ctx -> {
-    Integer retries = ctx.getExtendedState().get("retryCount", Integer.class);
-    return retries != null && retries < 3;
-})
-```
-
-## 5. 多市场配置
-
-### 5.1 使用 InMemoryProvider
-
-```java
-MarketConfigProvider.InMemoryProvider provider = new MarketConfigProvider.InMemoryProvider();
-
-// 配置每市场设置
-provider.put("HK", StateMachineMarketConfig.builder()
-    .customerIdleSeconds(180)      // HK 市场 3 分钟
-    .transferTimeoutSeconds(120)    // 2 分钟
-    .endingGraceSeconds(60)          // 1 分钟
-    .surveyEnabled(true)
-    .build());
-
-provider.put("SG", StateMachineMarketConfig.builder()
-    .customerIdleSeconds(300)
-    .transferTimeoutSeconds(180)
-    .build());
-
-// 获取市场配置（未知市场回退到默认）
-StateMachineMarketConfig config = provider.getConfig("HK");
-```
-
-### 5.2 构建带市场配置的上下文
-
-```java
-CbolStateContext ctx = CbolStateContext.builder()
-    .conversation(conversation)
-    .marketConfig(marketConfigProvider.getConfig(conversation.market()))
-    .traceContext(TraceContext.generate())
-    .build();
-```
-
-## 6. 使用监控器
-
-### 6.1 设置监控器
-
-```java
-ChatEngineStateMachineService service = new ChatEngineStateMachineService();
-
-CustomerIdleMonitor idleMonitor = new CustomerIdleMonitor(service);
-TransferMonitor transferMonitor = new TransferMonitor(service);
-EndingGraceMonitor endingMonitor = new EndingGraceMonitor(service);
-```
-
-### 6.2 定时监控器执行
-
-```java
-@Scheduled(fixedDelay = 30000)  // 每 30 秒
-public void checkCustomerIdle() {
-    List<Conversation> activeConversations = repository.findActiveConversations();
-    for (Conversation conv : activeConversations) {
-        CbolStateContext ctx = buildContext(conv);
-        idleMonitor.check(ctx, conv.getLastActivityTs());
-    }
-}
-
-@Scheduled(fixedDelay = 15000)  // 每 15 秒
-public void checkTransferTimeout() {
-    List<Conversation> transferring = repository.findTransferringConversations();
-    for (Conversation conv : transferring) {
-        CbolStateContext ctx = buildContext(conv);
-        transferMonitor.check(ctx, conv.getTransferStartTs());
+    public void execute(ConversationState from, ConversationState to,
+                        ConversationFact event, CbolStateContext ctx) {
+        // 你的业务逻辑
+        log.info("客户已连接：conversationId={}",
+                ctx.getConversation().getConversationId());
     }
 }
 ```
 
-## 7. 异步动作执行
+### 3.2 Action-First 原则
 
-### 7.1 使用 ActionWorker
-
-> **[预留 - 生产代码未使用]** ActionWorker 是预留的异步执行工具类。
-> 当前状态机采用同步执行 action（action-first transition）。
-
-```java
-ActionWorker worker = new ActionWorker();  // 默认：core=CPU, max=CPU*2, queue=1000
-
-// 或使用自定义配置
-ActionWorker customWorker = new ActionWorker(4, 8, 60, 500);
-
-// 提交异步动作（直接使用核心 Action 接口）
-Action<ConversationState, ConversationFact, CbolStateContext> sendNotification = ctx -> {
-    notificationService.send(ctx.getBusinessContext().conversation().customerId(), "Your conversation is IN_PROGRESS");
-};
-
-worker.submit(sendNotification, stateContext);
-
-// 应用退出时关闭
-worker.shutdown();
-```
-
-### 7.2 Action 接口（核心）
-
-```java
-// 来自 statemachine-core 的核心 Action 接口
-@FunctionalInterface
-public interface Action<S, E, C> {
-    void execute(StateContext<S, E, C> context);
-}
-```
-
-**注意**：所有业务 action 都直接实现核心的 `Action<S, E, C>` 接口，不再需要业务层的 `CbolAction` 包装接口。
-
-## 8. 错误处理模式
-
-### 8.1 处理 StateMachineException
+动作在状态变更**之前**执行。如果动作失败，状态不变：
 
 ```java
 try {
-    StateContext<...> result = service.fire(ctx, ConversationFact.TRANSFER_REQUEST);
-    // 更新会话状态
-    conversation.setState(result.getTargetState());
-    repository.save(conversation);
+    ConversationState newState = sm.fireEvent(
+            ConversationState.INITIATED,
+            ConversationFact.CUSTOMER_CONNECT,
+            ctx);
+    // 状态成功变更
 } catch (StateMachineException e) {
-    String message = e.getMessage();
-    if (message.contains("No transition found")) {
-        // 当前状态的无效事件
-        return ResponseEntity.badRequest().body("Invalid action");
-    } else if (message.contains("guard condition failed")) {
-        // 业务条件不满足
-        return ResponseEntity.status(409).body("Transfer not available");
-    } else if (message.contains("action failed")) {
-        // 动作执行错误
-        log.error("Action failed", e);
-        return ResponseEntity.status(500).body("Processing error");
+    // 动作失败或没有匹配的转换
+    // 状态保持 INITIATED
+    log.error("转换失败", e);
+}
+```
+
+## 4. Condition（守卫）接口
+
+### 4.1 实现 Condition
+
+```java
+import com.alibaba.cola.statemachine.Condition;
+
+public class SurveyEnabledCondition implements Condition<CbolStateContext> {
+
+    @Override
+    public boolean isSatisfied(CbolStateContext ctx) {
+        return ctx.getMarketConfig().isSurveyEnabled();
     }
-    throw e;
 }
 ```
 
-### 8.2 触发前检查
+### 4.2 在转换中使用 Condition
 
 ```java
-// 检查迁移是否存在（不评估 guard）
-if (machine.hasTransition(conversation.getState(), event)) {
-    // 继续
-}
+builder.externalTransition()
+        .from(ConversationState.IN_PROGRESS)
+        .to(ConversationState.ENDING)
+        .on(ConversationFact.SURVEY_COMPLETE)
+        .when(ctx -> ctx.getMarketConfig().isSurveyEnabled())
+        .perform(new SurveyCompleteAction());
+```
 
-// 检查事件是否可触发（包括 guard 评估）
-if (machine.canFire(conversation.getState(), event, context)) {
-    machine.fireEvent(conversation.getState(), event, context);
+## 5. Chat Engine 使用
+
+### 5.1 会话状态
+
+```java
+public enum ConversationState {
+    NEW,                // 初始状态，会话记录已创建但未初始化
+    INITIATED,          // 会话已初始化，等待客户连接
+    IN_PROGRESS,        // 客户已连接，正在处理（包括问卷作为子阶段）
+    TRANSFERRED,        // 正在转接人工客服
+    ENDING,             // 会话结束，清理宽限期
+    ERROR,              // 动作失败，故障转移状态
+    CLOSED              // 终止状态
 }
 ```
 
-## 9. 测试
-
-### 9.1 单元测试示例
+### 5.2 使用 ChatEngineStateMachineService
 
 ```java
-@Test
-void shouldTransitionFromInitiatedToActiveOnCustomerConnect() {
-    // Given
+// 初始化（在启动时调用一次）
+ConversationStateMachineFactory.build();
+ChatEngineStateMachineService service = new ChatEngineStateMachineService();
+
+// 构建上下文
+CbolStateContext ctx = buildContext();
+
+// 触发事件（直接返回 ConversationState）
+ConversationState newState = service.fire(ctx, ConversationFact.CUSTOMER_CONNECT);
+```
+
+### 5.3 运行 Chat Engine Demo
+
+```bash
+cd 08-Code/state-machine
+mvnw.cmd compile -pl chat-engine
+java -cp chat-engine/target/classes:statemachine-core/target/classes com.selfdevelopment.chatengine.demo.ChatEngineDemo
+```
+
+## 6. Agent Connector 使用
+
+### 6.1 交互状态
+
+```java
+public enum InteractionState {
+    CONNECTING,     // 正在建立连接
+    CONNECTED,      // 活跃连接
+    RECONNECTING,   // 正在重连
+    HELD,           // 连接保持
+    TRANSFERRING,   // 正在通道转接
+    DISCONNECTED    // 终止状态，连接已关闭
+}
+```
+
+### 6.2 使用 AgentConnectorStateMachineService
+
+```java
+// 初始化（在启动时调用一次）
+InteractionStateMachineFactory.create();
+AgentConnectorStateMachineService service = new AgentConnectorStateMachineService();
+
+// 构建上下文
+AgentConnectorStateContext ctx = buildContext();
+
+// 触发事件（直接返回 InteractionState）
+InteractionState newState = service.fire(ctx, InteractionFact.CONNECTION_ESTABLISHED);
+```
+
+### 6.3 运行 Agent Connector Demo
+
+```bash
+cd 08-Code/state-machine
+mvnw.cmd compile -pl agent-connector
+java -cp agent-connector/target/classes:statemachine-core/target/classes com.selfdevelopment.agentconnector.demo.AgentConnectorDemo
+```
+
+## 7. 多市场配置
+
+### 7.1 默认配置
+
+```java
+StateMachineMarketConfig config = StateMachineMarketConfig.defaultConfig();
+// customerIdleSeconds=300, transferTimeoutSeconds=120, endingGraceSeconds=30
+// surveyEnabled=true, transferEnabled=true, genesysEnabled=true
+```
+
+### 7.2 自定义配置
+
+```java
+StateMachineMarketConfig config = StateMachineMarketConfig.builder()
+        .customerIdleSeconds(600)
+        .transferTimeoutSeconds(200)
+        .endingGraceSeconds(60)
+        .surveyEnabled(true)
+        .transferEnabled(true)
+        .genesysEnabled(false)
+        .fallbackRoutingStrategy("DROP")
+        .build();
+```
+
+### 7.3 市场配置提供者
+
+```java
+MarketConfigProvider.InMemoryProvider provider = new MarketConfigProvider.InMemoryProvider();
+provider.put("HK", customConfig);
+
+StateMachineMarketConfig cfg = provider.getConfig("HK");
+```
+
+## 8. 监控器
+
+### 8.1 客户空闲监控器
+
+```java
+CustomerIdleMonitor monitor = new CustomerIdleMonitor(service);
+long lastActivity = System.currentTimeMillis() - 400 * 1000; // 400秒前
+monitor.check(ctx, lastActivity);
+// 如果空闲时间 > customerIdleSeconds，触发 SYS_CUSTOMER_IDLE
+```
+
+### 8.2 转接监控器
+
+```java
+TransferMonitor monitor = new TransferMonitor(service);
+long transferStart = System.currentTimeMillis() - 200 * 1000; // 200秒前
+monitor.check(ctx, transferStart);
+// 如果转接时间 > transferTimeoutSeconds，触发 SYS_TRANSFER_TIMEOUT
+// 仅在 TRANSFERRED 状态下激活
+```
+
+### 8.3 结束宽限监控器
+
+```java
+EndingGraceMonitor monitor = new EndingGraceMonitor(service);
+long enterEnding = System.currentTimeMillis() - 60 * 1000; // 60秒前
+monitor.check(ctx, enterEnding);
+// 如果结束时间 > endingGraceSeconds，触发 SYS_ENDING_GRACE_TIMEOUT
+// 仅在 ENDING 状态下激活
+```
+
+## 9. 追踪上下文
+
+### 9.1 生成追踪上下文
+
+```java
+TraceContext traceContext = TraceContext.generate();
+// traceId = UUID, timestamp = 当前时间
+```
+
+### 9.2 MDC 传播
+
+```java
+// 设置 MDC 用于日志
+TraceMdcHelper.set(traceContext);
+try {
+    // 你的代码 - 所有日志将包含 traceId
+} finally {
+    TraceMdcHelper.clear();
+}
+```
+
+### 9.3 异步 Action Worker（预留）
+
+```java
+// ActionWorker 是预留的工具类，供未来使用
+// 当前设计使用同步的 action-first 转换
+ActionWorker worker = new ActionWorker();
+worker.submit(action, from, to, event, ctx);
+```
+
+## 10. PlantUML 图生成
+
+```java
+StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+        ConversationStateMachineFactory.build();
+
+String plantUml = sm.generatePlantUML();
+System.out.println(plantUml);
+```
+
+输出：
+```
+@startuml
+[*] --> NEW
+NEW --> INITIATED : CONVERSATION_INITIATED
+INITIATED --> IN_PROGRESS : CUSTOMER_CONNECT
+IN_PROGRESS --> TRANSFERRED : TRANSFER_REQUEST
+IN_PROGRESS --> ENDING : CUSTOMER_CLOSE
+@enduml
+```
+
+## 11. 测试
+
+### 11.1 运行所有测试
+
+```bash
+cd 08-Code/state-machine
+mvnw.cmd clean test
+```
+
+### 11.2 运行模块测试
+
+```bash
+# Chat engine 测试
+mvnw.cmd test -pl chat-engine
+
+# Agent connector 测试
+mvnw.cmd test -pl agent-connector
+
+# 核心测试（COLA）
+mvnw.cmd test -pl statemachine-core
+```
+
+### 11.3 测试覆盖率
+
+- statemachine-core：219 个 COLA 测试
+- chat-engine：36 个测试
+- agent-connector：（待添加测试）
+
+## 12. 最佳实践
+
+### 12.1 状态机初始化
+
+```java
+// 在应用启动时调用一次
+@PostConstruct
+public void init() {
     ConversationStateMachineFactory.build();
-    ChatEngineStateMachineService service = new ChatEngineStateMachineService();
-    CbolStateContext ctx = buildTestContext(ConversationState.INITIATED);
-
-    // When
-    StateContext<ConversationState, ConversationFact, CbolStateContext> result =
-        service.fire(ctx, ConversationFact.CUSTOMER_CONNECT);
-
-    // Then
-    assertEquals(ConversationState.IN_PROGRESS, result.getTargetState());
-    assertTrue(result.isTransitionAccepted());
-}
-
-@Test
-void shouldThrowWhenNoTransitionExists() {
-    ChatEngineStateMachineService service = new ChatEngineStateMachineService();
-    CbolStateContext ctx = buildTestContext(ConversationState.CLOSED);
-
-    assertThrows(StateMachineException.class,
-        () -> service.fire(ctx, ConversationFact.CUSTOMER_CONNECT));
+    InteractionStateMachineFactory.create();
 }
 ```
 
-### 9.2 测试隔离
+### 12.2 工厂缓存模式
+
+COLA StateMachine 不允许重新构建。使用缓存模式：
 
 ```java
-@AfterEach
-void tearDown() {
-    StateMachineRegistry.getInstance().clear();  // 测试间清空注册表
+public static StateMachine<...> build() {
+    try {
+        StateMachine<...> existing = StateMachineFactory.get(MACHINE_ID);
+        if (existing != null) return existing;
+    } catch (Exception ignored) {
+        // 尚未构建
+    }
+    synchronized (Factory.class) {
+        // 双重检查 + 构建 + 注册
+    }
 }
 ```
 
-## 10. 最佳实践
+### 12.3 错误处理
 
-### 10.1 应该做
+```java
+try {
+    ConversationState newState = sm.fireEvent(source, event, ctx);
+} catch (StateMachineException e) {
+    // 没有匹配的转换或动作失败
+    // 状态保持不变
+    log.error("状态转换失败：source={}, event={}", source, event, e);
+    throw new BusinessException("转换失败", e);
+}
+```
 
-- **应该**在调用方（仓库/服务层）管理状态持久化
-- **应该**在 CbolStateContext 中将市场配置捕获为快照
-- **应该**在每个请求的入口点使用 TraceContext.generate()
-- **应该**用 try-finally 包裹 TraceMdcHelper.set() 并调用 clear()
-- **应该**使用有界线程池（ActionWorker 默认是安全的）
-- **应该**在应用启动时注册一次状态机
-- **应该**使用监听器处理横切关注点（日志、指标、审计）
-- **应该**尽可能保持动作幂等
+### 12.4 幂等性
 
-### 10.2 不应该做
+```java
+// 使用 conversationId + event 作为幂等键
+String idempotencyKey = ctx.getConversation().getConversationId() + ":" + event;
+if (processedEvents.contains(idempotencyKey)) {
+    return currentState; // 已处理
+}
+processedEvents.add(idempotencyKey);
+```
 
-- **不应该**在状态机引擎中存储当前状态（设计上是无状态的）
-- **不应该**使用 `Executors.newCachedThreadPool()`（无界，有 OOM 风险）
-- **不应该**忘记在 finally 块中调用 `TraceMdcHelper.clear()`
-- **不应该**从动作中抛出受检异常（包装为 RuntimeException）
-- **不应该**在迁移过程中修改 CbolStateContext（它是不可变 record）
-- **不应该**重复注册相同的机器 ID（会抛出 StateMachineException）
-- **不应该**依赖 entry/exit 动作失败来阻断迁移（它们是尽力执行的）
+## 13. Spring Boot 集成
 
-## 11. 与 Spring Boot 集成
-
-### 11.1 配置类
+### 13.1 配置类
 
 ```java
 @Configuration
@@ -443,254 +472,36 @@ public class StateMachineConfig {
     }
 
     @Bean
-    public ChatEngineStateMachineService ChatEngineStateMachineService() {
+    public ChatEngineStateMachineService chatEngineStateMachineService() {
         return new ChatEngineStateMachineService();
     }
+}
+```
 
-    @Bean
-    public ActionWorker actionWorker() {
-        return new ActionWorker();
-    }
+### 13.2 Service 使用
 
-    @Bean
-    public MarketConfigProvider marketConfigProvider() {
-        MarketConfigProvider.InMemoryProvider provider =
-            new MarketConfigProvider.InMemoryProvider();
-        // 从配置中心 / Redis 加载
-        return provider;
-    }
+```java
+@Service
+public class ConversationService {
 
-    @PreDestroy
-    public void shutdown() {
-        actionWorker().shutdown();
+    @Autowired
+    private ChatEngineStateMachineService stateMachineService;
+
+    public Conversation handleEvent(Conversation conversation, ConversationFact event) {
+        CbolStateContext ctx = buildContext(conversation);
+        ConversationState newState = stateMachineService.fire(ctx, event);
+        conversation.setState(newState);
+        return conversation;
     }
 }
 ```
 
-## 12. 高级特性
+## 14. 参考资料
 
-### 12.1 构建时校验
-
-在构建时校验状态机配置以尽早发现错误：
-
-```java
-// 构建期间校验（ERROR 级别问题时抛出）
-StateMachine<OrderState, OrderEvent, OrderContext> machine =
-    StateMachineBuilder.<OrderState, OrderEvent, OrderContext>builder("order")
-        .initialState(OrderState.CREATED)
-        .transition()
-            .from(OrderState.CREATED).on(OrderEvent.PAY).to(OrderState.PAID)
-        .and()
-        .build(true);  // validate=true
-
-// 或单独校验以获取所有错误
-List<ValidationError> errors = StateMachineValidator.validate(machine);
-errors.forEach(e -> System.out.println(e.level() + ": " + e.message()));
-```
-
-校验规则：`NO_TRANSITIONS`、`INITIAL_STATE_DEFINED`、`INITIAL_STATE_REACHABLE`、`END_STATE_NO_OUTGOING`、`UNREACHABLE_STATE`、`DEAD_END_STATE`、`INTERNAL_TRANSITION_MATCH`、`DUPLICATE_TRANSITION_NO_GUARD`。
-
-### 12.2 乐观锁持久化
-
-使用内置的仓库模式和基于版本的乐观锁：
-
-```java
-StateRepository<ConversationState> repository = new InMemoryStateRepository<>();
-
-// 保存初始状态
-repository.save("conv-123", ConversationState.INITIATED, 0);
-
-// 加载并使用乐观锁迁移
-ChatEngineStateMachineService service = new ChatEngineStateMachineService(machine, repository);
-StateContext<...> result = service.fireWithLock("conv-123", ConversationFact.USER_MESSAGE, ctx);
-// 版本冲突时自动重试最多 3 次
-```
-
-生产环境中，使用 JDBC/MongoDB 实现 `StateRepository`：
-
-```java
-public class JdbcStateRepository<S> implements StateRepository<S> {
-    // SELECT state, version FROM conversations WHERE id = ?
-    // UPDATE conversations SET state = ?, version = version + 1 WHERE id = ? AND version = ?
-}
-```
-
-### 12.3 幂等事件处理
-
-通过事件 ID 去重防止重复事件处理：
-
-```java
-ProcessedEventStore store = new InMemoryProcessedEventStore();
-IdempotentStateMachineDecorator<OrderState, OrderEvent, OrderContext> idempotent =
-    new IdempotentStateMachineDecorator<>(machine, store);
-
-// 第一次调用：处理事件
-StateContext<...> result1 = idempotent.fireEventWithId(
-    "evt-001", OrderState.CREATED, OrderEvent.PAY, ctx);
-
-// 相同 ID 的第二次调用：返回缓存结果，不重新处理
-StateContext<...> result2 = idempotent.fireEventWithId(
-    "evt-001", OrderState.CREATED, OrderEvent.PAY, ctx);
-```
-
-### 12.4 Micrometer 指标
-
-使用 Micrometer 指标自动检测状态机：
-
-```java
-MeterRegistry registry = new SimpleMeterRegistry();  // 或 Spring 自动配置的 registry
-StateMachine<OrderState, OrderEvent, OrderContext> monitored =
-    new MonitoredStateMachine<>(machine, registry);
-
-// 所有 fireEvent 调用自动被检测
-monitored.fireEvent(OrderState.CREATED, OrderEvent.PAY, ctx);
-
-// 可用指标：
-// - statemachine.transition.duration (Timer)
-// - statemachine.transition.success (Counter)
-// - statemachine.transition.error (Counter)
-// - statemachine.transition.denied (Counter)
-// - statemachine.event.received (Counter)
-```
-
-### 12.5 事件溯源 / 审计追踪
-
-自动记录所有迁移以用于审计和重放：
-
-```java
-StateTransitionStore<ConversationState, ConversationFact> store =
-    new InMemoryStateTransitionStore<>();
-
-StateMachine<ConversationState, ConversationFact, CbolStateContext> eventSourced =
-    new EventSourcedStateMachine<>(machine, store, "conv-123");
-
-// 所有迁移自动被记录
-eventSourced.fireEvent(ConversationState.INITIATED, ConversationFact.USER_MESSAGE, ctx);
-
-// 重放完整历史
-List<StateTransitionEvent<...>> history = store.replay("conv-123");
-
-// 重建当前状态
-Optional<ConversationState> current = store.reconstructState("conv-123");
-
-// 时间旅行查询
-List<...> stateAtTime = store.replayUpTo("conv-123", Instant.parse("2026-01-01T10:00:00Z"));
-```
-
-### 12.6 弹性 / 失败处理
-
-根据用例选择失败处理策略：
-
-```java
-// 1. 失败时抛出（默认）
-StateMachine<...> resilient = new ResilientStateMachine<>(machine, new ThrowFailureHandler<>());
-
-// 2. 返回源状态（无异常，检查返回值）
-StateMachine<...> resilient = new ResilientStateMachine<>(machine, new ReturnSourceFailureHandler<>());
-StateContext<...> result = resilient.fireEvent(state, event, ctx);
-if (!result.isTransitionAccepted()) {
-    // 处理拒绝
-}
-
-// 3. 回退到 ERROR 状态
-StateMachine<...> resilient = new ResilientStateMachine<>(machine,
-    new FallbackStateFailureHandler<>(OrderState.ERROR));
-
-// 4. 指数退避重试，然后回退
-FailureHandler<...> fallback = new FallbackStateFailureHandler<>(OrderState.ERROR);
-RetryFailureHandler<...> retry = RetryFailureHandler.exponentialBackoff(
-    3, fallback, 100, 5000);
-StateMachine<...> resilient = new ResilientStateMachine<>(machine, retry);
-```
-
-### 12.7 超时事件 / 定时迁移
-
-当实体在某个状态停留过久时自动触发事件：
-
-```java
-// 配置超时
-Map<ConversationState, TimeoutConfig<ConversationState, ConversationFact>> timeouts = Map.of(
-    ConversationState.IN_PROGRESS, TimeoutConfig.<ConversationState, ConversationFact>builder()
-        .state(ConversationState.IN_PROGRESS)
-        .timeoutEvent(ConversationFact.IDLE_TIMEOUT)
-        .duration(30).timeUnit(TimeUnit.SECONDS).build(),
-    ConversationState.TRANSFERRING, TimeoutConfig.<ConversationState, ConversationFact>builder()
-        .state(ConversationState.TRANSFERRING)
-        .timeoutEvent(ConversationFact.TRANSFER_TIMEOUT)
-        .duration(60).timeUnit(TimeUnit.SECONDS).build()
-);
-
-// 创建调度器
-StateMachineTimeoutScheduler<ConversationState, ConversationFact> scheduler =
-    new InMemoryTimeoutScheduler<>("conversation-timeout", 4);
-
-// 包装状态机
-StateMachine<ConversationState, ConversationFact, CbolStateContext> timeoutAware =
-    new TimeoutAwareStateMachine<>(machine, scheduler, timeouts, "conv-123");
-
-// 进入 IN_PROGRESS 自动启动 30 秒计时器
-timeoutAware.fireEvent(ConversationState.INITIATED, ConversationFact.USER_MESSAGE, ctx);
-
-// 离开 IN_PROGRESS 自动取消计时器
-timeoutAware.fireEvent(ConversationState.IN_PROGRESS, ConversationFact.AGENT_JOIN, ctx);
-
-// 查询超时状态
-boolean IN_PROGRESS = timeoutAware.isTimeoutActive();
-long remainingMs = timeoutAware.getRemainingTimeoutMs();
-timeoutAware.cancelTimeout();  // 手动取消
-```
-
-这取代了对外部 Monitor 类（CustomerIdleMonitor、TransferMonitor、EndingGraceMonitor）的需求。
-
-### 12.8 图表生成
-
-直接从状态机配置生成文档图表：
-
-```java
-// Mermaid（用于 GitHub / Markdown）
-String mermaid = StateMachineDiagramGenerator.toMermaid(machine);
-
-// PlantUML（用于 Confluence / 企业文档）
-String plantUml = StateMachineDiagramGenerator.toPlantUML(machine);
-
-// 迁移表（Markdown）
-String table = StateMachineDiagramGenerator.toTransitionTable(machine);
-
-// 写入文件
-Files.writeString(Path.of("state-diagram.mmd"), mermaid);
-Files.writeString(Path.of("state-diagram.puml"), plantUml);
-Files.writeString(Path.of("transitions.md"), table);
-```
-
-### 12.9 装饰器组合
-
-组合多个装饰器以构建全功能管道：
-
-```java
-StateMachine<OrderState, OrderEvent, OrderContext> pipeline =
-    new TimeoutAwareStateMachine<>(          // 1. 最外层：超时管理
-        new ResilientStateMachine<>(         // 2. 失败处理
-            new EventSourcedStateMachine<>(  // 3. 审计追踪
-                new MonitoredStateMachine<>( // 4. 指标
-                    new IdempotentStateMachineDecorator<>( // 5. 最内层：去重
-                        machine,
-                        eventStore
-                    ),
-                    meterRegistry
-                ),
-                transitionStore,
-                "order-123"
-            ),
-            new ThrowFailureHandler<>()
-        ),
-        timeoutScheduler,
-        timeoutConfigs,
-        "order-123"
-    );
-```
-
-**推荐顺序（从最外层到最内层）：** TimeoutAware → Resilient → EventSourced → Monitored → Idempotent → SimpleStateMachine
+- 阿里巴巴 COLA GitHub：https://github.com/alibaba/COLA
+- COLA StateMachine 模块：`cola-components/cola-component-statemachine`
+- COLA StateMachine 测试：`cola-components/cola-component-statemachine/src/test/java/com/alibaba/cola/test/`
 
 ---
 
-*有关每个高级特性的详细设计，请参见 [05-Advanced-Features.md](./05-Advanced-Features.md)。*
+*最后更新：2026-09-05（v3.0 — 迁移到阿里巴巴 COLA StateMachine）*

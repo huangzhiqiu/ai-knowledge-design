@@ -459,10 +459,10 @@ public class ChatEngineStateMachineService {
     private final StateMachine<ConversationState, ConversationFact, CbolStateContext> convSm;
 
     public ChatEngineStateMachineService() {
-        this.convSm = StateMachineRegistry.getInstance().get(ConversationStateMachineFactory.MACHINE_ID);
+        this.convSm = StateMachineFactory.get(ConversationStateMachineFactory.MACHINE_ID);
     }
 
-    public StateContext<ConversationState, ConversationFact, CbolStateContext> fire(
+    public ConversationState fire(
             CbolStateContext ctx, ConversationFact fact) {
         // Null 校验
         Objects.requireNonNull(ctx, "ctx must not be null");
@@ -472,21 +472,15 @@ public class ChatEngineStateMachineService {
         long start = System.currentTimeMillis();
         try {
             ConversationState from = ctx.conversation().state();
-            StateContext<...> result = convSm.fireEvent(from, fact, ctx);
+            ConversationState to = convSm.fireEvent(from, fact, ctx);
 
             // 审计日志
-            StateTransitionRecord record = StateTransitionRecord.builder()
-                .businessId(ctx.conversation().conversationId())
-                .fromState(from.name())
-                .toState(result.getTargetState().name())
-                .fact(fact.name())
-                .guardResult(result.isTransitionAccepted())
-                .timestampMs(System.currentTimeMillis())
-                .traceId(ctx.traceContext().traceId())
-                .durationMs(System.currentTimeMillis() - start)
-                .build();
-            log.info("StateTransitionRecord: {}", record);
-            return result;
+            log.info("状态转换：{} --({})--> {}, conversationId={}, traceId={}, durationMs={}",
+                    from, fact, to,
+                    ctx.conversation().conversationId(),
+                    ctx.traceContext().traceId(),
+                    System.currentTimeMillis() - start);
+            return to;
         } finally {
             TraceMdcHelper.clear();
         }
@@ -534,30 +528,40 @@ public class ConversationStateMachineFactory {
 
         // ...（全部 10 条迁移）
 
-        StateMachine<...> sm = builder.build();
-        StateMachineRegistry.getInstance().register(sm);
+        StateMachine<...> sm = builder.build(MACHINE_ID);
+        StateMachineFactory.register(sm);
         return sm;
     }
 }
 ```
 
-### 9.2 状态机注册表
+### 9.2 状态机工厂（COLA）
 
-chat-engine 模块使用 statemachine-core 中的全局单例 `StateMachineRegistry` 进行状态机的注册和查找。这消除了对模块特定注册表包装器的需求。
+chat-engine 模块使用阿里巴巴 COLA 的 `StateMachineFactory` 进行状态机的注册和查找。COLA StateMachine 不允许使用相同 ID 重新构建状态机，因此工厂使用缓存模式。
 
 ```java
 // 注册状态机
-StateMachineRegistry.getInstance().register(machine);
+StateMachineFactory.register(machine);
 
 // 通过 ID 查找状态机
 StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
-    StateMachineRegistry.getInstance().get(ConversationStateMachineFactory.MACHINE_ID);
+    StateMachineFactory.get(ConversationStateMachineFactory.MACHINE_ID);
 
-// 清空所有已注册的状态机（用于测试隔离）
-StateMachineRegistry.getInstance().clear();
+// 工厂缓存模式（推荐）
+public static StateMachine<...> build() {
+    try {
+        StateMachine<...> existing = StateMachineFactory.get(MACHINE_ID);
+        if (existing != null) return existing;
+    } catch (Exception ignored) {
+        // 尚未构建
+    }
+    synchronized (Factory.class) {
+        // 双重检查 + 构建 + 注册
+    }
+}
 ```
 
-**设计说明**：chat-engine 和 agent-connector 共享同一个全局注册表。由于每个状态机都有唯一的 machine ID（`conversation` vs `interaction`），因此不会发生冲突。全局单例方法简化了 API，并消除了重复的注册表持有者类。
+**设计说明**：chat-engine 和 agent-connector 共享同一个 `StateMachineFactory`。由于每个状态机都有唯一的 machine ID（`conversation` vs `interaction`），因此不会发生冲突。COLA 的 `StateMachineFactory` 是全局单例，简化了 API，并消除了重复的注册表持有者类。
 
 ## 10. 典型使用流程
 

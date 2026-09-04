@@ -542,11 +542,14 @@ StateMachine<OrderState, OrderEvent, OrderContext> failover = new FailoverStateM
 );
 
 // When an action throws:
-//   1. FailoverStateMachine catches the exception
-//   2. Generates ORDER_FAILED event
-//   3. Re-fires ORDER_FAILED → state machine follows fail branch → ERROR state
-StateContext<...> result = failover.fireEvent(OrderState.PROCESSING, OrderEvent.PAY, ctx);
-// result.getTargetState() == OrderState.ERROR
+//   1. COLA StateMachine throws StateMachineException
+//   2. State remains unchanged (action-first principle)
+//   3. Business layer should catch exception and handle failover logic
+// Note: FailoverStateMachine/ResilientStateMachine were custom features removed in v3.0
+// COLA StateMachine uses action-first principle: action failure throws exception, state unchanged
+ConversationState result = machine.fireEvent(ConversationState.IN_PROGRESS, ConversationFact.CUSTOMER_CLOSE, ctx);
+// result == ConversationState.ENDING (if action succeeds)
+// StateMachineException thrown (if action fails, state remains IN_PROGRESS)
 ```
 
 ### 9.4 Combined with Retry (Recommended Pattern)
