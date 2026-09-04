@@ -1,4 +1,4 @@
-package com.selfdevelopment.chatengine.action.impl;
+package com.selfdevelopment.chatengine.action.transfer;
 
 import com.alibaba.cola.statemachine.Action;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
@@ -7,7 +7,7 @@ import com.selfdevelopment.chatengine.enums.ConversationState;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Action executed when a transfer fails (TRANSFERRED → INITIATED).
+ * Action executed when a transfer fails (TRANSFERRED 鈫?INITIATED).
  * <p>
  * This action handles the v6 design: transfer failure resets the conversation
  * to INITIATED state for re-routing (no rollback to ACTIVE).

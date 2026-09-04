@@ -1,4 +1,4 @@
-package com.selfdevelopment.chatengine.action.impl;
+package com.selfdevelopment.chatengine.action.survey;
 
 import com.alibaba.cola.statemachine.Action;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
@@ -7,7 +7,7 @@ import com.selfdevelopment.chatengine.enums.ConversationState;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Action executed when a survey is completed (IN_PROGRESS → ENDING).
+ * Action executed when a survey is completed (IN_PROGRESS 鈫?ENDING).
  * <p>
  * The survey is a sub-phase within IN_PROGRESS, not a separate state.
  * This action handles the actual business logic of completing a survey:

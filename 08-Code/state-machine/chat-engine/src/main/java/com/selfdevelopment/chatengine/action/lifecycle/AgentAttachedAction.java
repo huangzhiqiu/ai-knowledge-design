@@ -1,4 +1,4 @@
-package com.selfdevelopment.chatengine.action.impl;
+package com.selfdevelopment.chatengine.action.lifecycle;
 
 import com.alibaba.cola.statemachine.Action;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
@@ -7,7 +7,7 @@ import com.selfdevelopment.chatengine.enums.ConversationState;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Action executed when an agent is attached to the conversation (IN_PROGRESS → IN_PROGRESS, internal transition).
+ * Action executed when an agent is attached to the conversation (IN_PROGRESS 鈫?IN_PROGRESS, internal transition).
  * <p>
  * This is an internal transition - the state does not change, but the action executes
  * to handle the agent attachment business logic:

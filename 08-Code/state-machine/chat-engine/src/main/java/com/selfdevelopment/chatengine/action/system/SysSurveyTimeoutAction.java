@@ -1,4 +1,4 @@
-package com.selfdevelopment.chatengine.action.impl;
+package com.selfdevelopment.chatengine.action.system;
 
 import com.alibaba.cola.statemachine.Action;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
@@ -7,7 +7,7 @@ import com.selfdevelopment.chatengine.enums.ConversationState;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Action executed when survey timeout is detected (IN_PROGRESS → ENDING).
+ * Action executed when survey timeout is detected (IN_PROGRESS 鈫?ENDING).
  * <p>
  * This system-driven action handles the business logic of survey timeout:
  * <ul>

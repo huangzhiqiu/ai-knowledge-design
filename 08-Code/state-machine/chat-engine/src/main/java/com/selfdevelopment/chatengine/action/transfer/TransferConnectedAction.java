@@ -1,4 +1,4 @@
-package com.selfdevelopment.chatengine.action.impl;
+package com.selfdevelopment.chatengine.action.transfer;
 
 import com.alibaba.cola.statemachine.Action;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
@@ -7,7 +7,7 @@ import com.selfdevelopment.chatengine.enums.ConversationState;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Action executed when a transfer connects successfully (TRANSFERRED → IN_PROGRESS).
+ * Action executed when a transfer connects successfully (TRANSFERRED 鈫?IN_PROGRESS).
  * <p>
  * This action handles the business logic of a successful human agent transfer:
  * <ul>
@@ -77,7 +77,7 @@ public class TransferConnectedAction implements Action<ConversationState, Conver
 
     private String getTransferCompleteMessage(String market) {
         return switch (market) {
-            case "HK" -> "已為您接駁到客服人員";
+            case "HK" -> "宸茬偤鎮ㄦ帴椐佸埌瀹㈡湇浜哄摗";
             case "SG" -> "You are now connected to an agent";
             case "UK" -> "You are now connected to an agent";
             default -> "Transfer complete, you are now connected";

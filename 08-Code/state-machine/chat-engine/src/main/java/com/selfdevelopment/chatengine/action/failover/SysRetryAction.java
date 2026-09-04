@@ -1,4 +1,4 @@
-package com.selfdevelopment.chatengine.action.impl;
+package com.selfdevelopment.chatengine.action.failover;
 
 import com.alibaba.cola.statemachine.Action;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
@@ -7,7 +7,7 @@ import com.selfdevelopment.chatengine.enums.ConversationState;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Action executed when a retry is initiated after a failure (ERROR → IN_PROGRESS).
+ * Action executed when a retry is initiated after a failure (ERROR 鈫?IN_PROGRESS).
  * <p>
  * This recovery action handles the business logic of retrying a failed operation:
  * <ul>
@@ -113,7 +113,7 @@ public class SysRetryAction implements Action<ConversationState, ConversationFac
         long baseDelayMs = ctx.marketConfig() != null ? ctx.marketConfig().retryBaseDelayMs() : 1000;
         long maxDelayMs = ctx.marketConfig() != null ? ctx.marketConfig().retryMaxDelayMs() : 30000;
         long delay = Math.min(baseDelayMs * (1L << (attempt - 1)), maxDelayMs);
-        // Add jitter: ±20%
+        // Add jitter: 卤20%
         long jitter = (long) (delay * 0.2 * (Math.random() - 0.5));
         return Math.max(0, delay + jitter);
     }

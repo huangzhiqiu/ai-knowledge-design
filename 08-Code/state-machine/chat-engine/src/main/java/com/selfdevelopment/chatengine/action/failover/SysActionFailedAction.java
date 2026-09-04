@@ -1,4 +1,4 @@
-package com.selfdevelopment.chatengine.action.impl;
+package com.selfdevelopment.chatengine.action.failover;
 
 import com.alibaba.cola.statemachine.Action;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
@@ -7,7 +7,7 @@ import com.selfdevelopment.chatengine.enums.ConversationState;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Action executed when an unhandled exception occurs during action execution (various states → ERROR).
+ * Action executed when an unhandled exception occurs during action execution (various states 鈫?ERROR).
  * <p>
  * This failover action handles the business logic of action failure:
  * <ul>

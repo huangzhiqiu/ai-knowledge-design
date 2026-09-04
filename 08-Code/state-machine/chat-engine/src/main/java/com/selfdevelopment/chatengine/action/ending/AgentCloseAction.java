@@ -1,4 +1,4 @@
-package com.selfdevelopment.chatengine.action.impl;
+package com.selfdevelopment.chatengine.action.ending;
 
 import com.alibaba.cola.statemachine.Action;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
@@ -7,7 +7,7 @@ import com.selfdevelopment.chatengine.enums.ConversationState;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Action executed when an agent closes the conversation (IN_PROGRESS → ENDING).
+ * Action executed when an agent closes the conversation (IN_PROGRESS 鈫?ENDING).
  * <p>
  * This action handles the business logic of an agent-initiated conversation closure:
  * <ul>

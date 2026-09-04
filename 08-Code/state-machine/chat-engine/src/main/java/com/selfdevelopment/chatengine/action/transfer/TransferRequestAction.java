@@ -1,4 +1,4 @@
-package com.selfdevelopment.chatengine.action.impl;
+package com.selfdevelopment.chatengine.action.transfer;
 
 import com.alibaba.cola.statemachine.Action;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
@@ -7,7 +7,7 @@ import com.selfdevelopment.chatengine.enums.ConversationState;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Action executed when a transfer is requested (IN_PROGRESS → TRANSFERRED).
+ * Action executed when a transfer is requested (IN_PROGRESS 鈫?TRANSFERRED).
  * <p>
  * This action handles the actual business logic of transferring to a human agent:
  * <ul>

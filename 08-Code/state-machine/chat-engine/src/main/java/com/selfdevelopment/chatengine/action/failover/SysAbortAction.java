@@ -1,4 +1,4 @@
-package com.selfdevelopment.chatengine.action.impl;
+package com.selfdevelopment.chatengine.action.failover;
 
 import com.alibaba.cola.statemachine.Action;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
@@ -7,7 +7,7 @@ import com.selfdevelopment.chatengine.enums.ConversationState;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Action executed when a conversation is aborted after unrecoverable failure (ERROR → CLOSED).
+ * Action executed when a conversation is aborted after unrecoverable failure (ERROR 鈫?CLOSED).
  * <p>
  * This terminal recovery action handles the business logic of aborting a failed conversation:
  * <ul>

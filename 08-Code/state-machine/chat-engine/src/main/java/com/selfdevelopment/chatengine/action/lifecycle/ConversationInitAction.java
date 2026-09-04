@@ -1,4 +1,4 @@
-package com.selfdevelopment.chatengine.action.impl;
+package com.selfdevelopment.chatengine.action.lifecycle;
 
 import com.alibaba.cola.statemachine.Action;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
@@ -19,7 +19,7 @@ import lombok.extern.slf4j.Slf4j;
  * </ul>
  * <p>
  * After this action completes successfully, the conversation enters INITIATED state,
- * ready for customer connection (CUSTOMER_CONNECT → IN_PROGRESS).
+ * ready for customer connection (CUSTOMER_CONNECT 鈫?IN_PROGRESS).
  */
 @Slf4j
 public class ConversationInitAction

@@ -1,4 +1,4 @@
-package com.selfdevelopment.chatengine.action.impl;
+package com.selfdevelopment.chatengine.action.lifecycle;
 
 import com.alibaba.cola.statemachine.Action;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
@@ -7,7 +7,7 @@ import com.selfdevelopment.chatengine.enums.ConversationState;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Action executed when a customer connects (INITIATED → IN_PROGRESS).
+ * Action executed when a customer connects (INITIATED 鈫?IN_PROGRESS).
  * <p>
  * This action handles the actual business logic of establishing a connection:
  * <ul>
