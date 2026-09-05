@@ -1,7 +1,8 @@
 # Business Layer Design (Chat Engine + Agent Connector)
 
-> Version: 3.0 | Last Updated: 2026-09-04
+> Version: 4.0 | Last Updated: 2026-09-05
 > Based on Alibaba COLA StateMachine: https://github.com/alibaba/COLA
+> Aligned with Event-Driven Orchestration Design (v4.0)
 
 ## 1. Overview
 
@@ -9,17 +10,16 @@ The business layer implements conversation lifecycle management using **Alibaba 
 
 | Module | Package | Responsibility | External Systems |
 |--------|---------|----------------|------------------|
-| **chat-engine** | `com.selfdevelopment.chatengine` | Conversation state machine (business-level): 7 states, 7 actions, multi-market config, monitors, repository | AIBot API, Chat History ODS |
-| **agent-connector** | `com.selfdevelopment.agentconnector` | Interaction state machine (channel-level): 6 states, 9 actions, connector management | Genesys Cloud, Customer WebSocket |
+| **chat-engine** | `com.selfdevelopment.chatengine` | Conversation state machine (business-level): 7 states (NEW, INITIATED, ACTIVE, IN_PROGRESS, TRANSFERRED, ENDING, CLOSED), 25+ events, 13 actions, multi-market config, monitors, repository | AIBot API, Chat History ODS |
+| **agent-connector** | `com.selfdevelopment.agentconnector` | Interaction state machine (channel-level): 8 states (INITIATED, CONNECTED, IN_PROGRESS, DEGRADED, RECONNECTING, CONSULT_TRANSFER, TRANSFERRED, CLOSED), 20+ events, 14 actions, connector management | Genesys Cloud, Customer WebSocket |
 
 **Key Characteristics:**
 - **Powered by COLA StateMachine**: Uses `com.alibaba.cola.statemachine` as the core engine
 - **Dual-state model**: Conversation (business-level) + Interaction (channel-level), each in its own module
 - **Multi-market support**: Per-market configuration for timeouts and feature flags
 - **Full-chain tracing**: TraceId propagation via SLF4J MDC across async boundaries
-- **v6 design**: Transfer failures/timeouts return to INITIATED (no rollback to IN_PROGRESS)
+- **Event-Driven Orchestration (v4.0)**: Transfer failures/timeouts return to INITIATED (no rollback), Survey is field-based in ENDING, Customer Idle covers all wait states
 - **Automated monitors**: Three time-based monitors for idle detection, transfer timeout, and ending grace
-- **Survey as in-progress**: SURVEY_START is an internal transition (IN_PROGRESS → IN_PROGRESS), not a separate state
 - **Action-first transition**: Actions execute before state change; if action fails, state does NOT change
 - **Factory caching pattern**: COLA StateMachine does not allow rebuilding; factories use caching to prevent duplicate builds
 
