@@ -192,13 +192,13 @@ builder.externalTransition()
 
 ```java
 public enum ConversationState {
-    NEW,                // 初始状态，会话记录已创建但未初始化
-    INITIATED,          // 会话已初始化，等待客户连接
-    IN_PROGRESS,        // 客户已连接，正在处理（包括问卷作为子阶段）
-    TRANSFERRED,        // 正在转接人工客服
-    ENDING,             // 会话结束，清理宽限期
-    ERROR,              // 动作失败，故障转移状态
-    CLOSED              // 终止状态
+    NEW,                // 初始状态，会话已创建，等待交互就绪
+    INITIATED,          // 当前绑定的交互已就绪（InteractionState=CONNECTED）
+    ACTIVE,             // 交互已激活，等待第一条入站消息
+    IN_PROGRESS,        // 业务进行中（已收到第一条入站消息）
+    TRANSFERRED,        // CBOL 跨通道转接阶段（进行中）
+    ENDING,             // 不可逆：关闭前编排（保证最终 CLOSED）
+    CLOSED              // 最终终止状态
 }
 ```
 
@@ -213,7 +213,7 @@ ChatEngineStateMachineService service = new ChatEngineStateMachineService();
 CbolStateContext ctx = buildContext();
 
 // 触发事件（直接返回 ConversationState）
-ConversationState newState = service.fire(ctx, ConversationFact.CUSTOMER_CONNECT);
+ConversationState newState = service.fire(ctx, ConversationFact.INTERACTION_BECAME_ACTIVE);
 ```
 
 ### 5.3 运行 Chat Engine Demo
@@ -230,12 +230,14 @@ java -cp chat-engine/target/classes:statemachine-core/target/classes com.selfdev
 
 ```java
 public enum InteractionState {
-    CONNECTING,     // 正在建立连接
-    CONNECTED,      // 活跃连接
-    RECONNECTING,   // 正在重连
-    HELD,           // 连接保持
-    TRANSFERRING,   // 正在通道转接
-    DISCONNECTED    // 终止状态，连接已关闭
+    INITIATED,          // 连接已发起，等待连接结果
+    CONNECTED,          // 连接已建立，准备进行消息传递
+    IN_PROGRESS,        // 活跃消息传递（已收到第一条入站消息）
+    DEGRADED,           // 连接降级（心跳丢失，临时问题）
+    RECONNECTING,       // 重连进行中
+    CONSULT_TRANSFER,   // 仅限 GENESYS：咨询转接
+    TRANSFERRED,        // 跨通道源端分离标记
+    CLOSED              // 通道已终止（终态）
 }
 ```
 
@@ -250,7 +252,7 @@ AgentConnectorStateMachineService service = new AgentConnectorStateMachineServic
 AgentConnectorStateContext ctx = buildContext();
 
 // 触发事件（直接返回 InteractionState）
-InteractionState newState = service.fire(ctx, InteractionFact.CONNECTION_ESTABLISHED);
+InteractionState newState = service.fire(ctx, InteractionFact.CONNECTION_SUCCESS);
 ```
 
 ### 6.3 运行 Agent Connector Demo
