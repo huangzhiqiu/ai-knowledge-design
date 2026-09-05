@@ -1,7 +1,8 @@
 # Usage Guide
 
-> Version: 3.0 | Last Updated: 2026-09-05
+> Version: 4.0 | Last Updated: 2026-09-05
 > Based on Alibaba COLA StateMachine: https://github.com/alibaba/COLA
+> Aligned with Event-Driven Orchestration Design (v4.0)
 
 ## 1. Quick Start
 
@@ -67,7 +68,7 @@ CbolStateContext ctx = CbolStateContext.builder()
 // Fire event and get new state (COLA API returns target state directly)
 ConversationState newState = sm.fireEvent(
         ConversationState.NEW,
-        ConversationFact.CONVERSATION_INITIATED,
+        ConversationFact.SESSION_STARTED,
         ctx);
 
 // Update conversation state
@@ -87,9 +88,9 @@ StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> build
 builder.externalTransition()
         .from(ConversationState.NEW)
         .to(ConversationState.INITIATED)
-        .on(ConversationFact.CONVERSATION_INITIATED)
+        .on(ConversationFact.SESSION_STARTED)
         .when(ctx -> ctx.getMarketConfig() != null)  // optional guard
-        .perform(new ConversationInitAction());
+        .perform(new SessionStartedAction());
 ```
 
 **Builder API order:** `from() → to() → on() → when() → perform()`
@@ -100,9 +101,9 @@ Define an internal transition (state does NOT change, but action executes):
 
 ```java
 builder.internalTransition()
-        .within(ConversationState.IN_PROGRESS)
-        .on(ConversationFact.SURVEY_START)
-        .perform(new SurveyStartAction());
+        .within(ConversationState.ENDING)
+        .on(ConversationFact.SURVEY_SUBMITTED)
+        .perform(new SurveySubmittedAction());
 ```
 
 ### 2.3 Build and Register
@@ -127,14 +128,14 @@ StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
 ```java
 import com.alibaba.cola.statemachine.Action;
 
-public class CustomerConnectAction
+public class InboundMessageReceivedAction
         implements Action<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override
     public void execute(ConversationState from, ConversationState to,
                         ConversationFact event, CbolStateContext ctx) {
         // Your business logic here
-        log.info("Customer connected: conversationId={}",
+        log.info("Inbound message received: conversationId={}",
                 ctx.getConversation().getConversationId());
     }
 }
@@ -147,13 +148,13 @@ Actions execute **before** state change. If an action fails, the state does NOT 
 ```java
 try {
     ConversationState newState = sm.fireEvent(
-            ConversationState.INITIATED,
-            ConversationFact.CUSTOMER_CONNECT,
+            ConversationState.ACTIVE,
+            ConversationFact.INBOUND_MESSAGE_RECEIVED,
             ctx);
     // State changed successfully
 } catch (StateMachineException e) {
     // Action failed or no transition matched
-    // State remains INITIATED
+    // State remains ACTIVE
     log.error("Transition failed", e);
 }
 ```
