@@ -254,6 +254,42 @@ public class ConversationStateMachineFactory {
 
         // ===== GENESYS SAME-CHANNEL / CONSULT (conversation no-op) =====
         // These events are handled at the Interaction level, Conversation state machine treats them as no-op
+        // They can occur in ACTIVE or IN_PROGRESS states (during active conversation)
+
+        // ACTIVE → ACTIVE (internal): Genesys consult transfer started (no-op at conversation level)
+        builder.internalTransition()
+                .within(ConversationState.ACTIVE)
+                .on(ConversationFact.GENESYS_CONSULT_TRANSFER_STARTED);
+
+        // ACTIVE → ACTIVE (internal): Genesys consult transfer ended (no-op at conversation level)
+        builder.internalTransition()
+                .within(ConversationState.ACTIVE)
+                .on(ConversationFact.GENESYS_CONSULT_TRANSFER_ENDED);
+
+        // IN_PROGRESS → IN_PROGRESS (internal): Genesys consult transfer started (no-op at conversation level)
+        builder.internalTransition()
+                .within(ConversationState.IN_PROGRESS)
+                .on(ConversationFact.GENESYS_CONSULT_TRANSFER_STARTED);
+
+        // IN_PROGRESS → IN_PROGRESS (internal): Genesys consult transfer ended (no-op at conversation level)
+        builder.internalTransition()
+                .within(ConversationState.IN_PROGRESS)
+                .on(ConversationFact.GENESYS_CONSULT_TRANSFER_ENDED);
+
+        // IN_PROGRESS → IN_PROGRESS (internal): Genesys agent transfer started (no-op at conversation level)
+        builder.internalTransition()
+                .within(ConversationState.IN_PROGRESS)
+                .on(ConversationFact.GENESYS_AGENT_TRANSFER_STARTED);
+
+        // IN_PROGRESS → IN_PROGRESS (internal): Genesys agent transfer completed (no-op at conversation level)
+        builder.internalTransition()
+                .within(ConversationState.IN_PROGRESS)
+                .on(ConversationFact.GENESYS_AGENT_TRANSFER_COMPLETED);
+
+        // IN_PROGRESS → IN_PROGRESS (internal): Genesys agent transfer failed (no-op at conversation level)
+        builder.internalTransition()
+                .within(ConversationState.IN_PROGRESS)
+                .on(ConversationFact.GENESYS_AGENT_TRANSFER_FAILED);
 
         return builder.build(MACHINE_ID);
     }

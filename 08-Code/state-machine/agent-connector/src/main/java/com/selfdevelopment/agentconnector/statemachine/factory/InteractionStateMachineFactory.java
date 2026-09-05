@@ -232,11 +232,12 @@ public class InteractionStateMachineFactory {
 
         // === Ending (graceful closure) ===
 
-        // I19-I24: CONNECTED/IN_PROGRESS/DEGRADED/RECONNECTING/TRANSFERRED/CONSULT_TRANSFER → CLOSED (end requested)
+        // I19-I25: INITIATED/CONNECTED/IN_PROGRESS/DEGRADED/RECONNECTING/TRANSFERRED/CONSULT_TRANSFER → CLOSED (end requested)
         builder.externalTransitions()
-                .fromAmong(InteractionState.CONNECTED, InteractionState.IN_PROGRESS,
-                        InteractionState.DEGRADED, InteractionState.RECONNECTING,
-                        InteractionState.TRANSFERRED, InteractionState.CONSULT_TRANSFER)
+                .fromAmong(InteractionState.INITIATED, InteractionState.CONNECTED,
+                        InteractionState.IN_PROGRESS, InteractionState.DEGRADED,
+                        InteractionState.RECONNECTING, InteractionState.TRANSFERRED,
+                        InteractionState.CONSULT_TRANSFER)
                 .to(InteractionState.CLOSED)
                 .on(InteractionFact.END_REQUESTED)
                 .perform(END_REQUESTED_ACTION);
@@ -248,11 +249,12 @@ public class InteractionStateMachineFactory {
 
         // === System Error (unrecoverable) ===
 
-        // I26-I30: INITIATED/CONNECTED/IN_PROGRESS/DEGRADED/RECONNECTING → CLOSED (system error)
+        // I26-I32: INITIATED/CONNECTED/IN_PROGRESS/DEGRADED/RECONNECTING/TRANSFERRED/CONSULT_TRANSFER → CLOSED (system error)
         builder.externalTransitions()
                 .fromAmong(InteractionState.INITIATED, InteractionState.CONNECTED,
                         InteractionState.IN_PROGRESS, InteractionState.DEGRADED,
-                        InteractionState.RECONNECTING)
+                        InteractionState.RECONNECTING, InteractionState.TRANSFERRED,
+                        InteractionState.CONSULT_TRANSFER)
                 .to(InteractionState.CLOSED)
                 .on(InteractionFact.SYSTEM_ERROR)
                 .perform(SYSTEM_ERROR_ACTION);
