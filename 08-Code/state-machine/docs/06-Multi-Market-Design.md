@@ -1,7 +1,8 @@
 # Multi-Market State Machine Design
 
-> Version: 1.0 | Last Updated: 2026-09-01
+> Version: 4.0 | Last Updated: 2026-09-05
 > Status: Design Proposal (for review)
+> Aligned with Event-Driven Orchestration Design (v4.0)
 
 ## 1. Background & Requirements
 

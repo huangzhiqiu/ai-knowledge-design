@@ -1,7 +1,8 @@
 # State Machine Core Framework Design
 
-> Version: 3.1 | Last Updated: 2026-09-05
+> Version: 4.0 | Last Updated: 2026-09-05
 > Based on Alibaba COLA StateMachine: https://github.com/alibaba/COLA
+> Aligned with Event-Driven Orchestration Design (v4.0)
 
 ## 0. Design Principles
 
