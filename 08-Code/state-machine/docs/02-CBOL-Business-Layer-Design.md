@@ -166,6 +166,53 @@ stateDiagram-v2
 | 17 | ENDING | SURVEY_TIMEOUT | ENDING | - | (no action) | Internal, surveyStatus=TIMEOUT, endReason=CUSTOMER_IDLE |
 | 18 | ENDING | SURVEY_SKIPPED | ENDING | - | (no action) | Internal, surveyStatus=SKIPPED |
 
+### 3.2 State Machine Interaction Flow
+
+```mermaid
+sequenceDiagram
+    participant Ext as External Systems
+    participant Norm as Event Normalizers
+    participant ISM as Interaction SM<br/>(agent-connector)
+    participant CSM as Conversation SM<br/>(chat-engine)
+    participant Act as Actions
+    participant Repo as Repository
+
+    Ext->>Norm: External Event (AIBot/Genesys/WS)
+    Norm->>ISM: Normalized Interaction Event
+    
+    alt Connection Events
+        ISM->>ISM: CONNECTION_SUCCESS / CONNECTION_FAIL
+        ISM->>Act: Connection Actions
+        ISM->>CSM: INTERACTION_BECAME_ACTIVE
+    end
+    
+    alt Messaging Events
+        ISM->>ISM: FIRST_INBOUND_MESSAGE_RECEIVED
+        ISM->>Act: Messaging Actions
+        ISM->>CSM: INBOUND_MESSAGE_RECEIVED
+    end
+    
+    alt Transfer Events
+        ISM->>ISM: TRANSFER_SUCCESS / TRANSFER_FAILED
+        ISM->>Act: Transfer Actions
+        ISM->>CSM: SOURCE_INTERACTION_TRANSFERRED
+        CSM->>CSM: TARGET_INTERACTION_INITIATED
+        CSM->>CSM: TARGET_INTERACTION_CONNECTED / CONNECT_FAILED
+    end
+    
+    alt Ending Events
+        ISM->>ISM: END_REQUESTED
+        ISM->>Act: Ending Actions
+        ISM->>CSM: ALL_INTERACTIONS_ENDED
+        CSM->>CSM: ENDING_STARTED
+        CSM->>Act: Ending Actions
+        CSM->>CSM: ENDING_TIMEOUT / (endingActionsDone && interactionsClosed)
+    end
+    
+    CSM->>Repo: Save Conversation State
+    ISM->>Repo: Save Interaction State
+```
+
 ## 4. Core Components
 
 ### 4.1 CbolStateContext

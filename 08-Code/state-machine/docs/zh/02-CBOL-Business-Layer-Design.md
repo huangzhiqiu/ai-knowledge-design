@@ -127,6 +127,53 @@ stateDiagram-v2
 | 9 | TRANSFERRED | SYS_CUSTOMER_IDLE | ENDING | - | - | 监控器驱动 |
 | 10 | ENDING | SYS_ENDING_GRACE_TIMEOUT | CLOSED | - | - | 监控器驱动，终态 |
 
+### 3.2 状态机交互流程
+
+```mermaid
+sequenceDiagram
+    participant Ext as 外部系统
+    participant Norm as 事件归一化器
+    participant ISM as 交互状态机<br/>(agent-connector)
+    participant CSM as 会话状态机<br/>(chat-engine)
+    participant Act as 动作
+    participant Repo as 仓库
+
+    Ext->>Norm: 外部事件 (AIBot/Genesys/WS)
+    Norm->>ISM: 归一化后的交互事件
+    
+    alt 连接事件
+        ISM->>ISM: CONNECTION_SUCCESS / CONNECTION_FAIL
+        ISM->>Act: 连接动作
+        ISM->>CSM: INTERACTION_BECAME_ACTIVE
+    end
+    
+    alt 消息事件
+        ISM->>ISM: FIRST_INBOUND_MESSAGE_RECEIVED
+        ISM->>Act: 消息动作
+        ISM->>CSM: INBOUND_MESSAGE_RECEIVED
+    end
+    
+    alt 转接事件
+        ISM->>ISM: TRANSFER_SUCCESS / TRANSFER_FAILED
+        ISM->>Act: 转接动作
+        ISM->>CSM: SOURCE_INTERACTION_TRANSFERRED
+        CSM->>CSM: TARGET_INTERACTION_INITIATED
+        CSM->>CSM: TARGET_INTERACTION_CONNECTED / CONNECT_FAILED
+    end
+    
+    alt 结束事件
+        ISM->>ISM: END_REQUESTED
+        ISM->>Act: 结束动作
+        ISM->>CSM: ALL_INTERACTIONS_ENDED
+        CSM->>CSM: ENDING_STARTED
+        CSM->>Act: 结束动作
+        CSM->>CSM: ENDING_TIMEOUT / (endingActionsDone && interactionsClosed)
+    end
+    
+    CSM->>Repo: 保存会话状态
+    ISM->>Repo: 保存交互状态
+```
+
 ## 4. 核心组件
 
 ### 4.1 CbolStateContext
