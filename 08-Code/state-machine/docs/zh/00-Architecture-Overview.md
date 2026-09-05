@@ -1,7 +1,8 @@
 # 状态机架构设计
 
-> 版本：3.0 | 最后更新：2026-09-04
+> 版本：4.0 | 最后更新：2026-09-05
 > 基于阿里巴巴 COLA StateMachine：https://github.com/alibaba/COLA
+> 对齐事件驱动编排设计（v4.0）
 
 ## 1. 概览
 
@@ -12,8 +13,8 @@
 | 模块 | 包名 | 职责 |
 |------|------|------|
 | **statemachine-core** | `com.alibaba.cola.statemachine` | 阿里巴巴 COLA StateMachine 核心引擎：Action、Condition、State、Transition、Builder DSL、StateMachineFactory、PlantUML 生成 |
-| **chat-engine** | `com.selfdevelopment.chatengine` | 会话状态机（业务层）：7 个状态、7 个动作、多市场配置、监控器、仓库、Demo |
-| **agent-connector** | `com.selfdevelopment.agentconnector` | 交互状态机（通道层）：6 个状态、9 个动作、通道连接器、事件归一化器、Demo |
+| **chat-engine** | `com.selfdevelopment.chatengine` | 会话状态机（业务层）：7 个状态（NEW, INITIATED, ACTIVE, IN_PROGRESS, TRANSFERRED, ENDING, CLOSED）、25+ 个事件、13 个动作、多市场配置、监控器、仓库、Demo |
+| **agent-connector** | `com.selfdevelopment.agentconnector` | 交互状态机（通道层）：8 个状态（INITIATED, CONNECTED, IN_PROGRESS, DEGRADED, RECONNECTING, CONSULT_TRANSFER, TRANSFERRED, CLOSED）、20+ 个事件、14 个动作、通道连接器、事件归一化器、Demo |
 
 ### 模块依赖
 
@@ -42,7 +43,7 @@ agent-connector ──► statemachine-core
 // 调用者管理状态；引擎只存储转换规则
 ConversationState newState = stateMachine.fireEvent(
     conversation.getCurrentState(),  // 由调用者注入
-    ConversationFact.CUSTOMER_CONNECT,
+    ConversationFact.INTERACTION_BECAME_ACTIVE,
     context
 );
 conversation.setCurrentState(newState);
