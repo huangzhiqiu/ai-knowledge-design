@@ -28,6 +28,62 @@ agent-connector ──► statemachine-core
 - 每个模块可以独立开发、测试和部署
 - 清晰的系统边界：chat-engine 连接 AIBot 和 ChatHistory；agent-connector 连接 Genesys 和 WebSocket
 
+### 系统架构图
+
+```mermaid
+graph TB
+    subgraph "外部系统"
+        AIBOT[AIBot API]
+        GENESYS[Genesys Cloud]
+        WS[客户 WebSocket]
+        CHAT[聊天历史 ODS]
+    end
+
+    subgraph "入口层"
+        NORM1[AibotEventNormalizer]
+        NORM2[GenesysEventNormalizer]
+    end
+
+    subgraph "业务层"
+        CE[chat-engine<br/>会话状态机<br/>7 状态 / 25+ 事件 / 13 动作]
+        AC[agent-connector<br/>交互状态机<br/>8 状态 / 20+ 事件 / 14 动作]
+    end
+
+    subgraph "核心层"
+        CORE[statemachine-core<br/>阿里巴巴 COLA StateMachine<br/>Action / Condition / State / Transition / Builder DSL]
+    end
+
+    subgraph "横切关注点"
+        MON[监控器<br/>CustomerIdle / Transfer / Ending]
+        CFG[多市场配置<br/>MarketConfigProvider]
+        TRACE[追踪上下文<br/>SLF4J MDC 传播]
+    end
+
+    AIBOT --> NORM1
+    GENESYS --> NORM2
+    WS --> NORM2
+
+    NORM1 --> CE
+    NORM2 --> AC
+
+    AC -->|交互事件| CE
+    CE --> CHAT
+
+    CE --> CORE
+    AC --> CORE
+
+    CE --> MON
+    AC --> MON
+    CE --> CFG
+    AC --> CFG
+    CE --> TRACE
+    AC --> TRACE
+
+    style CE fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    style AC fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style CORE fill:#fff3e0,stroke:#e65100,stroke-width:2px
+```
+
 ## 2. 设计原则
 
 ### 2.1 无状态引擎（强制）

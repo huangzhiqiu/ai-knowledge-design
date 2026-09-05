@@ -28,6 +28,62 @@ agent-connector ──► statemachine-core
 - Each module can be developed, tested, and deployed independently
 - Clear system boundaries: chat-engine connects to AIBot and ChatHistory; agent-connector connects to Genesys and WebSocket
 
+### System Architecture Diagram
+
+```mermaid
+graph TB
+    subgraph "External Systems"
+        AIBOT[AIBot API]
+        GENESYS[Genesys Cloud]
+        WS[Customer WebSocket]
+        CHAT[Chat History ODS]
+    end
+
+    subgraph "Ingress Layer"
+        NORM1[AibotEventNormalizer]
+        NORM2[GenesysEventNormalizer]
+    end
+
+    subgraph "Business Layer"
+        CE[chat-engine<br/>Conversation State Machine<br/>7 states / 25+ events / 13 actions]
+        AC[agent-connector<br/>Interaction State Machine<br/>8 states / 20+ events / 14 actions]
+    end
+
+    subgraph "Core Layer"
+        CORE[statemachine-core<br/>Alibaba COLA StateMachine<br/>Action / Condition / State / Transition / Builder DSL]
+    end
+
+    subgraph "Cross-Cutting Concerns"
+        MON[Monitors<br/>CustomerIdle / Transfer / Ending]
+        CFG[Multi-Market Config<br/>MarketConfigProvider]
+        TRACE[Trace Context<br/>SLF4J MDC Propagation]
+    end
+
+    AIBOT --> NORM1
+    GENESYS --> NORM2
+    WS --> NORM2
+
+    NORM1 --> CE
+    NORM2 --> AC
+
+    AC -->|Interaction Events| CE
+    CE --> CHAT
+
+    CE --> CORE
+    AC --> CORE
+
+    CE --> MON
+    AC --> MON
+    CE --> CFG
+    AC --> CFG
+    CE --> TRACE
+    AC --> TRACE
+
+    style CE fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    style AC fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style CORE fill:#fff3e0,stroke:#e65100,stroke-width:2px
+```
+
 ## 2. Design Principles
 
 ### 2.1 Stateless Engine (Mandatory)
