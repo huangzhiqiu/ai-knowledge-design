@@ -15,9 +15,9 @@ import java.util.Optional;
  * <p>
  * Maps Genesys event types to interaction facts:
  * <ul>
- *   <li>conversation.started → CONNECTION_ESTABLISHED</li>
- *   <li>conversation.ended → CLOSE_REQUEST</li>
- *   <li>conversation.transferred → TRANSFER_COMPLETE</li>
+ *   <li>conversation.started → CONNECTION_SUCCESS</li>
+ *   <li>conversation.ended → END_REQUESTED</li>
+ *   <li>conversation.transferred → TRANSFER_SUCCESS</li>
  * </ul>
  * <p>
  * Events with unknown types are filtered out (return empty).
@@ -28,9 +28,9 @@ public class GenesysEventNormalizer {
 
     /** Genesys event type → interaction fact mapping */
     private static final Map<String, InteractionFact> EVENT_TYPE_MAPPING = Map.of(
-            "conversation.started", InteractionFact.CONNECTION_ESTABLISHED,
-            "conversation.ended", InteractionFact.CLOSE_REQUEST,
-            "conversation.transferred", InteractionFact.TRANSFER_COMPLETE
+            "conversation.started", InteractionFact.CONNECTION_SUCCESS,
+            "conversation.ended", InteractionFact.END_REQUESTED,
+            "conversation.transferred", InteractionFact.TRANSFER_SUCCESS
     );
 
     /**
