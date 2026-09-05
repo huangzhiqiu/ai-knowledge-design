@@ -98,13 +98,20 @@ stateDiagram-v2
 ### 2.1 状态
 
 ```java
+## 2. 交互状态机
+
+### 2.1 状态（InteractionState）
+
+```java
 public enum InteractionState {
-    CONNECTING,     // 通道正在建立连接
-    CONNECTED,      // 通道活跃，通信进行中
-    RECONNECTING,   // 通道断开，正在尝试重连
-    HELD,           // 客户被保持（客服发起）
-    TRANSFERRING,   // 通道转接进行中（如 WebSocket 切换）
-    DISCONNECTED    // 通道已终止（终态）
+    INITIATED,          // 连接已发起，等待连接结果
+    CONNECTED,          // 连接已建立，准备进行消息传递
+    IN_PROGRESS,        // 活跃消息传递（已收到第一条入站消息）
+    DEGRADED,           // 连接降级（心跳丢失，临时问题）
+    RECONNECTING,       // 重连进行中
+    CONSULT_TRANSFER,   // 仅限 GENESYS：咨询转接
+    TRANSFERRED,        // 跨通道源端分离标记
+    CLOSED              // 通道已终止（终态）
 }
 ```
 
@@ -113,12 +120,23 @@ public enum InteractionState {
 ```java
 public enum InteractionFact {
     // 连接生命周期
-    CONNECTION_ESTABLISHED, CONNECTION_FAILED, CONNECTION_DROPPED,
-    RECONNECT_SUCCESS, RECONNECT_FAILED, RECONNECT_EXHAUSTED, CLOSE_REQUEST,
-    // 保持
-    HOLD_REQUEST, HOLD_RESUME,
-    // 转接（通道层面）
-    TRANSFER_START, TRANSFER_COMPLETE, TRANSFER_FAILED
+    CONNECTION_SUCCESS, CONNECTION_FAIL,
+    // 消息传递
+    FIRST_INBOUND_MESSAGE_RECEIVED, INBOUND_MESSAGE_RECEIVED, OUTBOUND_MESSAGE_SENT,
+    // 心跳与降级
+    HEARTBEAT_MISS, HEARTBEAT_RESTORED,
+    // 重连
+    RECONNECT_ATTEMPT, RECONNECT_SUCCESS, RECONNECT_FAIL,
+    // genesys 咨询转接（仅限 GENESYS）
+    CONSULT_TRANSFER_STARTED, CONSULT_TRANSFER_ENDED,
+    // 跨通道转接（源端分离标记）
+    TRANSFER_SUCCESS, TRANSFER_FAILED,
+    // 结束
+    END_REQUESTED, INTERACTION_CLOSED,
+    // 系统
+    SYSTEM_ERROR,
+    // 下游可用性
+    DOWNSTREAM_UNAVAILABLE
 }
 ```
 
@@ -126,48 +144,63 @@ public enum InteractionFact {
 
 ```mermaid
 stateDiagram-v2
-    [*] --> CONNECTING
+    direction LR
 
-    CONNECTING --> CONNECTED : CONNECTION_ESTABLISHED
-    CONNECTING --> DISCONNECTED : CONNECTION_FAILED
+    [*] --> INITIATED
 
-    CONNECTED --> RECONNECTING : CONNECTION_DROPPED
-    CONNECTED --> HELD : HOLD_REQUEST
-    CONNECTED --> TRANSFERRING : TRANSFER_START
-    CONNECTED --> DISCONNECTED : CLOSE_REQUEST
+    INITIATED --> CONNECTED: CONNECTION_SUCCESS
+    INITIATED --> CLOSED: CONNECTION_FAIL
 
-    RECONNECTING --> CONNECTED : RECONNECT_SUCCESS
-    RECONNECTING --> DISCONNECTED : RECONNECT_FAILED
-    RECONNECTING --> DISCONNECTED : RECONNECT_EXHAUSTED
+    CONNECTED --> IN_PROGRESS: FIRST_INBOUND_MESSAGE_RECEIVED
 
-    HELD --> CONNECTED : HOLD_RESUME
-    HELD --> DISCONNECTED : CLOSE_REQUEST
+    CONNECTED --> DEGRADED: HEARTBEAT_MISS
+    IN_PROGRESS --> DEGRADED: HEARTBEAT_MISS
 
-    TRANSFERRING --> CONNECTED : TRANSFER_COMPLETE
-    TRANSFERRING --> CONNECTED : TRANSFER_FAILED
-    TRANSFERRING --> DISCONNECTED : CLOSE_REQUEST
+    DEGRADED --> RECONNECTING: RECONNECT_ATTEMPT
+    RECONNECTING --> CONNECTED: RECONNECT_SUCCESS
+    RECONNECTING --> IN_PROGRESS: RECONNECT_SUCCESS
+    RECONNECTING --> CLOSED: RECONNECT_FAIL(max)
 
-    DISCONNECTED --> [*]
+    IN_PROGRESS --> CONSULT_TRANSFER: CONSULT_TRANSFER_STARTED\n(仅限 GENESYS)
+    CONSULT_TRANSFER --> IN_PROGRESS: CONSULT_TRANSFER_ENDED\n(仅限 GENESYS)
+
+    IN_PROGRESS --> TRANSFERRED: TRANSFER_SUCCESS\n(跨通道分离标记)
+
+    CONNECTED --> CLOSED: END_REQUESTED
+    IN_PROGRESS --> CLOSED: END_REQUESTED
+    DEGRADED --> CLOSED: END_REQUESTED
+    RECONNECTING --> CLOSED: END_REQUESTED
+    TRANSFERRED --> CLOSED: END_REQUESTED
 ```
 
 ### 2.4 迁移表
 
-| ID | 源状态 | 事件 | 目标状态 | 说明 |
-|----|--------|------|---------|------|
-| I01 | CONNECTING | CONNECTION_ESTABLISHED | CONNECTED | 通道连接成功 |
-| I02 | CONNECTING | CONNECTION_FAILED | DISCONNECTED | 连接失败（网络/认证） |
-| I03 | CONNECTED | CONNECTION_DROPPED | RECONNECTING | 活跃连接意外断开 |
-| I04 | CONNECTED | CLOSE_REQUEST | DISCONNECTED | 主动关闭（客户/客服） |
-| I05 | RECONNECTING | RECONNECT_SUCCESS | CONNECTED | 重连尝试成功 |
-| I06 | RECONNECTING | RECONNECT_FAILED | DISCONNECTED | 重连尝试失败 |
-| I07 | RECONNECTING | RECONNECT_EXHAUSTED | DISCONNECTED | 达到最大重连次数 |
-| I08 | CONNECTED | HOLD_REQUEST | HELD | 客服保持客户 |
-| I09 | HELD | HOLD_RESUME | CONNECTED | 客户从保持中恢复 |
-| I10 | HELD | CLOSE_REQUEST | DISCONNECTED | 保持期间关闭 |
-| I11 | CONNECTED | TRANSFER_START | TRANSFERRING | 通道转接发起 |
-| I12 | TRANSFERRING | TRANSFER_COMPLETE | CONNECTED | 转接完成，在新通道上 |
-| I13 | TRANSFERRING | TRANSFER_FAILED | CONNECTED | 转接失败，留在原通道 |
-| I14 | TRANSFERRING | CLOSE_REQUEST | DISCONNECTED | 转接期间关闭 |
+| ID | 源状态 | 事件 | 目标状态 | Action | 说明 |
+|----|--------|------|---------|--------|------|
+| I01 | INITIATED | CONNECTION_SUCCESS | CONNECTED | ConnectionSuccessAction | 通道连接成功 |
+| I02 | INITIATED | CONNECTION_FAIL | CLOSED | ConnectionFailAction | 连接失败（网络/认证） |
+| I03 | CONNECTED | FIRST_INBOUND_MESSAGE_RECEIVED | IN_PROGRESS | FirstInboundMessageReceivedAction | 第一条入站消息，进入活跃消息传递 |
+| I04 | IN_PROGRESS | INBOUND_MESSAGE_RECEIVED | IN_PROGRESS | （无 action） | 内部，更新 lastInboundAt |
+| I05 | IN_PROGRESS | OUTBOUND_MESSAGE_SENT | IN_PROGRESS | （无 action） | 内部，仅审计 |
+| I06 | CONNECTED | HEARTBEAT_MISS | DEGRADED | HeartbeatMissAction | 心跳丢失，进入降级 |
+| I07 | IN_PROGRESS | HEARTBEAT_MISS | DEGRADED | HeartbeatMissAction | 心跳丢失，进入降级 |
+| I08 | DEGRADED | HEARTBEAT_RESTORED | CONNECTED | HeartbeatRestoredAction | 心跳恢复，恢复到已连接 |
+| I09 | DEGRADED | RECONNECT_ATTEMPT | RECONNECTING | ReconnectAttemptAction | 发起重连 |
+| I10 | RECONNECTING | RECONNECT_SUCCESS | CONNECTED | ReconnectSuccessAction | 重连成功，恢复到已连接 |
+| I11 | RECONNECTING | RECONNECT_SUCCESS | IN_PROGRESS | ReconnectSuccessAction | 重连成功，恢复到进行中 |
+| I12 | RECONNECTING | RECONNECT_FAIL | CLOSED | ReconnectFailAction | 达到最大重连次数 |
+| I13 | IN_PROGRESS | CONSULT_TRANSFER_STARTED | CONSULT_TRANSFER | ConsultTransferStartedAction | 仅限 GENESYS：咨询转接开始 |
+| I14 | CONSULT_TRANSFER | CONSULT_TRANSFER_ENDED | IN_PROGRESS | ConsultTransferEndedAction | 仅限 GENESYS：咨询转接结束 |
+| I15 | IN_PROGRESS | TRANSFER_SUCCESS | TRANSFERRED | TransferSuccessAction | 跨通道转接成功，源端分离 |
+| I16 | IN_PROGRESS | TRANSFER_FAILED | IN_PROGRESS | （无 action） | 转接被拒绝，留在原通道 |
+| I17 | CONNECTED | END_REQUESTED | CLOSED | EndRequestedAction | 主动关闭 |
+| I18 | IN_PROGRESS | END_REQUESTED | CLOSED | EndRequestedAction | 主动关闭 |
+| I19 | DEGRADED | END_REQUESTED | CLOSED | EndRequestedAction | 主动关闭 |
+| I20 | RECONNECTING | END_REQUESTED | CLOSED | EndRequestedAction | 主动关闭 |
+| I21 | TRANSFERRED | END_REQUESTED | CLOSED | EndRequestedAction | 转接后主动关闭 |
+| I22 | 任意 | SYSTEM_ERROR | CLOSED | SystemErrorAction | 不可恢复的系统错误 |
+| I23 | CONNECTED | DOWNSTREAM_UNAVAILABLE | DEGRADED | DownstreamUnavailableAction | 临时下游不可用 |
+| I24 | IN_PROGRESS | DOWNSTREAM_UNAVAILABLE | DEGRADED | DownstreamUnavailableAction | 临时下游不可用 |
 
 ## 3. 监控器触发图
 
@@ -175,29 +208,31 @@ stateDiagram-v2
 
 ```mermaid
 flowchart LR
-    A[会话处于<br/>INITIATED/IN_PROGRESS/TRANSFERRED] --> B{lastActivityTs<br/>+ customerIdleSeconds<br/>< now?}
+    A[会话处于<br/>INITIATED/ACTIVE/IN_PROGRESS/TRANSFERRED] --> B{lastInboundAt/activeAt<br/>+ customerIdleSeconds<br/>< now?}
     B -->|否| C[无操作]
-    B -->|是| D[触发 SYS_CUSTOMER_IDLE]
-    D --> E[状态 → ENDING]
+    B -->|是| D[触发 CUSTOMER_IDLE_TIMEOUT]
+    D --> E[状态 → ENDING<br/>endReason=CUSTOMER_IDLE]
 ```
 
 ### 3.2 TransferMonitor
 
 ```mermaid
 flowchart LR
-    A[会话处于<br/>TRANSFERRED] --> B{transferStartTs<br/>+ transferTimeoutSeconds<br/>< now?}
+    A[会话处于<br/>TRANSFERRED] --> B{transferDeadlineAt<br/><= now?}
     B -->|否| C[无操作]
-    B -->|是| D[触发 SYS_TRANSFER_TIMEOUT]
-    D --> E[状态 → INITIATED<br/>v6：不回滚]
+    B -->|是| D[触发 TRANSFER_TIMEOUT]
+    D --> E[状态 → INITIATED<br/>v4.0：不回滚，重新路由]
 ```
 
-### 3.3 EndingGraceMonitor
+### 3.3 EndingMonitor
 
 ```mermaid
 flowchart LR
-    A[会话处于<br/>ENDING] --> B{endingStartTs<br/>+ endingGraceSeconds<br/>< now?}
+    A[会话处于<br/>ENDING] --> B{endingDeadlineAt<br/><= now?}
     B -->|否| C[无操作]
-    B -->|是| D[触发 SYS_ENDING_GRACE_TIMEOUT]
+    B -->|是| D[触发 ENDING_TIMEOUT]
+    D --> E[状态 → CLOSED<br/>强制关闭，终态]
+```
     D --> E[状态 → CLOSED<br/>终态]
 ```
 
