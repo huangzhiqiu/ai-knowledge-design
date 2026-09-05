@@ -75,6 +75,41 @@ ConversationState newState = sm.fireEvent(
 conversation.setState(newState);
 ```
 
+### 1.5 状态机使用流程
+
+```mermaid
+flowchart TD
+    A[应用启动] --> B[构建状态机<br/>使用 Factory]
+    B --> C[注册状态机<br/>StateMachineFactory.register]
+    C --> D[等待外部事件]
+
+    D --> E[接收外部事件]
+    E --> F[归一化事件<br/>事件归一化器]
+    F --> G[构建状态上下文<br/>CbolStateContext]
+    G --> H[加载市场配置<br/>MarketConfigProvider]
+    H --> I[触发事件<br/>stateMachine.fireEvent]
+
+    I --> J{守卫检查<br/>when()}
+    J -->|False| K[转换被拒绝<br/>状态不变]
+    J -->|True| L{执行动作<br/>perform()}
+
+    L -->|成功| M[状态转换完成<br/>返回目标状态]
+    L -->|失败| N[StateMachineException<br/>状态不变]
+
+    M --> O[更新实体状态]
+    O --> P[保存到仓库]
+    P --> Q[记录状态转换日志]
+    Q --> D
+
+    K --> D
+    N --> R[处理异常<br/>业务层]
+    R --> D
+
+    style I fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style L fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style M fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+```
+
 ## 2. COLA Builder DSL
 
 ### 2.1 外部转换

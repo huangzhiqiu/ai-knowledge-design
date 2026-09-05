@@ -75,6 +75,41 @@ ConversationState newState = sm.fireEvent(
 conversation.setState(newState);
 ```
 
+### 1.5 State Machine Usage Flow
+
+```mermaid
+flowchart TD
+    A[Application Startup] --> B[Build State Machine<br/>using Factory]
+    B --> C[Register State Machine<br/>StateMachineFactory.register]
+    C --> D[Wait for External Event]
+
+    D --> E[Receive External Event]
+    E --> F[Normalize Event<br/>Event Normalizer]
+    F --> G[Build State Context<br/>CbolStateContext]
+    G --> H[Load Market Config<br/>MarketConfigProvider]
+    H --> I[Fire Event<br/>stateMachine.fireEvent]
+
+    I --> J{Guard Check<br/>when()}
+    J -->|False| K[Transition Rejected<br/>State Unchanged]
+    J -->|True| L{Execute Action<br/>perform()}
+
+    L -->|Success| M[State Transition Complete<br/>Return Target State]
+    L -->|Failure| N[StateMachineException<br/>State Unchanged]
+
+    M --> O[Update Entity State]
+    O --> P[Save to Repository]
+    P --> Q[Log State Transition Record]
+    Q --> D
+
+    K --> D
+    N --> R[Handle Exception<br/>Business Layer]
+    R --> D
+
+    style I fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style L fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style M fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+```
+
 ## 2. COLA Builder DSL
 
 ### 2.1 External Transition
