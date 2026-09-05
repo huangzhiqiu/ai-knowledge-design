@@ -824,7 +824,7 @@ public void showStateMachine() {
 ```java
 @Bean
 public StateMachine<ConversationState, ConversationFact, CbolStateContext> conversationStateMachine() {
-    return ConversationStateMachineFactory.build();  // 缓存，返回相同实例
+    return ConversationStateMachineFactory.create();  // 缓存，返回相同实例
 }
 ```
 

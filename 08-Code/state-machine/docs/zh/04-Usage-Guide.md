@@ -52,7 +52,7 @@ import com.alibaba.cola.statemachine.StateMachine;
 // 构建和注册（在应用启动时调用一次）
 // 工厂使用缓存模式防止重复构建
 StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
-        ConversationStateMachineFactory.build();
+        ConversationStateMachineFactory.create();
 ```
 
 ### 1.4 触发事件
@@ -241,7 +241,7 @@ public enum ConversationState {
 
 ```java
 // 初始化（在启动时调用一次）
-ConversationStateMachineFactory.build();
+ConversationStateMachineFactory.create();
 ChatEngineStateMachineService service = new ChatEngineStateMachineService();
 
 // 构建上下文
@@ -396,7 +396,7 @@ worker.submit(action, from, to, event, ctx);
 
 ```java
 StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
-        ConversationStateMachineFactory.build();
+        ConversationStateMachineFactory.create();
 
 String plantUml = sm.generatePlantUML();
 System.out.println(plantUml);
@@ -449,7 +449,7 @@ mvnw.cmd test -pl statemachine-core
 // 在应用启动时调用一次
 @PostConstruct
 public void init() {
-    ConversationStateMachineFactory.build();
+    ConversationStateMachineFactory.create();
     InteractionStateMachineFactory.create();
 }
 ```
@@ -506,7 +506,7 @@ public class StateMachineConfig {
 
     @Bean
     public StateMachine<ConversationState, ConversationFact, CbolStateContext> conversationStateMachine() {
-        return ConversationStateMachineFactory.build();
+        return ConversationStateMachineFactory.create();
     }
 
     @Bean

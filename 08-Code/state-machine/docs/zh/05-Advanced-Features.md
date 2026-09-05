@@ -290,7 +290,7 @@ COLA StateMachine 有一个内置的 `generatePlantUML()` 方法，可以生成 
 
 ```java
 StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
-        ConversationStateMachineFactory.build();
+        ConversationStateMachineFactory.create();
 
 String plantUml = sm.generatePlantUML();
 System.out.println(plantUml);
