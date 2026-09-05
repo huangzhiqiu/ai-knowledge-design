@@ -16,6 +16,8 @@
         <module>statemachine-core</module>
         <module>chat-engine</module>
         <module>agent-connector</module>
+        <module>chat-engine-app</module>
+        <module>agent-connector-app</module>
     </modules>
 
     <properties>
