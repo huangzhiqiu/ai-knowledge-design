@@ -61,7 +61,7 @@ CbolStateContext ctx = CbolStateContext.builder()
 
 ConversationState newState = sm.fireEvent(
         conversation.state(),
-        ConversationFact.CUSTOMER_CONNECT,
+        ConversationFact.INTERACTION_BECAME_ACTIVE,
         ctx);
 ```
 
@@ -95,7 +95,7 @@ public class CustomerIdleMonitor {
         int threshold = ctx.marketConfig().customerIdleSeconds() * 1000;
 
         if (idleMs > threshold) {
-            service.fire(ctx, ConversationFact.SYS_CUSTOMER_IDLE);
+            service.fire(ctx, ConversationFact.CUSTOMER_IDLE_TIMEOUT);
         }
     }
 }
@@ -117,7 +117,7 @@ public class TransferMonitor {
         int threshold = ctx.marketConfig().transferTimeoutSeconds() * 1000;
 
         if (elapsedMs > threshold) {
-            service.fire(ctx, ConversationFact.SYS_TRANSFER_TIMEOUT);
+            service.fire(ctx, ConversationFact.TRANSFER_TIMEOUT);
         }
     }
 }
@@ -139,7 +139,7 @@ public class EndingGraceMonitor {
         int threshold = ctx.marketConfig().endingGraceSeconds() * 1000;
 
         if (elapsedMs > threshold) {
-            service.fire(ctx, ConversationFact.SYS_ENDING_GRACE_TIMEOUT);
+            service.fire(ctx, ConversationFact.ENDING_TIMEOUT);
         }
     }
 }
