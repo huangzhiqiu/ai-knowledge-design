@@ -26,7 +26,7 @@ public class ChatEngineDemo {
         DemoLogger.printTitle("Chat Engine Conversation State Machine Demo (COLA)");
 
         // Build and register the conversation state machine
-        ConversationStateMachineFactory.build();
+        ConversationStateMachineFactory.create();
         DemoLogger.printInfo("State machine registered: " + ConversationStateMachineFactory.MACHINE_ID);
 
         runBasicConversationFlow();

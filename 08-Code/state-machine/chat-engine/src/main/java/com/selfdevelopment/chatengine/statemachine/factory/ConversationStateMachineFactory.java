@@ -60,7 +60,13 @@ public class ConversationStateMachineFactory {
     private static final SystemErrorAction SYSTEM_ERROR_ACTION = new SystemErrorAction();
     private static final DownstreamUnavailableAction DOWNSTREAM_UNAVAILABLE_ACTION = new DownstreamUnavailableAction();
 
-    public static StateMachine<ConversationState, ConversationFact, CbolStateContext> build() {
+    /**
+     * Creates and registers the conversation state machine with all transition rules.
+     * Uses double-checked locking for thread-safe singleton initialization.
+     *
+     * @return the configured and registered conversation state machine
+     */
+    public static StateMachine<ConversationState, ConversationFact, CbolStateContext> create() {
         // Try to get existing state machine first
         try {
             StateMachine<ConversationState, ConversationFact, CbolStateContext> existing =
@@ -84,8 +90,26 @@ public class ConversationStateMachineFactory {
                 // State machine not built yet
             }
 
-            StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> builder =
-                    StateMachineBuilderFactory.create();
+            // Build and register
+            try {
+                StateMachine<ConversationState, ConversationFact, CbolStateContext> sm = build();
+                StateMachineFactory.register(sm);
+                return sm;
+            } catch (Exception e) {
+                // State machine already built, return existing instance
+                return StateMachineFactory.get(MACHINE_ID);
+            }
+        }
+    }
+
+    /**
+     * Builds the conversation state machine without registering it.
+     *
+     * @return the configured conversation state machine
+     */
+    public static StateMachine<ConversationState, ConversationFact, CbolStateContext> build() {
+        StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> builder =
+                StateMachineBuilderFactory.create();
 
         // ===== 5.1 BASIC LIFECYCLE =====
         // COLA API order: from → to → on → when → perform
@@ -231,15 +255,6 @@ public class ConversationStateMachineFactory {
         // ===== GENESYS SAME-CHANNEL / CONSULT (conversation no-op) =====
         // These events are handled at the Interaction level, Conversation state machine treats them as no-op
 
-        // Build and register
-        try {
-            StateMachine<ConversationState, ConversationFact, CbolStateContext> sm = builder.build(MACHINE_ID);
-            StateMachineFactory.register(sm);
-            return sm;
-        } catch (Exception e) {
-            // State machine already built, return existing instance
-            return StateMachineFactory.get(MACHINE_ID);
-        }
-        }
+        return builder.build(MACHINE_ID);
     }
 }

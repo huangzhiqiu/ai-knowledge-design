@@ -25,9 +25,10 @@ public class ChatEngineStateMachineService {
 
     /**
      * Creates a service using the globally registered conversation state machine.
+     * Ensures the state machine is created and registered on first use.
      */
     public ChatEngineStateMachineService() {
-        this(StateMachineFactory.get(ConversationStateMachineFactory.MACHINE_ID));
+        this(ConversationStateMachineFactory.create());
     }
 
     /**

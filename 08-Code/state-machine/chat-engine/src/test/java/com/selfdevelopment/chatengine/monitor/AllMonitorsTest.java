@@ -21,7 +21,7 @@ class AllMonitorsTest {
 
     @BeforeAll
     static void setUp() {
-        ConversationStateMachineFactory.build();
+        ConversationStateMachineFactory.create();
         service = new ChatEngineStateMachineService();
     }
 
