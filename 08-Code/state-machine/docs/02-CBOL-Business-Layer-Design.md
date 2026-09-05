@@ -29,13 +29,13 @@ The business layer implements conversation lifecycle management using **Alibaba 
 
 ```java
 public enum ConversationState {
-    NEW,                // Initial state, conversation record created but not initialized
-    INITIATED,          // Conversation initialized, waiting for customer connection
-    IN_PROGRESS,        // Customer connected, AI or agent actively handling (includes survey as sub-phase)
-    TRANSFERRED,        // Transfer to human agent in progress
-    ENDING,             // Conversation ending, grace period for cleanup
-    ERROR,              // Action failed, failover state (retry or abort)
-    CLOSED              // Terminal state, conversation fully closed
+    NEW,                // Initial state, conversation created, waiting for interaction ready (or downstream assignment)
+    INITIATED,          // Current bound interaction ready (InteractionState=CONNECTED)
+    ACTIVE,             // Interaction became active, waiting for first inbound message
+    IN_PROGRESS,        // Business in progress (first inbound message received)
+    TRANSFERRED,        // CBOL cross-channel transfer phase (in-flight, waiting for target result or timeout)
+    ENDING,             // Irreversible: pre-close orchestration (guarantees eventual CLOSED)
+    CLOSED              // Final terminal state
 }
 ```
 
@@ -43,48 +43,60 @@ public enum ConversationState {
 
 | State | Description | Entry Trigger | Exit Trigger |
 |-------|-------------|---------------|--------------|
-| NEW | Initial state, conversation record created but not initialized | System creates conversation record | CONVERSATION_INITIATED |
-| INITIATED | Conversation initialized, waiting for customer connection | CONVERSATION_INITIATED | CUSTOMER_CONNECT / SYS_ACTION_FAILED |
-| IN_PROGRESS | Customer connected, actively handling conversation (survey is an internal sub-phase) | CUSTOMER_CONNECT / SYS_RETRY | TRANSFER_REQUEST / CUSTOMER_CLOSE / SYS_CUSTOMER_IDLE / SYS_ACTION_FAILED |
-| TRANSFERRED | Transfer to agent in progress | TRANSFER_REQUEST | TRANSFER_FAILED / TRANSFER_TIMEOUT / SYS_CUSTOMER_IDLE / SYS_ACTION_FAILED |
-| ENDING | Grace period before closure | CUSTOMER_CLOSE / SYS_CUSTOMER_IDLE / SURVEY_COMPLETE / SYS_SURVEY_TIMEOUT | SYS_ENDING_GRACE_TIMEOUT |
-| ERROR | Action failed, failover state | SYS_ACTION_FAILED | SYS_RETRY / SYS_ABORT |
-| CLOSED | Terminal state | SYS_ENDING_GRACE_TIMEOUT / SYS_ABORT | (none) |
+| NEW | Initial state, conversation created, preparation not done yet | System creates conversation record | SESSION_STARTED |
+| INITIATED | Conversation initialized, downstream assignment done, waiting for interaction active | SESSION_STARTED | INTERACTION_BECAME_ACTIVE / ENDING_STARTED / CUSTOMER_IDLE_TIMEOUT / SYSTEM_ERROR |
+| ACTIVE | Interaction became active, waiting for first inbound message | INTERACTION_BECAME_ACTIVE | INBOUND_MESSAGE_RECEIVED / ENDING_STARTED / CUSTOMER_IDLE_TIMEOUT / SYSTEM_ERROR |
+| IN_PROGRESS | Business in progress, active messaging (includes survey as field in ENDING) | INBOUND_MESSAGE_RECEIVED / TARGET_INTERACTION_CONNECTED | SOURCE_INTERACTION_TRANSFERRED / ENDING_STARTED / CUSTOMER_IDLE_TIMEOUT / SYSTEM_ERROR |
+| TRANSFERRED | Cross-channel transfer in-flight, waiting for target result or timeout | SOURCE_INTERACTION_TRANSFERRED | TARGET_INTERACTION_CONNECTED / TARGET_INTERACTION_CONNECT_FAILED / TRANSFER_TIMEOUT / ENDING_STARTED / CUSTOMER_IDLE_TIMEOUT / SYSTEM_ERROR |
+| ENDING | Irreversible pre-close orchestration, guarantees eventual CLOSED | ENDING_STARTED / CUSTOMER_IDLE_TIMEOUT / SYSTEM_ERROR | ENDING_TIMEOUT (forced) / (endingActionsDone && interactionsClosed) |
+| CLOSED | Final terminal state, conversation fully closed | ENDING_TIMEOUT / ENDING_ACTIONS_COMPLETED + ALL_INTERACTIONS_ENDED | (none) |
 
-**Note**: `SURVEY_START` is an internal transition within `IN_PROGRESS` (IN_PROGRESS → IN_PROGRESS). It does not change the state but executes the SurveyStartAction. `SURVEY_COMPLETE` transitions directly from `IN_PROGRESS` to `ENDING`.
+**Note**: Survey is field-based in ENDING, not a separate state. `SURVEY_SUBMITTED`, `SURVEY_TIMEOUT`, `SURVEY_SKIPPED` are internal transitions within ENDING (ENDING → ENDING).
 
 ### 2.3 Events (ConversationFact)
 
 ```java
 public enum ConversationFact {
-    // LIFECYCLE
-    CUSTOMER_CONNECT,      // Customer established connection
-    AGENT_ATTACHED,        // Human agent joined (reserved)
+    // lifecycle
+    SESSION_STARTED,
+    ALL_INTERACTIONS_ENDED,
 
-    // TRANSFER
-    TRANSFER_REQUEST,      // Request to transfer to human agent
-    TRANSFER_CONNECTED,    // Agent successfully connected (reserved)
-    TRANSFER_FAILED,       // Transfer failed (agent unavailable, rejected, etc.)
-    TRANSFER_TIMEOUT,      // Transfer timed out waiting for agent
+    // readiness & messaging
+    INTERACTION_BECAME_ACTIVE,
+    INBOUND_MESSAGE_RECEIVED,
 
-    // SURVEY
-    SURVEY_START,          // Start post-conversation survey (surveyEnabled=true)
-    SURVEY_COMPLETE,       // Survey completed by customer
+    // ending
+    ENDING_STARTED,              // payload: endReason
+    ENDING_ACTIONS_COMPLETED,
+    ENDING_TIMEOUT,              // force close at ending deadline
 
-    // ENDING
-    CUSTOMER_CLOSE,        // Customer explicitly closed
-    AGENT_CLOSE,           // Agent closed (reserved)
+    // customer idle (ideal rule)
+    CUSTOMER_IDLE_TIMEOUT,
 
-    // SYSTEM (fired by monitors)
-    SYS_CUSTOMER_IDLE,          // Customer idle threshold exceeded
-    SYS_TRANSFER_TIMEOUT,       // Transfer duration exceeded threshold
-    SYS_ENDING_GRACE_TIMEOUT,   // Ending grace period exceeded
-    SYS_SURVEY_TIMEOUT,         // Survey duration exceeded threshold
+    // survey (field in ENDING)
+    SURVEY_SUBMITTED,
+    SURVEY_TIMEOUT,              // endReason=CUSTOMER_IDLE
+    SURVEY_SKIPPED,
 
-    // FAILOVER (action error → fail branch)
-    SYS_ACTION_FAILED,    // Action threw unhandled exception → enter ERROR
-    SYS_RETRY,            // Retry from ERROR → IN_PROGRESS
-    SYS_ABORT             // Abort from ERROR → CLOSED
+    // transfer (cross-channel)
+    SOURCE_INTERACTION_TRANSFERRED,
+    TARGET_INTERACTION_INITIATED,
+    TARGET_INTERACTION_CONNECTED,
+    TARGET_INTERACTION_CONNECT_FAILED, // no rollback; conversation returns INITIATED
+    TRANSFER_TIMEOUT,                 // no rollback; conversation returns INITIATED
+
+    // genesys same-channel / consult (conversation no-op)
+    GENESYS_CONSULT_TRANSFER_STARTED,
+    GENESYS_CONSULT_TRANSFER_ENDED,
+    GENESYS_AGENT_TRANSFER_STARTED,
+    GENESYS_AGENT_TRANSFER_COMPLETED,
+    GENESYS_AGENT_TRANSFER_FAILED,
+
+    // system
+    SYSTEM_ERROR,
+
+    // downstream availability
+    DOWNSTREAM_UNAVAILABLE
 }
 ```
 
@@ -92,40 +104,67 @@ public enum ConversationFact {
 
 ```mermaid
 stateDiagram-v2
-    [*] --> INITIATED : Create conversation
+    direction LR
 
-    INITIATED --> IN_PROGRESS : CUSTOMER_CONNECT
-    INITIATED --> ENDING : SYS_CUSTOMER_IDLE
+    [*] --> NEW
 
-    IN_PROGRESS --> TRANSFERRED : TRANSFER_REQUEST
-    IN_PROGRESS --> ENDING : CUSTOMER_CLOSE
-    IN_PROGRESS --> ENDING : SYS_CUSTOMER_IDLE
+    NEW --> INITIATED: SESSION_STARTED
+    INITIATED --> ACTIVE: INTERACTION_BECAME_ACTIVE
+    ACTIVE --> IN_PROGRESS: INBOUND_MESSAGE_RECEIVED
 
-    TRANSFERRED --> IN_PROGRESS : TRANSFER_CONNECTED (reserved)
-    TRANSFERRED --> INITIATED : TRANSFER_FAILED
-    TRANSFERRED --> INITIATED : TRANSFER_TIMEOUT
-    TRANSFERRED --> INITIATED : SYS_TRANSFER_TIMEOUT
-    TRANSFERRED --> ENDING : SYS_CUSTOMER_IDLE
+    IN_PROGRESS --> TRANSFERRED: SOURCE_INTERACTION_TRANSFERRED
+    TRANSFERRED --> TRANSFERRED: TARGET_INTERACTION_INITIATED
+    TRANSFERRED --> ACTIVE: TARGET_INTERACTION_CONNECTED
+    TRANSFERRED --> INITIATED: TARGET_INTERACTION_CONNECT_FAILED
+    TRANSFERRED --> INITIATED: TRANSFER_TIMEOUT (>=180s)
 
-    ENDING --> CLOSED : SYS_ENDING_GRACE_TIMEOUT
+    %% Customer idle (ideal rule)
+    INITIATED --> ENDING: CUSTOMER_IDLE_TIMEOUT\nendReason=CUSTOMER_IDLE
+    ACTIVE --> ENDING: CUSTOMER_IDLE_TIMEOUT\nendReason=CUSTOMER_IDLE
+    IN_PROGRESS --> ENDING: CUSTOMER_IDLE_TIMEOUT\nendReason=CUSTOMER_IDLE
+    TRANSFERRED --> ENDING: CUSTOMER_IDLE_TIMEOUT\nendReason=CUSTOMER_IDLE\n(defer CloseInteractions,\nrefresh endingDeadlineAt)
 
-    CLOSED --> [*]
+    %% Unified ending entry
+    INITIATED --> ENDING: ENDING_STARTED(endReason=*)
+    ACTIVE --> ENDING: ENDING_STARTED(endReason=*)
+    IN_PROGRESS --> ENDING: ENDING_STARTED(endReason=*)
+    TRANSFERRED --> ENDING: ENDING_STARTED(endReason=*)
+
+    NEW --> ENDING: SYSTEM_ERROR
+    INITIATED --> ENDING: SYSTEM_ERROR
+    ACTIVE --> ENDING: SYSTEM_ERROR
+    IN_PROGRESS --> ENDING: SYSTEM_ERROR
+    TRANSFERRED --> ENDING: SYSTEM_ERROR
+
+    %% ENDING convergence
+    ENDING --> CLOSED: (endingActionsDone && interactionsClosed)
+    ENDING --> CLOSED: ENDING_TIMEOUT (>=120s)
+
+    CLOSED --> CLOSED: any
 ```
 
 ### 3.1 Transition Table
 
 | # | From | Event | To | Guard | Action | Notes |
 |---|------|-------|-----|-------|--------|-------|
-| 1 | INITIATED | CUSTOMER_CONNECT | IN_PROGRESS | - | - | Customer connects |
-| 2 | IN_PROGRESS | TRANSFER_REQUEST | TRANSFERRED | transferEnabled | - | Request agent transfer |
-| 3 | TRANSFERRED | TRANSFER_FAILED | INITIATED | - | - | v6: no rollback to IN_PROGRESS |
-| 4 | TRANSFERRED | TRANSFER_TIMEOUT | INITIATED | - | - | v6: no rollback to IN_PROGRESS |
-| 5 | TRANSFERRED | SYS_TRANSFER_TIMEOUT | INITIATED | - | - | Monitor-driven |
-| 6 | IN_PROGRESS | CUSTOMER_CLOSE | ENDING | - | - | Customer closes |
-| 7 | INITIATED | SYS_CUSTOMER_IDLE | ENDING | - | - | Monitor-driven |
-| 8 | IN_PROGRESS | SYS_CUSTOMER_IDLE | ENDING | - | - | Monitor-driven |
-| 9 | TRANSFERRED | SYS_CUSTOMER_IDLE | ENDING | - | - | Monitor-driven |
-| 10 | ENDING | SYS_ENDING_GRACE_TIMEOUT | CLOSED | - | - | Monitor-driven, terminal |
+| 1 | NEW | SESSION_STARTED | INITIATED | - | SessionStartedAction | Initiate downstream assignment |
+| 2 | INITIATED | INTERACTION_BECAME_ACTIVE | ACTIVE | - | InteractionBecameActiveAction | Set activeAt, send welcome |
+| 3 | ACTIVE | INBOUND_MESSAGE_RECEIVED | IN_PROGRESS | - | InboundMessageReceivedAction | Set lastInboundAt |
+| 4 | INITIATED | DOWNSTREAM_UNAVAILABLE | INITIATED | - | (no action) | Notify system unavailable |
+| 5 | IN_PROGRESS | SOURCE_INTERACTION_TRANSFERRED | TRANSFERRED | transferEnabled | SourceInteractionTransferredAction | Set transferInFlight=true |
+| 6 | TRANSFERRED | TARGET_INTERACTION_INITIATED | TRANSFERRED | - | TargetInteractionInitiatedAction | Internal, execute ConnectTargetCmd |
+| 7 | TRANSFERRED | TARGET_INTERACTION_CONNECTED | ACTIVE | - | TargetInteractionConnectedAction | Set transferInFlight=false |
+| 8 | TRANSFERRED | TARGET_INTERACTION_CONNECT_FAILED | INITIATED | - | TargetInteractionConnectFailedAction | v4.0: no rollback, re-route |
+| 9 | TRANSFERRED | TRANSFER_TIMEOUT | INITIATED | - | TransferTimeoutAction | v4.0: no rollback, re-route |
+| 10 | INITIATED/ACTIVE/IN_PROGRESS/TRANSFERRED | ENDING_STARTED | ENDING | - | EndingStartedAction | Set endReason, trigger ending actions |
+| 11 | ANY (except CLOSED) | SYSTEM_ERROR | ENDING | - | SystemErrorAction | Set endReason=SYSTEM_ERROR |
+| 12 | INITIATED/ACTIVE/IN_PROGRESS/TRANSFERRED | CUSTOMER_IDLE_TIMEOUT | ENDING | - | CustomerIdleTimeoutAction | endReason=CUSTOMER_IDLE |
+| 13 | ENDING | ENDING_ACTIONS_COMPLETED | ENDING/CLOSED | - | (no action) | Set endingActionsDone=true |
+| 14 | ENDING | ALL_INTERACTIONS_ENDED | ENDING/CLOSED | - | (no action) | Set interactionsClosed=true |
+| 15 | ENDING | ENDING_TIMEOUT | CLOSED | - | EndingTimeoutAction | Forced close, record alert |
+| 16 | ENDING | SURVEY_SUBMITTED | ENDING | - | (no action) | Internal, surveyStatus=SUBMITTED |
+| 17 | ENDING | SURVEY_TIMEOUT | ENDING | - | (no action) | Internal, surveyStatus=TIMEOUT, endReason=CUSTOMER_IDLE |
+| 18 | ENDING | SURVEY_SKIPPED | ENDING | - | (no action) | Internal, surveyStatus=SKIPPED |
 
 ## 4. Core Components
 
