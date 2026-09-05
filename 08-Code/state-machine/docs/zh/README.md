@@ -17,6 +17,25 @@
 
 ## 更新日志
 
+### v4.0 (2026-09-05)
+- **事件驱动编排设计 (v4.0)**：将两个状态机与最新设计文档对齐
+- **chat-engine 重构**：
+  - 更新 ConversationState：7 个状态（NEW, INITIATED, ACTIVE, IN_PROGRESS, TRANSFERRED, ENDING, CLOSED）— 新增 ACTIVE，移除 ERROR
+  - 更新 ConversationFact：25+ 个事件，对齐 ConversationFactEvent 定义
+  - 重写 ConversationStateMachineFactory，定义新的状态转换
+  - 创建 13 个新的 action 类，按 lifecycle/transfer/ending/system 分类
+  - 删除 15 个旧的 action 类
+  - 更新监控器、归一化器、demo 和测试
+- **agent-connector 重构**：
+  - 更新 InteractionState：8 个状态（INITIATED, CONNECTED, IN_PROGRESS, DEGRADED, RECONNECTING, CONSULT_TRANSFER, TRANSFERRED, CLOSED）
+  - 更新 InteractionFact：20+ 个事件，对齐 InteractionFactEvent 定义
+  - 重写 InteractionStateMachineFactory，定义 30+ 个状态转换
+  - 创建 14 个新的 action 类，按 connection/messaging/heartbeat/reconnection/genesys/transfer/ending/system 分类
+  - 删除 9 个旧的 action 类
+  - 更新 GenesysEventNormalizer、demo 和 InteractionInstance（添加 withState 方法）
+  - 添加 InteractionStateMachineTest，包含 21 个测试用例
+- **测试结果**：所有 69 个测试通过（48 个 chat-engine + 21 个 agent-connector），BUILD SUCCESS
+
 ### v3.0 (2026-09-04)
 - **核心引擎替换**：用阿里巴巴 COLA StateMachine（`com.alibaba.cola.statemachine`）替换自定义状态机实现
   - COLA GitHub：https://github.com/alibaba/COLA
@@ -83,8 +102,8 @@ state-machine/
 | 模块 | 包名 | 职责 |
 |------|------|------|
 | **statemachine-core** | `com.alibaba.cola.statemachine` | 阿里巴巴 COLA StateMachine 核心引擎：Action、Condition、State、Transition、Builder、StateMachineFactory、StateMachineException |
-| **chat-engine** | `com.selfdevelopment.chatengine` | 会话状态机：7 个状态（NEW、INITIATED、IN_PROGRESS、TRANSFERRED、ENDING、ERROR、CLOSED）、7 个动作、多市场配置、监控器、仓库、Demo |
-| **agent-connector** | `com.selfdevelopment.agentconnector` | 交互状态机：6 个状态（CONNECTING、CONNECTED、RECONNECTING、HELD、TRANSFERRING、DISCONNECTED）、9 个动作、通道连接器、Demo |
+| **chat-engine** | `com.selfdevelopment.chatengine` | 会话状态机：7 个状态（NEW、INITIATED、ACTIVE、IN_PROGRESS、TRANSFERRED、ENDING、CLOSED）、25+ 个事件、13 个动作、多市场配置、监控器、仓库、Demo |
+| **agent-connector** | `com.selfdevelopment.agentconnector` | 交互状态机：8 个状态（INITIATED、CONNECTED、IN_PROGRESS、DEGRADED、RECONNECTING、CONSULT_TRANSFER、TRANSFERRED、CLOSED）、20+ 个事件、14 个动作、通道连接器、Demo |
 
 ## 关键设计原则
 
@@ -105,8 +124,8 @@ StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> build
 builder.externalTransition()
         .from(ConversationState.NEW)
         .to(ConversationState.INITIATED)
-        .on(ConversationFact.CONVERSATION_INITIATED)
-        .perform(new ConversationInitAction());
+        .on(ConversationFact.SESSION_STARTED)
+        .perform(new SessionStartedAction());
 
 StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
         builder.build("conversation");
@@ -114,7 +133,7 @@ StateMachineFactory.register(sm);
 
 // 2. 触发事件
 CbolStateContext ctx = buildContext();
-ConversationState newState = sm.fireEvent(ConversationState.NEW, ConversationFact.CONVERSATION_INITIATED, ctx);
+ConversationState newState = sm.fireEvent(ConversationState.NEW, ConversationFact.SESSION_STARTED, ctx);
 ```
 
 ## 参考资料
@@ -124,4 +143,4 @@ ConversationState newState = sm.fireEvent(ConversationState.NEW, ConversationFac
 
 ---
 
-*最后更新：2026-09-04（v3.0 — COLA StateMachine 替换）*
+*最后更新：2026-09-05（v4.0 — 事件驱动编排设计对齐）*

@@ -17,6 +17,25 @@
 
 ## Changelog
 
+### v4.0 (2026-09-05)
+- **Event-Driven Orchestration Design (v4.0)**: Aligned both state machines with the latest design document
+- **chat-engine refactoring**:
+  - Updated ConversationState: 7 states (NEW, INITIATED, ACTIVE, IN_PROGRESS, TRANSFERRED, ENDING, CLOSED) — added ACTIVE, removed ERROR
+  - Updated ConversationFact: 25+ events aligned with ConversationFactEvent definition
+  - Rewrote ConversationStateMachineFactory with new state transitions
+  - Created 13 new action classes categorized by lifecycle/transfer/ending/system
+  - Deleted 15 old action classes
+  - Updated monitors, normalizer, demo, and tests
+- **agent-connector refactoring**:
+  - Updated InteractionState: 8 states (INITIATED, CONNECTED, IN_PROGRESS, DEGRADED, RECONNECTING, CONSULT_TRANSFER, TRANSFERRED, CLOSED)
+  - Updated InteractionFact: 20+ events aligned with InteractionFactEvent definition
+  - Rewrote InteractionStateMachineFactory with 30+ state transitions
+  - Created 14 new action classes categorized by connection/messaging/heartbeat/reconnection/genesys/transfer/ending/system
+  - Deleted 9 old action classes
+  - Updated GenesysEventNormalizer, demo, and InteractionInstance (added withState method)
+  - Added InteractionStateMachineTest with 21 test cases
+- **Test results**: All 69 tests pass (48 chat-engine + 21 agent-connector), BUILD SUCCESS
+
 ### v3.0 (2026-09-04)
 - **Core engine replacement**: Replaced custom state machine implementation with Alibaba COLA StateMachine (`com.alibaba.cola.statemachine`)
   - COLA GitHub: https://github.com/alibaba/COLA
@@ -83,8 +102,8 @@ state-machine/
 | Module | Package | Responsibility |
 |--------|---------|----------------|
 | **statemachine-core** | `com.alibaba.cola.statemachine` | Alibaba COLA StateMachine core engine: Action, Condition, State, Transition, Builder, StateMachineFactory, StateMachineException |
-| **chat-engine** | `com.selfdevelopment.chatengine` | Conversation state machine: 7 states (NEW, INITIATED, IN_PROGRESS, TRANSFERRED, ENDING, ERROR, CLOSED), 7 actions, multi-market config, monitors, repository, demo |
-| **agent-connector** | `com.selfdevelopment.agentconnector` | Interaction state machine: 6 states (CONNECTING, CONNECTED, RECONNECTING, HELD, TRANSFERRING, DISCONNECTED), 9 actions, channel connectors, demo |
+| **chat-engine** | `com.selfdevelopment.chatengine` | Conversation state machine: 7 states (NEW, INITIATED, ACTIVE, IN_PROGRESS, TRANSFERRED, ENDING, CLOSED), 25+ events, 13 actions, multi-market config, monitors, repository, demo |
+| **agent-connector** | `com.selfdevelopment.agentconnector` | Interaction state machine: 8 states (INITIATED, CONNECTED, IN_PROGRESS, DEGRADED, RECONNECTING, CONSULT_TRANSFER, TRANSFERRED, CLOSED), 20+ events, 14 actions, channel connectors, demo |
 
 ## Key Design Principles
 
@@ -105,8 +124,8 @@ StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> build
 builder.externalTransition()
         .from(ConversationState.NEW)
         .to(ConversationState.INITIATED)
-        .on(ConversationFact.CONVERSATION_INITIATED)
-        .perform(new ConversationInitAction());
+        .on(ConversationFact.SESSION_STARTED)
+        .perform(new SessionStartedAction());
 
 StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
         builder.build("conversation");
@@ -114,7 +133,7 @@ StateMachineFactory.register(sm);
 
 // 2. Fire an event
 CbolStateContext ctx = buildContext();
-ConversationState newState = sm.fireEvent(ConversationState.NEW, ConversationFact.CONVERSATION_INITIATED, ctx);
+ConversationState newState = sm.fireEvent(ConversationState.NEW, ConversationFact.SESSION_STARTED, ctx);
 ```
 
 ## References
@@ -124,4 +143,4 @@ ConversationState newState = sm.fireEvent(ConversationState.NEW, ConversationFac
 
 ---
 
-*Last updated: 2026-09-04 (v3.0 — COLA StateMachine replacement)*
+*Last updated: 2026-09-05 (v4.0 — Event-Driven Orchestration Design alignment)*

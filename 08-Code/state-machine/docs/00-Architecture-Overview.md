@@ -1,7 +1,8 @@
 # State Machine Architecture Design
 
-> Version: 3.0 | Last Updated: 2026-09-04
+> Version: 4.0 | Last Updated: 2026-09-05
 > Based on Alibaba COLA StateMachine: https://github.com/alibaba/COLA
+> Aligned with Event-Driven Orchestration Design (v4.0)
 
 ## 1. Overview
 
@@ -12,8 +13,8 @@ The project is organized as a **multi-module Maven project** with three modules:
 | Module | Package | Responsibility |
 |--------|---------|----------------|
 | **statemachine-core** | `com.alibaba.cola.statemachine` | Alibaba COLA StateMachine core engine: Action, Condition, State, Transition, Builder DSL, StateMachineFactory, PlantUML generation |
-| **chat-engine** | `com.selfdevelopment.chatengine` | Conversation state machine (business-level): 7 states, 7 actions, multi-market config, monitors, repository, demo |
-| **agent-connector** | `com.selfdevelopment.agentconnector` | Interaction state machine (channel-level): 6 states, 9 actions, channel connectors, event normalizers, demo |
+| **chat-engine** | `com.selfdevelopment.chatengine` | Conversation state machine (business-level): 7 states (NEW, INITIATED, ACTIVE, IN_PROGRESS, TRANSFERRED, ENDING, CLOSED), 25+ events, 13 actions, multi-market config, monitors, repository, demo |
+| **agent-connector** | `com.selfdevelopment.agentconnector` | Interaction state machine (channel-level): 8 states (INITIATED, CONNECTED, IN_PROGRESS, DEGRADED, RECONNECTING, CONSULT_TRANSFER, TRANSFERRED, CLOSED), 20+ events, 14 actions, channel connectors, event normalizers, demo |
 
 ### Module Dependencies
 
@@ -42,7 +43,7 @@ The state machine engine itself does **not** store the current state. The caller
 // Caller manages state; engine only stores transition rules
 ConversationState newState = stateMachine.fireEvent(
     conversation.getCurrentState(),  // injected by caller
-    ConversationFact.CUSTOMER_CONNECT,
+    ConversationFact.INTERACTION_BECAME_ACTIVE,
     context
 );
 conversation.setCurrentState(newState);
@@ -73,8 +74,8 @@ StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> build
 builder.externalTransition()
         .from(ConversationState.NEW)
         .to(ConversationState.INITIATED)
-        .on(ConversationFact.CONVERSATION_INITIATED)
-        .perform(new ConversationInitAction());
+        .on(ConversationFact.SESSION_STARTED)
+        .perform(new SessionStartedAction());
 
 StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
         builder.build("conversation");
