@@ -178,6 +178,8 @@ stateDiagram-v2
 
 > Normalizer 将外部事件归一为 Facts，Conversation/Interaction 状态机仅消费 Facts。
 
+### 4.1 ConversationFactEvent
+
 ```java
 public enum ConversationFactEvent {
     // lifecycle
@@ -222,6 +224,62 @@ public enum ConversationFactEvent {
     DOWNSTREAM_UNAVAILABLE
 }
 ```
+
+### 4.2 InteractionFactEvent
+
+```java
+public enum InteractionFactEvent {
+    // connection lifecycle
+    CONNECTION_SUCCESS,           // INITIATED → CONNECTED
+    CONNECTION_FAIL,              // INITIATED → CLOSED
+
+    // messaging
+    FIRST_INBOUND_MESSAGE_RECEIVED, // CONNECTED → IN_PROGRESS
+    INBOUND_MESSAGE_RECEIVED,       // IN_PROGRESS → IN_PROGRESS (internal, update lastInboundAt)
+    OUTBOUND_MESSAGE_SENT,           // IN_PROGRESS → IN_PROGRESS (internal, audit)
+
+    // heartbeat & degradation
+    HEARTBEAT_MISS,                // CONNECTED/IN_PROGRESS → DEGRADED
+    HEARTBEAT_RESTORED,            // DEGRADED → CONNECTED/IN_PROGRESS
+
+    // reconnection
+    RECONNECT_ATTEMPT,             // DEGRADED → RECONNECTING
+    RECONNECT_SUCCESS,             // RECONNECTING → CONNECTED/IN_PROGRESS
+    RECONNECT_FAIL,                // RECONNECTING → CLOSED (max retries exceeded)
+
+    // genesys consult transfer (same-channel, GENESYS ONLY)
+    CONSULT_TRANSFER_STARTED,      // IN_PROGRESS → CONSULT_TRANSFER
+    CONSULT_TRANSFER_ENDED,        // CONSULT_TRANSFER → IN_PROGRESS
+
+    // cross-channel transfer (source detach marker)
+    TRANSFER_SUCCESS,              // IN_PROGRESS → TRANSFERRED (source detached)
+    TRANSFER_FAILED,               // IN_PROGRESS → IN_PROGRESS (transfer rejected, stay)
+
+    // ending
+    END_REQUESTED,                 // any non-terminal → CLOSED
+    INTERACTION_CLOSED,            // terminal confirmation (audit)
+
+    // system
+    SYSTEM_ERROR,                  // any → CLOSED (unrecoverable)
+
+    // downstream availability
+    DOWNSTREAM_UNAVAILABLE         // CONNECTED/IN_PROGRESS → DEGRADED (temporary)
+}
+```
+
+#### 4.2.1 InteractionFactEvent 分类说明
+
+| 分类 | 事件 | 说明 |
+|------|------|------|
+| **连接生命周期** | CONNECTION_SUCCESS, CONNECTION_FAIL | 连接建立与失败 |
+| **消息** | FIRST_INBOUND_MESSAGE_RECEIVED, INBOUND_MESSAGE_RECEIVED, OUTBOUND_MESSAGE_SENT | 消息收发与状态推进 |
+| **心跳与降级** | HEARTBEAT_MISS, HEARTBEAT_RESTORED | 连接健康度监控 |
+| **重连** | RECONNECT_ATTEMPT, RECONNECT_SUCCESS, RECONNECT_FAIL | 弹性恢复机制 |
+| **Genesys 咨询转接** | CONSULT_TRANSFER_STARTED, CONSULT_TRANSFER_ENDED | 同渠道咨询转接（GENESYS ONLY） |
+| **跨渠道转接** | TRANSFER_SUCCESS, TRANSFER_FAILED | source detach 标记 |
+| **结束** | END_REQUESTED, INTERACTION_CLOSED | 正常关闭与终态确认 |
+| **系统** | SYSTEM_ERROR | 不可恢复错误 |
+| **下游可用性** | DOWNSTREAM_UNAVAILABLE | 临时不可用，进入 DEGRADED |
 
 ---
 
