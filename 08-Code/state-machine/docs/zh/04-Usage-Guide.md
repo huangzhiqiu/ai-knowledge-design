@@ -1,7 +1,8 @@
 # 使用指南
 
-> 版本：3.0 | 最后更新：2026-09-05
+> 版本：4.0 | 最后更新：2026-09-05
 > 基于阿里巴巴 COLA StateMachine：https://github.com/alibaba/COLA
+> 对齐事件驱动编排设计（v4.0）
 
 ## 1. 快速开始
 
@@ -67,7 +68,7 @@ CbolStateContext ctx = CbolStateContext.builder()
 // 触发事件并获取新状态（COLA API 直接返回目标状态）
 ConversationState newState = sm.fireEvent(
         ConversationState.NEW,
-        ConversationFact.CONVERSATION_INITIATED,
+        ConversationFact.SESSION_STARTED,
         ctx);
 
 // 更新会话状态
