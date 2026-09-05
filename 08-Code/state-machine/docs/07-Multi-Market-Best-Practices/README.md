@@ -1,7 +1,8 @@
 # Multi-Market Best Practices
 
 > Detailed design documents for 8 multi-market state machine best practices.
-> Last Updated: 2026-09-01
+> Last Updated: 2026-09-05
+> Aligned with Event-Driven Orchestration Design (v4.0)
 
 ## Overview
 
