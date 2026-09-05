@@ -14,6 +14,11 @@ import com.selfdevelopment.chatengine.statemachine.factory.ConversationStateMach
  * Demo for the Chat Engine Conversation State Machine.
  * <p>
  * Uses COLA StateMachine. Demonstrates the complete conversation lifecycle with action execution.
+ * <p>
+ * Based on Event-Driven Orchestration Design (v4.0):
+ * - States: NEW, INITIATED, ACTIVE, IN_PROGRESS, TRANSFERRED, ENDING, CLOSED
+ * - Transfer failure/timeout does NOT rollback, returns directly to INITIATED
+ * - Survey is field-based in ENDING, not a separate state
  */
 public class ChatEngineDemo {
 
@@ -34,7 +39,7 @@ public class ChatEngineDemo {
 
     /**
      * Demo 1: Basic conversation flow with action execution.
-     * NEW → INITIATED → IN_PROGRESS → TRANSFERRED → IN_PROGRESS → ENDING → CLOSED
+     * NEW → INITIATED → ACTIVE → IN_PROGRESS → TRANSFERRED → ACTIVE → ENDING → CLOSED
      */
     public static void runBasicConversationFlow() {
         DemoLogger.printSection("Demo 1: Basic Conversation Flow (with Action Execution)");
@@ -55,28 +60,36 @@ public class ChatEngineDemo {
         DemoLogger.printInitialState("NEW", "conv-001", "HK");
 
         // NEW → INITIATED
-        DemoLogger.printAction("ConversationInitAction", "Validate config, allocate resources, setup routing");
-        ctx = fireAndPrint(ctx, ConversationFact.CONVERSATION_INITIATED, service);
+        DemoLogger.printAction("SessionStartedAction", "Initiate downstream assignment, create record");
+        ctx = fireAndPrint(ctx, ConversationFact.SESSION_STARTED, service);
 
-        // INITIATED → IN_PROGRESS
-        DemoLogger.printAction("CustomerConnectAction", "Create record, send welcome message");
-        ctx = fireAndPrint(ctx, ConversationFact.CUSTOMER_CONNECT, service);
+        // INITIATED → ACTIVE
+        DemoLogger.printAction("InteractionBecameActiveAction", "Set activeAt, send welcome message");
+        ctx = fireAndPrint(ctx, ConversationFact.INTERACTION_BECAME_ACTIVE, service);
+
+        // ACTIVE → IN_PROGRESS
+        DemoLogger.printAction("InboundMessageReceivedAction", "Set lastInboundAt, record first response");
+        ctx = fireAndPrint(ctx, ConversationFact.INBOUND_MESSAGE_RECEIVED, service);
 
         // IN_PROGRESS → TRANSFERRED
-        DemoLogger.printAction("TransferRequestAction", "Route to agent queue, initiate transfer");
-        ctx = fireAndPrint(ctx, ConversationFact.TRANSFER_REQUEST, service);
+        DemoLogger.printAction("SourceInteractionTransferredAction", "Set transferInFlight, detach source");
+        ctx = fireAndPrint(ctx, ConversationFact.SOURCE_INTERACTION_TRANSFERRED, service);
 
-        // TRANSFERRED → IN_PROGRESS
-        DemoLogger.printInfo("Transfer connected");
-        ctx = fireAndPrint(ctx, ConversationFact.TRANSFER_CONNECTED, service);
+        // TRANSFERRED → TRANSFERRED (internal): target initiated
+        DemoLogger.printAction("TargetInteractionInitiatedAction", "Execute ConnectTargetInteractionCmd");
+        ctx = fireAndPrint(ctx, ConversationFact.TARGET_INTERACTION_INITIATED, service);
 
-        // IN_PROGRESS → ENDING
-        DemoLogger.printAction("CustomerCloseAction", "Close conversation, release resources");
-        ctx = fireAndPrint(ctx, ConversationFact.CUSTOMER_CLOSE, service);
+        // TRANSFERRED → ACTIVE: target connected
+        DemoLogger.printInfo("Target interaction connected");
+        ctx = fireAndPrint(ctx, ConversationFact.TARGET_INTERACTION_CONNECTED, service);
+
+        // ACTIVE → ENDING
+        DemoLogger.printAction("EndingStartedAction", "Set endReason, trigger ending actions");
+        ctx = fireAndPrint(ctx, ConversationFact.ENDING_STARTED, service);
 
         // ENDING → CLOSED
-        DemoLogger.printInfo("Ending grace timeout, finalizing conversation");
-        ctx = fireAndPrint(ctx, ConversationFact.SYS_ENDING_GRACE_TIMEOUT, service);
+        DemoLogger.printInfo("Ending timeout, finalizing conversation");
+        ctx = fireAndPrint(ctx, ConversationFact.ENDING_TIMEOUT, service);
 
         DemoLogger.printFinalState("CLOSED", "conv-001");
         DemoLogger.printDemoComplete("Basic Conversation Flow", true);
@@ -84,10 +97,11 @@ public class ChatEngineDemo {
 
     /**
      * Demo 2: Survey flow with action execution.
-     * IN_PROGRESS (messaging) → IN_PROGRESS (survey, internal) → ENDING → CLOSED
+     * Survey is field-based in ENDING, not a separate state.
+     * IN_PROGRESS → ENDING (survey sent) → ENDING (survey submitted) → CLOSED
      */
     public static void runSurveyFlow() {
-        DemoLogger.printSection("Demo 2: Survey Flow (Survey as In-Progress Sub-phase)");
+        DemoLogger.printSection("Demo 2: Survey Flow (Survey as Field in ENDING)");
         DemoLogger.resetCounter();
 
         ChatEngineStateMachineService service = new ChatEngineStateMachineService();
@@ -104,17 +118,25 @@ public class ChatEngineDemo {
         CbolStateContext ctx = createContext(conversation, "SG");
         DemoLogger.printInitialState("IN_PROGRESS", "conv-002", "SG");
 
-        // IN_PROGRESS → IN_PROGRESS (internal): survey starts
-        DemoLogger.printAction("SurveyStartAction", "Send survey invitation, set survey timeout");
-        ctx = fireAndPrint(ctx, ConversationFact.SURVEY_START, service);
+        // IN_PROGRESS → ENDING: ending started (survey will be sent if eligible)
+        DemoLogger.printAction("EndingStartedAction", "Set endReason, send survey if eligible");
+        ctx = fireAndPrint(ctx, ConversationFact.ENDING_STARTED, service);
 
-        // IN_PROGRESS → ENDING: survey completes
-        DemoLogger.printAction("SurveyCompleteAction", "Save results, calculate NPS/CSAT score");
-        ctx = fireAndPrint(ctx, ConversationFact.SURVEY_COMPLETE, service);
+        // ENDING → ENDING (internal): survey submitted
+        DemoLogger.printInfo("Survey submitted (surveyStatus=SUBMITTED)");
+        ctx = fireAndPrint(ctx, ConversationFact.SURVEY_SUBMITTED, service);
+
+        // ENDING → ENDING (internal): all interactions ended
+        DemoLogger.printInfo("All interactions ended (interactionsClosed=true)");
+        ctx = fireAndPrint(ctx, ConversationFact.ALL_INTERACTIONS_ENDED, service);
+
+        // ENDING → ENDING (internal): ending actions completed
+        DemoLogger.printInfo("Ending actions completed (endingActionsDone=true)");
+        ctx = fireAndPrint(ctx, ConversationFact.ENDING_ACTIONS_COMPLETED, service);
 
         // ENDING → CLOSED
-        DemoLogger.printInfo("Ending grace timeout, finalizing conversation");
-        ctx = fireAndPrint(ctx, ConversationFact.SYS_ENDING_GRACE_TIMEOUT, service);
+        DemoLogger.printInfo("Ending timeout, finalizing conversation");
+        ctx = fireAndPrint(ctx, ConversationFact.ENDING_TIMEOUT, service);
 
         DemoLogger.printFinalState("CLOSED", "conv-002");
         DemoLogger.printDemoComplete("Survey Flow", true);
@@ -138,10 +160,14 @@ public class ChatEngineDemo {
                 .customerIdleSeconds(180)
                 .transferTimeoutSeconds(120)
                 .endingGraceSeconds(60)
+                .surveyTimeoutSeconds(90)
                 .surveyEnabled(true)
                 .transferEnabled(true)
                 .genesysEnabled(true)
                 .fallbackRoutingStrategy("QUEUE")
+                .maxRetries(3)
+                .retryBaseDelayMs(1000)
+                .retryMaxDelayMs(30000)
                 .build();
         DemoLogger.printInfo("SG Market: survey enabled, shorter timeouts, Genesys enabled");
         System.out.printf("           idleTimeout=%ds, transferTimeout=%ds, surveyEnabled=%s, genesysEnabled=%s%n",
@@ -153,10 +179,14 @@ public class ChatEngineDemo {
                 .customerIdleSeconds(600)
                 .transferTimeoutSeconds(300)
                 .endingGraceSeconds(180)
+                .surveyTimeoutSeconds(120)
                 .surveyEnabled(false)
                 .transferEnabled(false)
                 .genesysEnabled(false)
                 .fallbackRoutingStrategy("AI_BOT")
+                .maxRetries(5)
+                .retryBaseDelayMs(2000)
+                .retryMaxDelayMs(60000)
                 .build();
         DemoLogger.printInfo("UK Market: transfer disabled, AI_BOT fallback strategy");
         System.out.printf("           idleTimeout=%ds, transferEnabled=%s, fallbackStrategy=%s%n",
@@ -167,11 +197,11 @@ public class ChatEngineDemo {
     }
 
     /**
-     * Demo 4: Transfer failure flow with TransferFailedAction execution.
-     * IN_PROGRESS → TRANSFERRED → (transfer failed) → INITIATED (reset)
+     * Demo 4: Transfer failure flow with TargetInteractionConnectFailedAction execution.
+     * IN_PROGRESS → TRANSFERRED → (transfer failed) → INITIATED (no rollback, re-route)
      */
     public static void runTransferFailureFlow() {
-        DemoLogger.printSection("Demo 4: Transfer Failure Flow (with TransferFailedAction)");
+        DemoLogger.printSection("Demo 4: Transfer Failure Flow (No Rollback, Re-route to INITIATED)");
         DemoLogger.resetCounter();
 
         ChatEngineStateMachineService service = new ChatEngineStateMachineService();
@@ -188,15 +218,15 @@ public class ChatEngineDemo {
         DemoLogger.printInitialState("IN_PROGRESS", "conv-004", "HK");
 
         // Transfer request
-        DemoLogger.printAction("TransferRequestAction", "Request routing to agent queue");
-        ctx = fireAndPrint(ctx, ConversationFact.TRANSFER_REQUEST, service);
+        DemoLogger.printAction("SourceInteractionTransferredAction", "Set transferInFlight, detach source");
+        ctx = fireAndPrint(ctx, ConversationFact.SOURCE_INTERACTION_TRANSFERRED, service);
 
-        // Transfer failed → reset to INITIATED
-        DemoLogger.printAction("TransferFailedAction", "Record failure, cleanup state, trigger re-routing");
-        ctx = fireAndPrint(ctx, ConversationFact.TRANSFER_FAILED, service);
+        // Transfer failed → reset to INITIATED (no rollback)
+        DemoLogger.printAction("TargetInteractionConnectFailedAction", "Record failure, trigger re-routing");
+        ctx = fireAndPrint(ctx, ConversationFact.TARGET_INTERACTION_CONNECT_FAILED, service);
 
         DemoLogger.printFinalState("INITIATED", "conv-004");
-        DemoLogger.printInfo("Conversation reset to INITIATED, ready for re-routing");
+        DemoLogger.printInfo("Conversation reset to INITIATED (no rollback), ready for re-routing");
         DemoLogger.printDemoComplete("Transfer Failure Flow", true);
     }
 

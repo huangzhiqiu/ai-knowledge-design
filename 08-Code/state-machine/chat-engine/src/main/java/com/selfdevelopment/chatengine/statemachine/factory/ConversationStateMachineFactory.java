@@ -4,22 +4,19 @@ import com.alibaba.cola.statemachine.StateMachine;
 import com.alibaba.cola.statemachine.StateMachineFactory;
 import com.alibaba.cola.statemachine.builder.StateMachineBuilder;
 import com.alibaba.cola.statemachine.builder.StateMachineBuilderFactory;
-import com.selfdevelopment.chatengine.action.ending.AgentCloseAction;
-import com.selfdevelopment.chatengine.action.ending.CustomerCloseAction;
-import com.selfdevelopment.chatengine.action.failover.SysAbortAction;
-import com.selfdevelopment.chatengine.action.failover.SysActionFailedAction;
-import com.selfdevelopment.chatengine.action.failover.SysRetryAction;
-import com.selfdevelopment.chatengine.action.lifecycle.AgentAttachedAction;
-import com.selfdevelopment.chatengine.action.lifecycle.ConversationInitAction;
-import com.selfdevelopment.chatengine.action.lifecycle.CustomerConnectAction;
-import com.selfdevelopment.chatengine.action.survey.SurveyCompleteAction;
-import com.selfdevelopment.chatengine.action.survey.SurveyStartAction;
-import com.selfdevelopment.chatengine.action.system.SysCustomerIdleAction;
-import com.selfdevelopment.chatengine.action.system.SysEndingGraceTimeoutAction;
-import com.selfdevelopment.chatengine.action.system.SysSurveyTimeoutAction;
-import com.selfdevelopment.chatengine.action.transfer.TransferConnectedAction;
-import com.selfdevelopment.chatengine.action.transfer.TransferFailedAction;
-import com.selfdevelopment.chatengine.action.transfer.TransferRequestAction;
+import com.selfdevelopment.chatengine.action.ending.EndingStartedAction;
+import com.selfdevelopment.chatengine.action.ending.EndingTimeoutAction;
+import com.selfdevelopment.chatengine.action.lifecycle.SessionStartedAction;
+import com.selfdevelopment.chatengine.action.lifecycle.InteractionBecameActiveAction;
+import com.selfdevelopment.chatengine.action.lifecycle.InboundMessageReceivedAction;
+import com.selfdevelopment.chatengine.action.system.CustomerIdleTimeoutAction;
+import com.selfdevelopment.chatengine.action.system.SystemErrorAction;
+import com.selfdevelopment.chatengine.action.system.DownstreamUnavailableAction;
+import com.selfdevelopment.chatengine.action.transfer.SourceInteractionTransferredAction;
+import com.selfdevelopment.chatengine.action.transfer.TargetInteractionInitiatedAction;
+import com.selfdevelopment.chatengine.action.transfer.TargetInteractionConnectedAction;
+import com.selfdevelopment.chatengine.action.transfer.TargetInteractionConnectFailedAction;
+import com.selfdevelopment.chatengine.action.transfer.TransferTimeoutAction;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
@@ -29,15 +26,12 @@ import com.selfdevelopment.chatengine.enums.ConversationState;
  * <p>
  * Uses COLA StateMachine builder API.
  * <p>
- * Conversation states: NEW, INITIATED, IN_PROGRESS, TRANSFERRED, ENDING, ERROR, CLOSED
- * <p>
- * All ConversationFact events are covered with corresponding actions:
- * - LIFECYCLE: CONVERSATION_INITIATED, CUSTOMER_CONNECT, AGENT_ATTACHED
- * - TRANSFER: TRANSFER_REQUEST, TRANSFER_CONNECTED, TRANSFER_FAILED, TRANSFER_TIMEOUT
- * - SURVEY: SURVEY_START, SURVEY_COMPLETE
- * - ENDING: CUSTOMER_CLOSE, AGENT_CLOSE
- * - SYSTEM: SYS_CUSTOMER_IDLE, SYS_TRANSFER_TIMEOUT, SYS_ENDING_GRACE_TIMEOUT, SYS_SURVEY_TIMEOUT
- * - FAILOVER: SYS_ACTION_FAILED, SYS_RETRY, SYS_ABORT
+ * Based on Event-Driven Orchestration Design (v4.0):
+ * - Conversation states: NEW, INITIATED, ACTIVE, IN_PROGRESS, TRANSFERRED, ENDING, CLOSED
+ * - Transfer failure/timeout does NOT rollback; Conversation returns directly to INITIATED
+ * - Survey is field-based (surveyStatus) in ENDING, not a separate state
+ * - Customer Idle ideal logic: all wait-capable states timeout -> ENDING
+ * - ENDING is irreversible, defaults to 120s forced convergence to CLOSED
  */
 public class ConversationStateMachineFactory {
 
@@ -46,32 +40,25 @@ public class ConversationStateMachineFactory {
     // ===== Action instances (stateless, can be shared) =====
 
     // LIFECYCLE actions
-    private static final ConversationInitAction CONVERSATION_INIT_ACTION = new ConversationInitAction();
-    private static final CustomerConnectAction CUSTOMER_CONNECT_ACTION = new CustomerConnectAction();
-    private static final AgentAttachedAction AGENT_ATTACHED_ACTION = new AgentAttachedAction();
+    private static final SessionStartedAction SESSION_STARTED_ACTION = new SessionStartedAction();
+    private static final InteractionBecameActiveAction INTERACTION_BECAME_ACTIVE_ACTION = new InteractionBecameActiveAction();
+    private static final InboundMessageReceivedAction INBOUND_MESSAGE_RECEIVED_ACTION = new InboundMessageReceivedAction();
 
     // TRANSFER actions
-    private static final TransferRequestAction TRANSFER_REQUEST_ACTION = new TransferRequestAction();
-    private static final TransferConnectedAction TRANSFER_CONNECTED_ACTION = new TransferConnectedAction();
-    private static final TransferFailedAction TRANSFER_FAILED_ACTION = new TransferFailedAction();
-
-    // SURVEY actions
-    private static final SurveyStartAction SURVEY_START_ACTION = new SurveyStartAction();
-    private static final SurveyCompleteAction SURVEY_COMPLETE_ACTION = new SurveyCompleteAction();
+    private static final SourceInteractionTransferredAction SOURCE_INTERACTION_TRANSFERRED_ACTION = new SourceInteractionTransferredAction();
+    private static final TargetInteractionInitiatedAction TARGET_INTERACTION_INITIATED_ACTION = new TargetInteractionInitiatedAction();
+    private static final TargetInteractionConnectedAction TARGET_INTERACTION_CONNECTED_ACTION = new TargetInteractionConnectedAction();
+    private static final TargetInteractionConnectFailedAction TARGET_INTERACTION_CONNECT_FAILED_ACTION = new TargetInteractionConnectFailedAction();
+    private static final TransferTimeoutAction TRANSFER_TIMEOUT_ACTION = new TransferTimeoutAction();
 
     // ENDING actions
-    private static final CustomerCloseAction CUSTOMER_CLOSE_ACTION = new CustomerCloseAction();
-    private static final AgentCloseAction AGENT_CLOSE_ACTION = new AgentCloseAction();
+    private static final EndingStartedAction ENDING_STARTED_ACTION = new EndingStartedAction();
+    private static final EndingTimeoutAction ENDING_TIMEOUT_ACTION = new EndingTimeoutAction();
 
     // SYSTEM actions
-    private static final SysCustomerIdleAction SYS_CUSTOMER_IDLE_ACTION = new SysCustomerIdleAction();
-    private static final SysEndingGraceTimeoutAction SYS_ENDING_GRACE_TIMEOUT_ACTION = new SysEndingGraceTimeoutAction();
-    private static final SysSurveyTimeoutAction SYS_SURVEY_TIMEOUT_ACTION = new SysSurveyTimeoutAction();
-
-    // FAILOVER actions
-    private static final SysActionFailedAction SYS_ACTION_FAILED_ACTION = new SysActionFailedAction();
-    private static final SysRetryAction SYS_RETRY_ACTION = new SysRetryAction();
-    private static final SysAbortAction SYS_ABORT_ACTION = new SysAbortAction();
+    private static final CustomerIdleTimeoutAction CUSTOMER_IDLE_TIMEOUT_ACTION = new CustomerIdleTimeoutAction();
+    private static final SystemErrorAction SYSTEM_ERROR_ACTION = new SystemErrorAction();
+    private static final DownstreamUnavailableAction DOWNSTREAM_UNAVAILABLE_ACTION = new DownstreamUnavailableAction();
 
     public static StateMachine<ConversationState, ConversationFact, CbolStateContext> build() {
         // Try to get existing state machine first
@@ -100,184 +87,209 @@ public class ConversationStateMachineFactory {
             StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> builder =
                     StateMachineBuilderFactory.create();
 
-        // ===== NORMAL FLOW =====
+        // ===== 5.1 BASIC LIFECYCLE =====
         // COLA API order: from → to → on → when → perform
 
-        // NEW → INITIATED: conversation initialization prepared
+        // NEW → INITIATED: session started, conversation initialization prepared
         builder.externalTransition()
                 .from(ConversationState.NEW)
                 .to(ConversationState.INITIATED)
-                .on(ConversationFact.CONVERSATION_INITIATED)
-                .perform(CONVERSATION_INIT_ACTION);
+                .on(ConversationFact.SESSION_STARTED)
+                .perform(SESSION_STARTED_ACTION);
 
-        // INITIATED → IN_PROGRESS: customer connects
+        // INITIATED → ACTIVE: interaction became active (InteractionState=CONNECTED)
         builder.externalTransition()
                 .from(ConversationState.INITIATED)
+                .to(ConversationState.ACTIVE)
+                .on(ConversationFact.INTERACTION_BECAME_ACTIVE)
+                .perform(INTERACTION_BECAME_ACTIVE_ACTION);
+
+        // ACTIVE → IN_PROGRESS: inbound message received
+        builder.externalTransition()
+                .from(ConversationState.ACTIVE)
                 .to(ConversationState.IN_PROGRESS)
-                .on(ConversationFact.CUSTOMER_CONNECT)
-                .perform(CUSTOMER_CONNECT_ACTION);
+                .on(ConversationFact.INBOUND_MESSAGE_RECEIVED)
+                .perform(INBOUND_MESSAGE_RECEIVED_ACTION);
 
-        // IN_PROGRESS → IN_PROGRESS (internal): agent attached
+        // INITIATED → INITIATED: downstream unavailable (stay, notify)
         builder.internalTransition()
-                .within(ConversationState.IN_PROGRESS)
-                .on(ConversationFact.AGENT_ATTACHED)
-                .perform(AGENT_ATTACHED_ACTION);
+                .within(ConversationState.INITIATED)
+                .on(ConversationFact.DOWNSTREAM_UNAVAILABLE)
+                .perform(DOWNSTREAM_UNAVAILABLE_ACTION);
 
-        // ===== TRANSFER FLOW =====
+        // ===== 5.2 CROSS-CHANNEL TRANSFER (TRANSFERRED, 180s deadline) =====
+        // Latest policy: transfer failure/timeout does NOT rollback, Conversation returns directly to INITIATED
 
-        // IN_PROGRESS → TRANSFERRED: transfer requested
+        // IN_PROGRESS → TRANSFERRED: source interaction transferred
         builder.externalTransition()
                 .from(ConversationState.IN_PROGRESS)
                 .to(ConversationState.TRANSFERRED)
-                .on(ConversationFact.TRANSFER_REQUEST)
-                .perform(TRANSFER_REQUEST_ACTION);
+                .on(ConversationFact.SOURCE_INTERACTION_TRANSFERRED)
+                .perform(SOURCE_INTERACTION_TRANSFERRED_ACTION);
 
-        // TRANSFERRED → IN_PROGRESS: transfer connected successfully
+        // TRANSFERRED → TRANSFERRED (internal): target interaction initiated
+        builder.internalTransition()
+                .within(ConversationState.TRANSFERRED)
+                .on(ConversationFact.TARGET_INTERACTION_INITIATED)
+                .perform(TARGET_INTERACTION_INITIATED_ACTION);
+
+        // TRANSFERRED → ACTIVE: target interaction connected (no rollback)
         builder.externalTransition()
                 .from(ConversationState.TRANSFERRED)
-                .to(ConversationState.IN_PROGRESS)
-                .on(ConversationFact.TRANSFER_CONNECTED)
-                .perform(TRANSFER_CONNECTED_ACTION);
+                .to(ConversationState.ACTIVE)
+                .on(ConversationFact.TARGET_INTERACTION_CONNECTED)
+                .perform(TARGET_INTERACTION_CONNECTED_ACTION);
 
-        // TRANSFERRED → INITIATED: transfer failed (v6: no rollback)
+        // TRANSFERRED → INITIATED: target connect failed (no rollback, re-route/fallback)
         builder.externalTransition()
                 .from(ConversationState.TRANSFERRED)
                 .to(ConversationState.INITIATED)
-                .on(ConversationFact.TRANSFER_FAILED)
-                .perform(TRANSFER_FAILED_ACTION);
+                .on(ConversationFact.TARGET_INTERACTION_CONNECT_FAILED)
+                .perform(TARGET_INTERACTION_CONNECT_FAILED_ACTION);
 
-        // TRANSFERRED → INITIATED: transfer timeout
+        // TRANSFERRED → INITIATED: transfer timeout (>=180s, no rollback, re-route/fallback)
         builder.externalTransition()
                 .from(ConversationState.TRANSFERRED)
                 .to(ConversationState.INITIATED)
                 .on(ConversationFact.TRANSFER_TIMEOUT)
-                .perform(TRANSFER_FAILED_ACTION);
+                .perform(TRANSFER_TIMEOUT_ACTION);
 
-        // ===== ENDING FLOW =====
+        // ===== 5.3 ENTER ENDING (unified convergence entry) =====
 
-        // IN_PROGRESS → ENDING: customer closes
+        // INITIATED/ACTIVE/IN_PROGRESS/TRANSFERRED → ENDING: ending started (set endReason, trigger ending actions)
+        builder.externalTransition()
+                .from(ConversationState.INITIATED)
+                .to(ConversationState.ENDING)
+                .on(ConversationFact.ENDING_STARTED)
+                .perform(ENDING_STARTED_ACTION);
+
+        builder.externalTransition()
+                .from(ConversationState.ACTIVE)
+                .to(ConversationState.ENDING)
+                .on(ConversationFact.ENDING_STARTED)
+                .perform(ENDING_STARTED_ACTION);
+
         builder.externalTransition()
                 .from(ConversationState.IN_PROGRESS)
                 .to(ConversationState.ENDING)
-                .on(ConversationFact.CUSTOMER_CLOSE)
-                .perform(CUSTOMER_CLOSE_ACTION);
+                .on(ConversationFact.ENDING_STARTED)
+                .perform(ENDING_STARTED_ACTION);
 
-        // IN_PROGRESS → ENDING: agent closes
-        builder.externalTransition()
-                .from(ConversationState.IN_PROGRESS)
-                .to(ConversationState.ENDING)
-                .on(ConversationFact.AGENT_CLOSE)
-                .perform(AGENT_CLOSE_ACTION);
-
-        // ===== SURVEY FLOW (survey is a sub-phase within IN_PROGRESS, NOT a separate state) =====
-
-        // IN_PROGRESS → IN_PROGRESS (internal): survey starts
-        builder.internalTransition()
-                .within(ConversationState.IN_PROGRESS)
-                .on(ConversationFact.SURVEY_START)
-                .perform(SURVEY_START_ACTION);
-
-        // TRANSFERRED → IN_PROGRESS: survey starts after transfer
         builder.externalTransition()
                 .from(ConversationState.TRANSFERRED)
-                .to(ConversationState.IN_PROGRESS)
-                .on(ConversationFact.SURVEY_START)
-                .perform(SURVEY_START_ACTION);
-
-        // IN_PROGRESS → ENDING: survey completes normally
-        builder.externalTransition()
-                .from(ConversationState.IN_PROGRESS)
                 .to(ConversationState.ENDING)
-                .on(ConversationFact.SURVEY_COMPLETE)
-                .perform(SURVEY_COMPLETE_ACTION);
+                .on(ConversationFact.ENDING_STARTED)
+                .perform(ENDING_STARTED_ACTION);
 
-        // IN_PROGRESS → ENDING: survey timeout (system-driven)
-        builder.externalTransition()
-                .from(ConversationState.IN_PROGRESS)
-                .to(ConversationState.ENDING)
-                .on(ConversationFact.SYS_SURVEY_TIMEOUT)
-                .perform(SYS_SURVEY_TIMEOUT_ACTION);
-
-        // ===== SYSTEM EVENTS (from monitors) =====
-
-        // SYS_CUSTOMER_IDLE: various states → ENDING
+        // ANY(except CLOSED) → ENDING: system error (endReason=SYSTEM_ERROR, trigger ending actions)
         builder.externalTransition()
                 .from(ConversationState.NEW)
                 .to(ConversationState.ENDING)
-                .on(ConversationFact.SYS_CUSTOMER_IDLE)
-                .perform(SYS_CUSTOMER_IDLE_ACTION);
+                .on(ConversationFact.SYSTEM_ERROR)
+                .perform(SYSTEM_ERROR_ACTION);
 
         builder.externalTransition()
                 .from(ConversationState.INITIATED)
                 .to(ConversationState.ENDING)
-                .on(ConversationFact.SYS_CUSTOMER_IDLE)
-                .perform(SYS_CUSTOMER_IDLE_ACTION);
+                .on(ConversationFact.SYSTEM_ERROR)
+                .perform(SYSTEM_ERROR_ACTION);
+
+        builder.externalTransition()
+                .from(ConversationState.ACTIVE)
+                .to(ConversationState.ENDING)
+                .on(ConversationFact.SYSTEM_ERROR)
+                .perform(SYSTEM_ERROR_ACTION);
 
         builder.externalTransition()
                 .from(ConversationState.IN_PROGRESS)
                 .to(ConversationState.ENDING)
-                .on(ConversationFact.SYS_CUSTOMER_IDLE)
-                .perform(SYS_CUSTOMER_IDLE_ACTION);
+                .on(ConversationFact.SYSTEM_ERROR)
+                .perform(SYSTEM_ERROR_ACTION);
 
         builder.externalTransition()
                 .from(ConversationState.TRANSFERRED)
                 .to(ConversationState.ENDING)
-                .on(ConversationFact.SYS_CUSTOMER_IDLE)
-                .perform(SYS_CUSTOMER_IDLE_ACTION);
+                .on(ConversationFact.SYSTEM_ERROR)
+                .perform(SYSTEM_ERROR_ACTION);
 
-        // SYS_TRANSFER_TIMEOUT: TRANSFERRED → INITIATED
+        // ===== 5.4 CUSTOMER IDLE (ideal rule: full coverage enter ENDING, reason=customer idle) =====
+
+        // INITIATED → ENDING: customer idle timeout
+        builder.externalTransition()
+                .from(ConversationState.INITIATED)
+                .to(ConversationState.ENDING)
+                .on(ConversationFact.CUSTOMER_IDLE_TIMEOUT)
+                .perform(CUSTOMER_IDLE_TIMEOUT_ACTION);
+
+        // ACTIVE → ENDING: customer idle timeout
+        builder.externalTransition()
+                .from(ConversationState.ACTIVE)
+                .to(ConversationState.ENDING)
+                .on(ConversationFact.CUSTOMER_IDLE_TIMEOUT)
+                .perform(CUSTOMER_IDLE_TIMEOUT_ACTION);
+
+        // IN_PROGRESS → ENDING: customer idle timeout
+        builder.externalTransition()
+                .from(ConversationState.IN_PROGRESS)
+                .to(ConversationState.ENDING)
+                .on(ConversationFact.CUSTOMER_IDLE_TIMEOUT)
+                .perform(CUSTOMER_IDLE_TIMEOUT_ACTION);
+
+        // TRANSFERRED → ENDING: customer idle timeout (special: don't cancel transfer, refresh endingDeadlineAt, defer CloseInteractions)
         builder.externalTransition()
                 .from(ConversationState.TRANSFERRED)
-                .to(ConversationState.INITIATED)
-                .on(ConversationFact.SYS_TRANSFER_TIMEOUT)
-                .perform(TRANSFER_FAILED_ACTION);
+                .to(ConversationState.ENDING)
+                .on(ConversationFact.CUSTOMER_IDLE_TIMEOUT)
+                .perform(CUSTOMER_IDLE_TIMEOUT_ACTION);
 
-        // SYS_ENDING_GRACE_TIMEOUT: ENDING → CLOSED
+        // ENDING → ENDING (internal): customer idle timeout (no-op, can confirm reason=customer idle)
+        builder.internalTransition()
+                .within(ConversationState.ENDING)
+                .on(ConversationFact.CUSTOMER_IDLE_TIMEOUT);
+
+        // ===== 7.2 ENDING CONVERGENCE RULES (two conditions + timeout forced) =====
+        // endingActionsDone=true (ENDING_ACTIONS_COMPLETED)
+        // interactionsClosed=true (ALL_INTERACTIONS_ENDED)
+        // both true → CLOSED
+        // or ENDING_TIMEOUT → forced CLOSED
+
+        // ENDING → ENDING (internal): ending actions completed (set endingActionsDone=true; if interactionsClosed=true then CLOSED)
+        builder.internalTransition()
+                .within(ConversationState.ENDING)
+                .on(ConversationFact.ENDING_ACTIONS_COMPLETED);
+
+        // ENDING → ENDING (internal): all interactions ended (set interactionsClosed=true; if endingActionsDone=true then CLOSED)
+        builder.internalTransition()
+                .within(ConversationState.ENDING)
+                .on(ConversationFact.ALL_INTERACTIONS_ENDED);
+
+        // ENDING → CLOSED: ending timeout (forced close, record alert reason)
         builder.externalTransition()
                 .from(ConversationState.ENDING)
                 .to(ConversationState.CLOSED)
-                .on(ConversationFact.SYS_ENDING_GRACE_TIMEOUT)
-                .perform(SYS_ENDING_GRACE_TIMEOUT_ACTION);
+                .on(ConversationFact.ENDING_TIMEOUT)
+                .perform(ENDING_TIMEOUT_ACTION);
 
-        // ===== FAILOVER FLOW =====
+        // ===== 7.4 SURVEY FIELD-BASED (no longer SURVEY state, handled in ENDING) =====
+        // Survey events are internal transitions in ENDING (no-op, update surveyStatus field)
 
-        // SYS_ACTION_FAILED: various states → ERROR
-        builder.externalTransition()
-                .from(ConversationState.NEW)
-                .to(ConversationState.ERROR)
-                .on(ConversationFact.SYS_ACTION_FAILED)
-                .perform(SYS_ACTION_FAILED_ACTION);
+        // ENDING → ENDING (internal): survey submitted (surveyStatus=SUBMITTED)
+        builder.internalTransition()
+                .within(ConversationState.ENDING)
+                .on(ConversationFact.SURVEY_SUBMITTED);
 
-        builder.externalTransition()
-                .from(ConversationState.INITIATED)
-                .to(ConversationState.ERROR)
-                .on(ConversationFact.SYS_ACTION_FAILED)
-                .perform(SYS_ACTION_FAILED_ACTION);
+        // ENDING → ENDING (internal): survey timeout (surveyStatus=TIMEOUT, endReason=CUSTOMER_IDLE)
+        builder.internalTransition()
+                .within(ConversationState.ENDING)
+                .on(ConversationFact.SURVEY_TIMEOUT);
 
-        builder.externalTransition()
-                .from(ConversationState.IN_PROGRESS)
-                .to(ConversationState.ERROR)
-                .on(ConversationFact.SYS_ACTION_FAILED)
-                .perform(SYS_ACTION_FAILED_ACTION);
+        // ENDING → ENDING (internal): survey skipped (surveyStatus=SKIPPED)
+        builder.internalTransition()
+                .within(ConversationState.ENDING)
+                .on(ConversationFact.SURVEY_SKIPPED);
 
-        builder.externalTransition()
-                .from(ConversationState.TRANSFERRED)
-                .to(ConversationState.ERROR)
-                .on(ConversationFact.SYS_ACTION_FAILED)
-                .perform(SYS_ACTION_FAILED_ACTION);
-
-        // ERROR state recovery paths
-        builder.externalTransition()
-                .from(ConversationState.ERROR)
-                .to(ConversationState.IN_PROGRESS)
-                .on(ConversationFact.SYS_RETRY)
-                .perform(SYS_RETRY_ACTION);
-
-        builder.externalTransition()
-                .from(ConversationState.ERROR)
-                .to(ConversationState.CLOSED)
-                .on(ConversationFact.SYS_ABORT)
-                .perform(SYS_ABORT_ACTION);
+        // ===== GENESYS SAME-CHANNEL / CONSULT (conversation no-op) =====
+        // These events are handled at the Interaction level, Conversation state machine treats them as no-op
 
         // Build and register
         try {

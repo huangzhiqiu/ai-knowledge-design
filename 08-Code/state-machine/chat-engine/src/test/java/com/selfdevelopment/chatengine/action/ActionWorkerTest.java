@@ -61,7 +61,7 @@ class ActionWorkerTest {
 
         CompletableFuture<Void> future = worker.submitWithResult(
                 action, ConversationState.INITIATED, ConversationState.IN_PROGRESS,
-                ConversationFact.CUSTOMER_CONNECT, businessCtx);
+                ConversationFact.SESSION_STARTED, businessCtx);
 
         future.get(3, TimeUnit.SECONDS);
         assertTrue(executed.get(), "Action should have been executed");
@@ -78,7 +78,7 @@ class ActionWorkerTest {
 
         CompletableFuture<Void> future = worker.submitWithResult(
                 action, ConversationState.INITIATED, ConversationState.IN_PROGRESS,
-                ConversationFact.CUSTOMER_CONNECT, businessCtx);
+                ConversationFact.SESSION_STARTED, businessCtx);
 
         ExecutionException ex = assertThrows(ExecutionException.class,
                 () -> future.get(3, TimeUnit.SECONDS));
@@ -95,7 +95,7 @@ class ActionWorkerTest {
 
         String result = worker.submitWithResult(
                         action, ConversationState.INITIATED, ConversationState.IN_PROGRESS,
-                        ConversationFact.CUSTOMER_CONNECT, businessCtx)
+                        ConversationFact.SESSION_STARTED, businessCtx)
                 .thenApply(v -> "action completed")
                 .get(3, TimeUnit.SECONDS);
 
@@ -112,7 +112,7 @@ class ActionWorkerTest {
 
         String result = worker.submitWithResult(
                         action, ConversationState.INITIATED, ConversationState.IN_PROGRESS,
-                        ConversationFact.CUSTOMER_CONNECT, businessCtx)
+                        ConversationFact.SESSION_STARTED, businessCtx)
                 .thenApply(v -> "success")
                 .exceptionally(ex -> "recovered: " + ex.getMessage())
                 .get(3, TimeUnit.SECONDS);
@@ -124,7 +124,7 @@ class ActionWorkerTest {
     void testSubmitWithResultNullActionThrows() {
         assertThrows(NullPointerException.class, () -> worker.submitWithResult(
                 null, ConversationState.INITIATED, ConversationState.IN_PROGRESS,
-                ConversationFact.CUSTOMER_CONNECT, businessCtx));
+                ConversationFact.SESSION_STARTED, businessCtx));
     }
 
     @Test
@@ -133,7 +133,7 @@ class ActionWorkerTest {
                 (from, to, event, ctx) -> {};
         assertThrows(NullPointerException.class, () -> worker.submitWithResult(
                 action, ConversationState.INITIATED, ConversationState.IN_PROGRESS,
-                ConversationFact.CUSTOMER_CONNECT, null));
+                ConversationFact.SESSION_STARTED, null));
     }
 
     // ==================== submitWithCallback Tests ====================
@@ -149,7 +149,7 @@ class ActionWorkerTest {
 
         worker.submitWithCallback(
                 action, ConversationState.INITIATED, ConversationState.IN_PROGRESS,
-                ConversationFact.CUSTOMER_CONNECT, businessCtx,
+                ConversationFact.SESSION_STARTED, businessCtx,
                 ctx -> {
                     successCalled.set(true);
                     latch.countDown();
@@ -177,7 +177,7 @@ class ActionWorkerTest {
 
         worker.submitWithCallback(
                 action, ConversationState.INITIATED, ConversationState.IN_PROGRESS,
-                ConversationFact.CUSTOMER_CONNECT, businessCtx,
+                ConversationFact.SESSION_STARTED, businessCtx,
                 ctx -> {
                     successCalled.set(true);
                     latch.countDown();
@@ -207,7 +207,7 @@ class ActionWorkerTest {
 
         worker.submit(
                 action, ConversationState.INITIATED, ConversationState.IN_PROGRESS,
-                ConversationFact.CUSTOMER_CONNECT, businessCtx);
+                ConversationFact.SESSION_STARTED, businessCtx);
 
         assertTrue(latch.await(3, TimeUnit.SECONDS), "Action should be executed");
         assertTrue(executed.get(), "Action should have been executed");

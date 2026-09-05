@@ -39,50 +39,71 @@ class ConversationStateMachineTest {
     @Test
     void testNewToInitiated() {
         // NEW is the initial state: conversation created, preparation not done yet
-        // CONVERSATION_INITIATED triggers preparation work (ConversationInitAction)
-        ConversationState result = service.fire(buildCtx(ConversationState.NEW), ConversationFact.CONVERSATION_INITIATED);
+        // SESSION_STARTED triggers preparation work (SessionStartedAction)
+        ConversationState result = service.fire(buildCtx(ConversationState.NEW), ConversationFact.SESSION_STARTED);
         assertEquals(ConversationState.INITIATED, result);
     }
 
     @Test
-    void testInitToActive() {
-        ConversationState result = service.fire(buildCtx(ConversationState.INITIATED), ConversationFact.CUSTOMER_CONNECT);
+    void testInitiatedToActive() {
+        // INITIATED → ACTIVE: interaction became active (InteractionBecameActiveAction)
+        ConversationState result = service.fire(buildCtx(ConversationState.INITIATED), ConversationFact.INTERACTION_BECAME_ACTIVE);
+        assertEquals(ConversationState.ACTIVE, result);
+    }
+
+    @Test
+    void testActiveToInProgress() {
+        // ACTIVE → IN_PROGRESS: inbound message received (InboundMessageReceivedAction)
+        ConversationState result = service.fire(buildCtx(ConversationState.ACTIVE), ConversationFact.INBOUND_MESSAGE_RECEIVED);
         assertEquals(ConversationState.IN_PROGRESS, result);
     }
 
     @Test
-    void testActiveToTransferred() {
+    void testInProgressToTransferred() {
+        // IN_PROGRESS → TRANSFERRED: source interaction transferred (SourceInteractionTransferredAction)
         assertEquals(ConversationState.TRANSFERRED,
-                service.fire(buildCtx(ConversationState.IN_PROGRESS), ConversationFact.TRANSFER_REQUEST));
+                service.fire(buildCtx(ConversationState.IN_PROGRESS), ConversationFact.SOURCE_INTERACTION_TRANSFERRED));
+    }
+
+    @Test
+    void testTransferredToActive() {
+        // TRANSFERRED → ACTIVE: target interaction connected (TargetInteractionConnectedAction)
+        assertEquals(ConversationState.ACTIVE,
+                service.fire(buildCtx(ConversationState.TRANSFERRED), ConversationFact.TARGET_INTERACTION_CONNECTED));
     }
 
     @Test
     void testTransferredFailedToInitiated() {
+        // TRANSFERRED → INITIATED: target connect failed (no rollback, re-route)
         assertEquals(ConversationState.INITIATED,
-                service.fire(buildCtx(ConversationState.TRANSFERRED), ConversationFact.TRANSFER_FAILED));
+                service.fire(buildCtx(ConversationState.TRANSFERRED), ConversationFact.TARGET_INTERACTION_CONNECT_FAILED));
     }
 
     @Test
     void testTransferredTimeoutToInitiated() {
+        // TRANSFERRED → INITIATED: transfer timeout (no rollback, re-route)
         assertEquals(ConversationState.INITIATED,
                 service.fire(buildCtx(ConversationState.TRANSFERRED), ConversationFact.TRANSFER_TIMEOUT));
     }
 
     @Test
-    void testActiveToEnding() {
+    void testInProgressToEnding() {
+        // IN_PROGRESS → ENDING: ending started (EndingStartedAction)
         assertEquals(ConversationState.ENDING,
-                service.fire(buildCtx(ConversationState.IN_PROGRESS), ConversationFact.CUSTOMER_CLOSE));
+                service.fire(buildCtx(ConversationState.IN_PROGRESS), ConversationFact.ENDING_STARTED));
     }
 
     @Test
     void testCustomerIdleToEnding() {
+        // IN_PROGRESS → ENDING: customer idle timeout (CustomerIdleTimeoutAction)
         assertEquals(ConversationState.ENDING,
-                service.fire(buildCtx(ConversationState.IN_PROGRESS), ConversationFact.SYS_CUSTOMER_IDLE));
+                service.fire(buildCtx(ConversationState.IN_PROGRESS), ConversationFact.CUSTOMER_IDLE_TIMEOUT));
     }
 
     @Test
-    void testEndingGraceTimeoutToClosed() {
+    void testEndingTimeoutToClosed() {
+        // ENDING → CLOSED: ending timeout (forced close)
         assertEquals(ConversationState.CLOSED,
-                service.fire(buildCtx(ConversationState.ENDING), ConversationFact.SYS_ENDING_GRACE_TIMEOUT));
+                service.fire(buildCtx(ConversationState.ENDING), ConversationFact.ENDING_TIMEOUT));
     }
 }

@@ -6,7 +6,7 @@ import com.selfdevelopment.chatengine.enums.ConversationState;
 import com.selfdevelopment.chatengine.service.ChatEngineStateMachineService;
 
 /**
- * Monitors transfer timeout and fires SYS_TRANSFER_TIMEOUT when the threshold is exceeded.
+ * Monitors transfer timeout and fires TRANSFER_TIMEOUT when the threshold is exceeded.
  * Only applies when the conversation is in the TRANSFERRED state.
  */
 public class TransferMonitor extends AbstractTimeoutMonitor {
@@ -27,6 +27,6 @@ public class TransferMonitor extends AbstractTimeoutMonitor {
 
     @Override
     protected ConversationFact timeoutEvent() {
-        return ConversationFact.SYS_TRANSFER_TIMEOUT;
+        return ConversationFact.TRANSFER_TIMEOUT;
     }
 }

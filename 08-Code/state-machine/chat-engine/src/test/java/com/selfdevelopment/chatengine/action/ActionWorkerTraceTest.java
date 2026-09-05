@@ -55,7 +55,7 @@ class ActionWorkerTraceTest {
                 };
         worker.submit(
                 action, ConversationState.INITIATED, ConversationState.IN_PROGRESS,
-                ConversationFact.CUSTOMER_CONNECT, businessCtx);
+                ConversationFact.SESSION_STARTED, businessCtx);
         assertTrue(latch.await(3, TimeUnit.SECONDS));
         assertEquals(traceContext.traceId(), capturedFromCtx[0]);
         assertNotNull(capturedFromMdc[0], "MDC traceId should not be null");
@@ -70,7 +70,7 @@ class ActionWorkerTraceTest {
                 (from, to, event, ctx) -> latch.countDown();
         customWorker.submit(
                 action, ConversationState.INITIATED, ConversationState.IN_PROGRESS,
-                ConversationFact.CUSTOMER_CONNECT, businessCtx);
+                ConversationFact.SESSION_STARTED, businessCtx);
         assertTrue(latch.await(3, TimeUnit.SECONDS));
         customWorker.shutdown();
     }

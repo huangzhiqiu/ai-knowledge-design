@@ -8,13 +8,14 @@ import com.selfdevelopment.chatengine.service.ChatEngineStateMachineService;
 import java.util.Set;
 
 /**
- * Monitors customer idle time and fires SYS_CUSTOMER_IDLE when the threshold is exceeded.
- * Applies to all non-terminal states (INITIATED, IN_PROGRESS, TRANSFERRED).
+ * Monitors customer idle time and fires CUSTOMER_IDLE_TIMEOUT when the threshold is exceeded.
+ * Applies to all non-terminal states (INITIATED, ACTIVE, IN_PROGRESS, TRANSFERRED).
  */
 public class CustomerIdleMonitor extends AbstractTimeoutMonitor {
 
     private static final Set<ConversationState> APPLICABLE_STATES = Set.of(
             ConversationState.INITIATED,
+            ConversationState.ACTIVE,
             ConversationState.IN_PROGRESS,
             ConversationState.TRANSFERRED
     );
@@ -35,6 +36,6 @@ public class CustomerIdleMonitor extends AbstractTimeoutMonitor {
 
     @Override
     protected ConversationFact timeoutEvent() {
-        return ConversationFact.SYS_CUSTOMER_IDLE;
+        return ConversationFact.CUSTOMER_IDLE_TIMEOUT;
     }
 }

@@ -16,9 +16,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 /**
  * Unit tests for the survey flow.
  * <p>
- * Survey is a sub-phase within IN_PROGRESS, NOT a separate state:
- * SURVEY_START is an internal transition (IN_PROGRESS → IN_PROGRESS),
- * SURVEY_COMPLETE transitions from IN_PROGRESS to ENDING.
+ * Survey is field-based in ENDING, NOT a separate state:
+ * - SURVEY_SUBMITTED is an internal transition (ENDING → ENDING)
+ * - SURVEY_TIMEOUT is an internal transition (ENDING → ENDING)
+ * - SURVEY_SKIPPED is an internal transition (ENDING → ENDING)
+ * <p>
+ * Based on Event-Driven Orchestration Design (v4.0).
  */
 class SurveyStateFlowTest {
 
@@ -44,71 +47,71 @@ class SurveyStateFlowTest {
                 .build();
     }
 
-    // ===== SURVEY_START transitions =====
+    // ===== SURVEY_SUBMITTED transitions (ENDING → ENDING, internal) =====
 
     @Test
-    void shouldStartSurveyFromInProgress() {
-        // SURVEY_START is an internal transition: state remains IN_PROGRESS
+    void shouldSubmitSurveyFromEnding() {
+        // SURVEY_SUBMITTED is an internal transition: state remains ENDING
         ConversationState result = service.fire(
-                buildCtx(ConversationState.IN_PROGRESS, true), ConversationFact.SURVEY_START);
-        assertEquals(ConversationState.IN_PROGRESS, result);
+                buildCtx(ConversationState.ENDING, true), ConversationFact.SURVEY_SUBMITTED);
+        assertEquals(ConversationState.ENDING, result);
     }
 
     @Test
-    void shouldStartSurveyFromTransferred() {
-        assertEquals(ConversationState.IN_PROGRESS,
-                service.fire(buildCtx(ConversationState.TRANSFERRED, true),
-                        ConversationFact.SURVEY_START));
-    }
-
-    @Test
-    void shouldNotStartSurveyFromInitiated() {
+    void shouldNotSubmitSurveyFromInProgress() {
         // COLA state machine returns source state when no transition matches
         ConversationState result = service.fire(
-                buildCtx(ConversationState.INITIATED, true), ConversationFact.SURVEY_START);
-        assertEquals(ConversationState.INITIATED, result, "State should remain INITIATED");
+                buildCtx(ConversationState.IN_PROGRESS, true), ConversationFact.SURVEY_SUBMITTED);
+        assertEquals(ConversationState.IN_PROGRESS, result, "State should remain IN_PROGRESS");
     }
 
-    // ===== SURVEY_COMPLETE transitions =====
+    // ===== SURVEY_TIMEOUT transitions (ENDING → ENDING, internal) =====
 
     @Test
-    void shouldCompleteSurveyToEnding() {
-        assertEquals(ConversationState.ENDING,
-                service.fire(buildCtx(ConversationState.IN_PROGRESS, true),
-                        ConversationFact.SURVEY_COMPLETE));
+    void shouldTimeoutSurveyFromEnding() {
+        // SURVEY_TIMEOUT is an internal transition: state remains ENDING
+        ConversationState result = service.fire(
+                buildCtx(ConversationState.ENDING, true), ConversationFact.SURVEY_TIMEOUT);
+        assertEquals(ConversationState.ENDING, result);
     }
 
-    // ===== SYS_SURVEY_TIMEOUT transitions =====
+    // ===== SURVEY_SKIPPED transitions (ENDING → ENDING, internal) =====
 
     @Test
-    void shouldTimeoutSurveyToEnding() {
-        assertEquals(ConversationState.ENDING,
-                service.fire(buildCtx(ConversationState.IN_PROGRESS, true),
-                        ConversationFact.SYS_SURVEY_TIMEOUT));
+    void shouldSkipSurveyFromEnding() {
+        // SURVEY_SKIPPED is an internal transition: state remains ENDING
+        ConversationState result = service.fire(
+                buildCtx(ConversationState.ENDING, true), ConversationFact.SURVEY_SKIPPED);
+        assertEquals(ConversationState.ENDING, result);
     }
 
     // ===== Full end-to-end survey flow =====
 
     @Test
     void shouldCompleteFullSurveyFlow() {
-        // 1. Connect → IN_PROGRESS
-        CbolStateContext ctx = buildCtx(ConversationState.INITIATED, true);
-        assertEquals(ConversationState.IN_PROGRESS,
-                service.fire(ctx, ConversationFact.CUSTOMER_CONNECT));
-
-        // 2. Start survey (internal transition, stays IN_PROGRESS)
-        CbolStateContext activeCtx = buildCtx(ConversationState.IN_PROGRESS, true);
-        assertEquals(ConversationState.IN_PROGRESS,
-                service.fire(activeCtx, ConversationFact.SURVEY_START));
-
-        // 3. Complete survey → ENDING
-        CbolStateContext surveyCtx = buildCtx(ConversationState.IN_PROGRESS, true);
+        // 1. Ending started → ENDING (survey will be sent if eligible)
+        CbolStateContext endingCtx = buildCtx(ConversationState.IN_PROGRESS, true);
         assertEquals(ConversationState.ENDING,
-                service.fire(surveyCtx, ConversationFact.SURVEY_COMPLETE));
+                service.fire(endingCtx, ConversationFact.ENDING_STARTED));
 
-        // 4. Ending grace timeout → CLOSED
-        CbolStateContext endingCtx = buildCtx(ConversationState.ENDING, true);
+        // 2. Survey submitted (internal transition, stays ENDING)
+        CbolStateContext surveyCtx = buildCtx(ConversationState.ENDING, true);
+        assertEquals(ConversationState.ENDING,
+                service.fire(surveyCtx, ConversationFact.SURVEY_SUBMITTED));
+
+        // 3. All interactions ended (internal transition, stays ENDING)
+        CbolStateContext interactionsCtx = buildCtx(ConversationState.ENDING, true);
+        assertEquals(ConversationState.ENDING,
+                service.fire(interactionsCtx, ConversationFact.ALL_INTERACTIONS_ENDED));
+
+        // 4. Ending actions completed (internal transition, stays ENDING)
+        CbolStateContext actionsCtx = buildCtx(ConversationState.ENDING, true);
+        assertEquals(ConversationState.ENDING,
+                service.fire(actionsCtx, ConversationFact.ENDING_ACTIONS_COMPLETED));
+
+        // 5. Ending timeout → CLOSED
+        CbolStateContext finalCtx = buildCtx(ConversationState.ENDING, true);
         assertEquals(ConversationState.CLOSED,
-                service.fire(endingCtx, ConversationFact.SYS_ENDING_GRACE_TIMEOUT));
+                service.fire(finalCtx, ConversationFact.ENDING_TIMEOUT));
     }
 }

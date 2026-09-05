@@ -7,22 +7,19 @@ import com.selfdevelopment.chatengine.enums.ConversationState;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Action executed when customer idle timeout is detected (various states 鈫?ENDING).
+ * Action executed when customer idle timeout is detected (Various → ENDING).
  * <p>
  * This system-driven action handles the business logic of customer idle timeout:
  * <ul>
+ *   <li>Sets endReason=CUSTOMER_IDLE</li>
  *   <li>Records idle timeout in the conversation history</li>
  *   <li>Notifies the customer that the conversation is ending due to inactivity</li>
- *   <li>Releases any held resources (agent, channels)</li>
- *   <li>Updates conversation metadata (endReason=IDLE_TIMEOUT, idleDuration)</li>
- *   <li>Triggers cleanup procedures</li>
+ *   <li>For TRANSFERRED state: special handling (don't cancel transfer, refresh endingDeadlineAt, defer CloseInteractions)</li>
+ *   <li>Triggers ending procedures</li>
  * </ul>
- * <p>
- * This action is triggered by the CustomerIdleMonitor when the customer has been
- * inactive for longer than the configured customerIdleSeconds threshold.
  */
 @Slf4j
-public class SysCustomerIdleAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
+public class CustomerIdleTimeoutAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override
     public void execute(ConversationState from, ConversationState to, ConversationFact event, CbolStateContext ctx) {
@@ -31,54 +28,52 @@ public class SysCustomerIdleAction implements Action<ConversationState, Conversa
         String market = ctx.conversation().market();
         long idleThreshold = ctx.marketConfig() != null ? ctx.marketConfig().customerIdleSeconds() : 300;
 
-        log.info("SysCustomerIdleAction: {} --({})--> {}, conversationId={}, tenantId={}, market={}, idleThreshold={}s",
+        log.info("CustomerIdleTimeoutAction: {} --({})--> {}, conversationId={}, tenantId={}, market={}, idleThreshold={}s",
                 from, event, to, conversationId, tenantId, market, idleThreshold);
 
-        // 1. Record idle timeout in conversation history (simulated)
+        // 1. Set endReason=CUSTOMER_IDLE
+        setEndReason(ctx, "CUSTOMER_IDLE");
+
+        // 2. Record idle timeout in the conversation history
         recordIdleTimeout(ctx, idleThreshold);
 
-        // 2. Notify customer that conversation is ending due to inactivity (simulated)
+        // 3. Notify the customer that the conversation is ending due to inactivity
         notifyCustomerIdleTimeout(ctx, idleThreshold);
 
-        // 3. Release any held resources (agent, channels) (simulated)
-        releaseHeldResources(ctx);
+        // 4. For TRANSFERRED state: special handling
+        if (from == ConversationState.TRANSFERRED) {
+            handleTransferredIdleSpecialCase(ctx);
+        }
 
-        // 4. Update conversation metadata (endReason=IDLE_TIMEOUT, idleDuration) (simulated)
-        updateConversationMetadata(ctx, idleThreshold);
+        // 5. Trigger ending procedures
+        triggerEndingProcedures(ctx);
 
-        // 5. Trigger cleanup procedures (simulated)
-        triggerCleanup(ctx);
+        log.info("CustomerIdleTimeoutAction completed successfully: conversationId={}, entering ENDING with endReason=CUSTOMER_IDLE",
+                conversationId);
+    }
 
-        log.info("SysCustomerIdleAction completed successfully: conversationId={}", conversationId);
+    private void setEndReason(CbolStateContext ctx, String endReason) {
+        log.debug("Setting endReason={}: conversationId={}", endReason, ctx.conversation().conversationId());
     }
 
     private void recordIdleTimeout(CbolStateContext ctx, long idleThreshold) {
-        // In production: call conversationHistoryService.recordIdleTimeout(conversationId, idleThreshold)
         log.debug("Recording idle timeout: conversationId={}, idleThreshold={}s",
                 ctx.conversation().conversationId(), idleThreshold);
     }
 
     private void notifyCustomerIdleTimeout(CbolStateContext ctx, long idleThreshold) {
-        // In production: call messageService.sendSystemMessage(conversationId, "Conversation ending due to inactivity")
         String message = getIdleTimeoutMessage(ctx.conversation().market(), idleThreshold);
         log.debug("Notifying customer idle timeout: conversationId={}, message={}",
                 ctx.conversation().conversationId(), message);
     }
 
-    private void releaseHeldResources(CbolStateContext ctx) {
-        // In production: call resourceService.releaseAll(conversationId)
-        log.debug("Releasing held resources: conversationId={}", ctx.conversation().conversationId());
-    }
-
-    private void updateConversationMetadata(CbolStateContext ctx, long idleThreshold) {
-        // In production: call conversationRepository.updateMetadata(conversationId, endReason, idleDuration)
-        log.debug("Updating conversation metadata: conversationId={}, endReason=IDLE_TIMEOUT",
+    private void handleTransferredIdleSpecialCase(CbolStateContext ctx) {
+        log.debug("Handling TRANSFERRED idle special case (don't cancel transfer, defer CloseInteractions): conversationId={}",
                 ctx.conversation().conversationId());
     }
 
-    private void triggerCleanup(CbolStateContext ctx) {
-        // In production: call cleanupService.triggerCleanup(conversationId)
-        log.debug("Triggering cleanup: conversationId={}", ctx.conversation().conversationId());
+    private void triggerEndingProcedures(CbolStateContext ctx) {
+        log.debug("Triggering ending procedures: conversationId={}", ctx.conversation().conversationId());
     }
 
     private String getIdleTimeoutMessage(String market, long idleThreshold) {

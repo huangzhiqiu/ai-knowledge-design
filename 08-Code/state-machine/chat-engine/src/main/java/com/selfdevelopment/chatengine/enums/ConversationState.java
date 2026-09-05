@@ -3,38 +3,36 @@ package com.selfdevelopment.chatengine.enums;
 /**
  * Conversation lifecycle states.
  * <p>
- * NEW is the initial state: the conversation record has been created (e.g., customer
- * opened the chat window), but the conversation has not started yet. No messages have
- * been exchanged, and no agent/AI has been assigned.
+ * Based on the Event-Driven Orchestration Design (v4.0):
  * <p>
- * INITIATED: the conversation has started (customer sent first message or system
- * initialized), but is waiting for customer connection or agent assignment. Also used
- * as the fallback state after a transfer failure (re-routing).
+ * NEW: The conversation record has been created (e.g., customer opened the chat window),
+ * but the conversation has not started yet. No messages have been exchanged, and no
+ * agent/AI has been assigned.
  * <p>
- * IN_PROGRESS: the conversation is actively in progress. This state encompasses both
- * the messaging phase (chatting, receiving messages) and the survey phase. The survey
- * is NOT a separate state — it is a sub-phase within IN_PROGRESS, triggered by the
- * SURVEY_START event (internal transition, state remains IN_PROGRESS). When the survey
- * completes (SURVEY_COMPLETE) or times out (SYS_SURVEY_TIMEOUT), the conversation
- * transitions directly to ENDING.
+ * INITIATED: The conversation has started (SESSION_STARTED), but is waiting for
+ * interaction ready or downstream assignment. Also used as the fallback state after
+ * a transfer failure (re-routing).
  * <p>
- * ENDING: the conversation is in the ending grace period. All active communication has
- * ceased, but the system is waiting for any final cleanup or delayed messages before
- * closing permanently.
+ * ACTIVE: The current bound interaction is ready (InteractionState=CONNECTED).
+ * Entered when INTERACTION_BECAME_ACTIVE is fired.
  * <p>
- * ERROR is a failover state: entered when an action throws an unhandled exception
- * (SYS_ACTION_FAILED). From ERROR, the system can retry (SYS_RETRY), abort (SYS_ABORT),
- * or be recovered by an operator.
+ * IN_PROGRESS: Customer inbound message (INBOUND) has been received, business is in progress.
+ * Entered when INBOUND_MESSAGE_RECEIVED is fired from ACTIVE.
  * <p>
- * CLOSED: the conversation is permanently closed. No further state transitions are
- * possible from this state.
+ * TRANSFERRED: CBOL cross-channel transfer phase (in-flight, waiting for target result or timeout).
+ * Entered when SOURCE_INTERACTION_TRANSFERRED is fired from IN_PROGRESS.
+ * <p>
+ * ENDING: Irreversible - pre-close orchestration (guarantees final CLOSED).
+ * Entered via ENDING_STARTED, CUSTOMER_IDLE_TIMEOUT, or SYSTEM_ERROR from any business state.
+ * <p>
+ * CLOSED: Final convergence state. No further state transitions are possible from this state.
  */
 public enum ConversationState {
-    NEW,
-    INITIATED,
-    IN_PROGRESS,
-    TRANSFERRED,
-    ENDING,
-    ERROR,
-    CLOSED
+    NEW,            // 会话已创建，等待 interaction ready（或下游分配）
+    INITIATED,      // 当前绑定 interaction ready（InteractionState=CONNECTED）
+    ACTIVE,         // 已收到客户入站消息（INBOUND），业务进行中
+    IN_PROGRESS,    // 业务进行中
+    TRANSFERRED,    // CBOL 跨渠道转接阶段（in-flight，等待 target 结果或超时）
+    ENDING,         // 不可逆：关闭前收尾编排（保证最终 CLOSED）
+    CLOSED          // 最终收敛态
 }

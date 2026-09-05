@@ -15,9 +15,9 @@ import java.util.Optional;
  * <p>
  * Maps AIBot event types to CBOL conversation facts:
  * <ul>
- *   <li>MESSAGE_RECEIVED → CUSTOMER_CONNECT (simplified mapping)</li>
- *   <li>HANDOFF → TRANSFER_REQUEST</li>
- *   <li>SESSION_ENDED → CUSTOMER_CLOSE</li>
+ *   <li>MESSAGE_RECEIVED → INTERACTION_BECAME_ACTIVE (simplified mapping)</li>
+ *   <li>HANDOFF → SOURCE_INTERACTION_TRANSFERRED</li>
+ *   <li>SESSION_ENDED → ENDING_STARTED</li>
  * </ul>
  * <p>
  * Events with unknown types are filtered out (return empty).
@@ -28,9 +28,9 @@ public class AibotEventNormalizer {
 
     /** AIBot event type → CBOL conversation fact mapping */
     private static final Map<String, ConversationFact> EVENT_TYPE_MAPPING = Map.of(
-            "MESSAGE_RECEIVED", ConversationFact.CUSTOMER_CONNECT,
-            "HANDOFF", ConversationFact.TRANSFER_REQUEST,
-            "SESSION_ENDED", ConversationFact.CUSTOMER_CLOSE
+            "MESSAGE_RECEIVED", ConversationFact.INTERACTION_BECAME_ACTIVE,
+            "HANDOFF", ConversationFact.SOURCE_INTERACTION_TRANSFERRED,
+            "SESSION_ENDED", ConversationFact.ENDING_STARTED
     );
 
     /**
