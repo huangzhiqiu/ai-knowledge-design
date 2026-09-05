@@ -15,6 +15,75 @@
 | 06 | [多市场设计](./06-Multi-Market-Design.md) | 多市场架构：配置控制 vs 每市场 vs 混合、市场感知守卫/动作/扩展、实施路线图、风险评估 |
 | 07 | [多市场最佳实践](./07-Multi-Market-Best-Practices/README.md) | 8 个详细最佳实践指南：三层配置继承、市场差异可视化、路由与隔离、配置即代码 GitOps、金丝雀发布、熔断与降级、模式验证、测试矩阵 |
 
+## 项目架构
+
+### 模块依赖图
+
+```mermaid
+graph TD
+    subgraph "业务层"
+        CE[chat-engine<br/>会话状态机]
+        AC[agent-connector<br/>交互状态机]
+    end
+
+    subgraph "核心层"
+        CORE[statemachine-core<br/>阿里巴巴 COLA StateMachine]
+    end
+
+    CE --> CORE
+    AC --> CORE
+
+    style CE fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    style AC fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style CORE fill:#fff3e0,stroke:#e65100,stroke-width:2px
+```
+
+### 事件驱动编排流程
+
+```mermaid
+flowchart LR
+    subgraph "外部事件"
+        AIBOT[AIBot 事件]
+        GENESYS[Genesys 事件]
+        WS[WebSocket 事件]
+    end
+
+    subgraph "入口层"
+        NORM1[AibotEventNormalizer]
+        NORM2[GenesysEventNormalizer]
+    end
+
+    subgraph "状态机层"
+        ISM[交互状态机<br/>agent-connector]
+        CSM[会话状态机<br/>chat-engine]
+    end
+
+    subgraph "动作层"
+        ACT1[连接动作]
+        ACT2[消息动作]
+        ACT3[转接动作]
+        ACT4[结束动作]
+        ACT5[系统动作]
+    end
+
+    AIBOT --> NORM1
+    GENESYS --> NORM2
+    WS --> NORM2
+
+    NORM1 --> CSM
+    NORM2 --> ISM
+
+    ISM -->|交互事件| CSM
+    CSM --> ACT1
+    CSM --> ACT2
+    CSM --> ACT3
+    CSM --> ACT4
+    CSM --> ACT5
+
+    style ISM fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style CSM fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+```
+
 ## 更新日志
 
 ### v4.0 (2026-09-05)

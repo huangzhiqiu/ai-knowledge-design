@@ -15,6 +15,75 @@
 | 06 | [Multi-Market Design](./06-Multi-Market-Design.md) | Multi-market architecture: config control vs per-market vs hybrid, market-aware guards/actions/extensions, implementation roadmap, risk assessment |
 | 07 | [Multi-Market Best Practices](./07-Multi-Market-Best-Practices/README.md) | 8 detailed best practice guides: three-layer config inheritance, market diff visualization, routing & isolation, config-as-code GitOps, canary release, circuit breaker & degradation, schema validation, test matrix |
 
+## Project Architecture
+
+### Module Dependency Diagram
+
+```mermaid
+graph TD
+    subgraph "Business Layer"
+        CE[chat-engine<br/>Conversation State Machine]
+        AC[agent-connector<br/>Interaction State Machine]
+    end
+
+    subgraph "Core Layer"
+        CORE[statemachine-core<br/>Alibaba COLA StateMachine]
+    end
+
+    CE --> CORE
+    AC --> CORE
+
+    style CE fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    style AC fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style CORE fill:#fff3e0,stroke:#e65100,stroke-width:2px
+```
+
+### Event-Driven Orchestration Flow
+
+```mermaid
+flowchart LR
+    subgraph "External Events"
+        AIBOT[AIBot Events]
+        GENESYS[Genesys Events]
+        WS[WebSocket Events]
+    end
+
+    subgraph "Ingress Layer"
+        NORM1[AibotEventNormalizer]
+        NORM2[GenesysEventNormalizer]
+    end
+
+    subgraph "State Machine Layer"
+        ISM[Interaction StateMachine<br/>agent-connector]
+        CSM[Conversation StateMachine<br/>chat-engine]
+    end
+
+    subgraph "Action Layer"
+        ACT1[Connection Actions]
+        ACT2[Messaging Actions]
+        ACT3[Transfer Actions]
+        ACT4[Ending Actions]
+        ACT5[System Actions]
+    end
+
+    AIBOT --> NORM1
+    GENESYS --> NORM2
+    WS --> NORM2
+
+    NORM1 --> CSM
+    NORM2 --> ISM
+
+    ISM -->|Interaction Events| CSM
+    CSM --> ACT1
+    CSM --> ACT2
+    CSM --> ACT3
+    CSM --> ACT4
+    CSM --> ACT5
+
+    style ISM fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style CSM fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+```
+
 ## Changelog
 
 ### v4.0 (2026-09-05)
