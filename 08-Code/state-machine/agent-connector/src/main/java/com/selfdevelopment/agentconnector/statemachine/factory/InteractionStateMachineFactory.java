@@ -149,16 +149,9 @@ public class InteractionStateMachineFactory {
 
         // === Heartbeat & Degradation ===
 
-        // I06: CONNECTED → DEGRADED (heartbeat miss)
-        builder.externalTransition()
-                .from(InteractionState.CONNECTED)
-                .to(InteractionState.DEGRADED)
-                .on(InteractionFact.HEARTBEAT_MISS)
-                .perform(HEARTBEAT_MISS_ACTION);
-
-        // I07: IN_PROGRESS → DEGRADED (heartbeat miss)
-        builder.externalTransition()
-                .from(InteractionState.IN_PROGRESS)
+        // I06/I07: CONNECTED/IN_PROGRESS → DEGRADED (heartbeat miss)
+        builder.externalTransitions()
+                .fromAmong(InteractionState.CONNECTED, InteractionState.IN_PROGRESS)
                 .to(InteractionState.DEGRADED)
                 .on(InteractionFact.HEARTBEAT_MISS)
                 .perform(HEARTBEAT_MISS_ACTION);
@@ -170,16 +163,9 @@ public class InteractionStateMachineFactory {
                 .on(InteractionFact.HEARTBEAT_RESTORED)
                 .perform(HEARTBEAT_RESTORED_ACTION);
 
-        // I09: CONNECTED → DEGRADED (downstream unavailable)
-        builder.externalTransition()
-                .from(InteractionState.CONNECTED)
-                .to(InteractionState.DEGRADED)
-                .on(InteractionFact.DOWNSTREAM_UNAVAILABLE)
-                .perform(DOWNSTREAM_UNAVAILABLE_ACTION);
-
-        // I10: IN_PROGRESS → DEGRADED (downstream unavailable)
-        builder.externalTransition()
-                .from(InteractionState.IN_PROGRESS)
+        // I09/I10: CONNECTED/IN_PROGRESS → DEGRADED (downstream unavailable)
+        builder.externalTransitions()
+                .fromAmong(InteractionState.CONNECTED, InteractionState.IN_PROGRESS)
                 .to(InteractionState.DEGRADED)
                 .on(InteractionFact.DOWNSTREAM_UNAVAILABLE)
                 .perform(DOWNSTREAM_UNAVAILABLE_ACTION);
@@ -246,44 +232,11 @@ public class InteractionStateMachineFactory {
 
         // === Ending (graceful closure) ===
 
-        // I19: CONNECTED → CLOSED (end requested)
-        builder.externalTransition()
-                .from(InteractionState.CONNECTED)
-                .to(InteractionState.CLOSED)
-                .on(InteractionFact.END_REQUESTED)
-                .perform(END_REQUESTED_ACTION);
-
-        // I20: IN_PROGRESS → CLOSED (end requested)
-        builder.externalTransition()
-                .from(InteractionState.IN_PROGRESS)
-                .to(InteractionState.CLOSED)
-                .on(InteractionFact.END_REQUESTED)
-                .perform(END_REQUESTED_ACTION);
-
-        // I21: DEGRADED → CLOSED (end requested)
-        builder.externalTransition()
-                .from(InteractionState.DEGRADED)
-                .to(InteractionState.CLOSED)
-                .on(InteractionFact.END_REQUESTED)
-                .perform(END_REQUESTED_ACTION);
-
-        // I22: RECONNECTING → CLOSED (end requested)
-        builder.externalTransition()
-                .from(InteractionState.RECONNECTING)
-                .to(InteractionState.CLOSED)
-                .on(InteractionFact.END_REQUESTED)
-                .perform(END_REQUESTED_ACTION);
-
-        // I23: TRANSFERRED → CLOSED (end requested)
-        builder.externalTransition()
-                .from(InteractionState.TRANSFERRED)
-                .to(InteractionState.CLOSED)
-                .on(InteractionFact.END_REQUESTED)
-                .perform(END_REQUESTED_ACTION);
-
-        // I24: CONSULT_TRANSFER → CLOSED (end requested)
-        builder.externalTransition()
-                .from(InteractionState.CONSULT_TRANSFER)
+        // I19-I24: CONNECTED/IN_PROGRESS/DEGRADED/RECONNECTING/TRANSFERRED/CONSULT_TRANSFER → CLOSED (end requested)
+        builder.externalTransitions()
+                .fromAmong(InteractionState.CONNECTED, InteractionState.IN_PROGRESS,
+                        InteractionState.DEGRADED, InteractionState.RECONNECTING,
+                        InteractionState.TRANSFERRED, InteractionState.CONSULT_TRANSFER)
                 .to(InteractionState.CLOSED)
                 .on(InteractionFact.END_REQUESTED)
                 .perform(END_REQUESTED_ACTION);
@@ -295,37 +248,11 @@ public class InteractionStateMachineFactory {
 
         // === System Error (unrecoverable) ===
 
-        // I26: INITIATED → CLOSED (system error)
-        builder.externalTransition()
-                .from(InteractionState.INITIATED)
-                .to(InteractionState.CLOSED)
-                .on(InteractionFact.SYSTEM_ERROR)
-                .perform(SYSTEM_ERROR_ACTION);
-
-        // I27: CONNECTED → CLOSED (system error)
-        builder.externalTransition()
-                .from(InteractionState.CONNECTED)
-                .to(InteractionState.CLOSED)
-                .on(InteractionFact.SYSTEM_ERROR)
-                .perform(SYSTEM_ERROR_ACTION);
-
-        // I28: IN_PROGRESS → CLOSED (system error)
-        builder.externalTransition()
-                .from(InteractionState.IN_PROGRESS)
-                .to(InteractionState.CLOSED)
-                .on(InteractionFact.SYSTEM_ERROR)
-                .perform(SYSTEM_ERROR_ACTION);
-
-        // I29: DEGRADED → CLOSED (system error)
-        builder.externalTransition()
-                .from(InteractionState.DEGRADED)
-                .to(InteractionState.CLOSED)
-                .on(InteractionFact.SYSTEM_ERROR)
-                .perform(SYSTEM_ERROR_ACTION);
-
-        // I30: RECONNECTING → CLOSED (system error)
-        builder.externalTransition()
-                .from(InteractionState.RECONNECTING)
+        // I26-I30: INITIATED/CONNECTED/IN_PROGRESS/DEGRADED/RECONNECTING → CLOSED (system error)
+        builder.externalTransitions()
+                .fromAmong(InteractionState.INITIATED, InteractionState.CONNECTED,
+                        InteractionState.IN_PROGRESS, InteractionState.DEGRADED,
+                        InteractionState.RECONNECTING)
                 .to(InteractionState.CLOSED)
                 .on(InteractionFact.SYSTEM_ERROR)
                 .perform(SYSTEM_ERROR_ACTION);

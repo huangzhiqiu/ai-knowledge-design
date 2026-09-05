@@ -157,87 +157,27 @@ public class ConversationStateMachineFactory {
         // ===== 5.3 ENTER ENDING (unified convergence entry) =====
 
         // INITIATED/ACTIVE/IN_PROGRESS/TRANSFERRED → ENDING: ending started (set endReason, trigger ending actions)
-        builder.externalTransition()
-                .from(ConversationState.INITIATED)
-                .to(ConversationState.ENDING)
-                .on(ConversationFact.ENDING_STARTED)
-                .perform(ENDING_STARTED_ACTION);
-
-        builder.externalTransition()
-                .from(ConversationState.ACTIVE)
-                .to(ConversationState.ENDING)
-                .on(ConversationFact.ENDING_STARTED)
-                .perform(ENDING_STARTED_ACTION);
-
-        builder.externalTransition()
-                .from(ConversationState.IN_PROGRESS)
-                .to(ConversationState.ENDING)
-                .on(ConversationFact.ENDING_STARTED)
-                .perform(ENDING_STARTED_ACTION);
-
-        builder.externalTransition()
-                .from(ConversationState.TRANSFERRED)
+        builder.externalTransitions()
+                .fromAmong(ConversationState.INITIATED, ConversationState.ACTIVE,
+                        ConversationState.IN_PROGRESS, ConversationState.TRANSFERRED)
                 .to(ConversationState.ENDING)
                 .on(ConversationFact.ENDING_STARTED)
                 .perform(ENDING_STARTED_ACTION);
 
         // ANY(except CLOSED) → ENDING: system error (endReason=SYSTEM_ERROR, trigger ending actions)
-        builder.externalTransition()
-                .from(ConversationState.NEW)
-                .to(ConversationState.ENDING)
-                .on(ConversationFact.SYSTEM_ERROR)
-                .perform(SYSTEM_ERROR_ACTION);
-
-        builder.externalTransition()
-                .from(ConversationState.INITIATED)
-                .to(ConversationState.ENDING)
-                .on(ConversationFact.SYSTEM_ERROR)
-                .perform(SYSTEM_ERROR_ACTION);
-
-        builder.externalTransition()
-                .from(ConversationState.ACTIVE)
-                .to(ConversationState.ENDING)
-                .on(ConversationFact.SYSTEM_ERROR)
-                .perform(SYSTEM_ERROR_ACTION);
-
-        builder.externalTransition()
-                .from(ConversationState.IN_PROGRESS)
-                .to(ConversationState.ENDING)
-                .on(ConversationFact.SYSTEM_ERROR)
-                .perform(SYSTEM_ERROR_ACTION);
-
-        builder.externalTransition()
-                .from(ConversationState.TRANSFERRED)
+        builder.externalTransitions()
+                .fromAmong(ConversationState.NEW, ConversationState.INITIATED, ConversationState.ACTIVE,
+                        ConversationState.IN_PROGRESS, ConversationState.TRANSFERRED)
                 .to(ConversationState.ENDING)
                 .on(ConversationFact.SYSTEM_ERROR)
                 .perform(SYSTEM_ERROR_ACTION);
 
         // ===== 5.4 CUSTOMER IDLE (ideal rule: full coverage enter ENDING, reason=customer idle) =====
 
-        // INITIATED → ENDING: customer idle timeout
-        builder.externalTransition()
-                .from(ConversationState.INITIATED)
-                .to(ConversationState.ENDING)
-                .on(ConversationFact.CUSTOMER_IDLE_TIMEOUT)
-                .perform(CUSTOMER_IDLE_TIMEOUT_ACTION);
-
-        // ACTIVE → ENDING: customer idle timeout
-        builder.externalTransition()
-                .from(ConversationState.ACTIVE)
-                .to(ConversationState.ENDING)
-                .on(ConversationFact.CUSTOMER_IDLE_TIMEOUT)
-                .perform(CUSTOMER_IDLE_TIMEOUT_ACTION);
-
-        // IN_PROGRESS → ENDING: customer idle timeout
-        builder.externalTransition()
-                .from(ConversationState.IN_PROGRESS)
-                .to(ConversationState.ENDING)
-                .on(ConversationFact.CUSTOMER_IDLE_TIMEOUT)
-                .perform(CUSTOMER_IDLE_TIMEOUT_ACTION);
-
-        // TRANSFERRED → ENDING: customer idle timeout (special: don't cancel transfer, refresh endingDeadlineAt, defer CloseInteractions)
-        builder.externalTransition()
-                .from(ConversationState.TRANSFERRED)
+        // INITIATED/ACTIVE/IN_PROGRESS/TRANSFERRED → ENDING: customer idle timeout
+        builder.externalTransitions()
+                .fromAmong(ConversationState.INITIATED, ConversationState.ACTIVE,
+                        ConversationState.IN_PROGRESS, ConversationState.TRANSFERRED)
                 .to(ConversationState.ENDING)
                 .on(ConversationFact.CUSTOMER_IDLE_TIMEOUT)
                 .perform(CUSTOMER_IDLE_TIMEOUT_ACTION);
