@@ -1,7 +1,8 @@
 # 业务层设计（Chat Engine + Agent Connector）
 
-> 版本：3.0 | 最后更新：2026-09-04
+> 版本：4.0 | 最后更新：2026-09-05
 > 基于阿里巴巴 COLA StateMachine：https://github.com/alibaba/COLA
+> 对齐事件驱动编排设计（v4.0）
 
 ## 1. 概述
 
@@ -9,17 +10,16 @@
 
 | 模块 | 包名 | 职责 | 外部系统 |
 |------|------|------|----------|
-| **chat-engine** | `com.selfdevelopment.chatengine` | 会话状态机（业务层面）：7 个状态、7 个动作、多市场配置、监控器、仓库 | AIBot API、聊天历史 ODS |
-| **agent-connector** | `com.selfdevelopment.agentconnector` | 交互状态机（通道层面）：6 个状态、9 个动作、连接器管理 | Genesys Cloud、客户 WebSocket |
+| **chat-engine** | `com.selfdevelopment.chatengine` | 会话状态机（业务层面）：7 个状态（NEW, INITIATED, ACTIVE, IN_PROGRESS, TRANSFERRED, ENDING, CLOSED）、25+ 个事件、13 个动作、多市场配置、监控器、仓库 | AIBot API、聊天历史 ODS |
+| **agent-connector** | `com.selfdevelopment.agentconnector` | 交互状态机（通道层面）：8 个状态（INITIATED, CONNECTED, IN_PROGRESS, DEGRADED, RECONNECTING, CONSULT_TRANSFER, TRANSFERRED, CLOSED）、20+ 个事件、14 个动作、连接器管理 | Genesys Cloud、客户 WebSocket |
 
 **关键特性：**
 - **基于 COLA StateMachine**：使用 `com.alibaba.cola.statemachine` 作为核心引擎
 - **双状态模型**：Conversation（业务层面）+ Interaction（通道层面），各自在独立模块中
 - **多市场支持**：每市场配置超时和特性开关
 - **全链路追踪**：通过 SLF4J MDC 跨异步边界传播 TraceId
-- **v6 设计**：转接失败/超时返回 INITIATED（不回滚到 IN_PROGRESS）
+- **事件驱动编排（v4.0）**：转接失败/超时返回 INITIATED（不回滚），满意度调查字段化在 ENDING 中，客户空闲覆盖所有等待状态
 - **自动化监控器**：三个基于时间的监控器，用于空闲检测、转接超时和结束宽限
-- **满意度调查作为内部子阶段**：SURVEY_START 是 IN_PROGRESS 内的内部转换（不改变状态），不是独立状态
 - **Action-first 转换**：动作在状态变更之前执行；如果动作失败，状态不变
 - **工厂缓存模式**：COLA StateMachine 不允许重新构建；工厂使用缓存防止重复构建
 
