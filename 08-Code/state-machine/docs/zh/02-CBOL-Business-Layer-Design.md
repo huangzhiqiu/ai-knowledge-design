@@ -283,9 +283,9 @@ public abstract class AbstractTimeoutMonitor {
 
 | 监控器 | 适用状态 | 超时配置 | 触发事件 | 参考时间戳 |
 |--------|---------|---------|---------|-----------|
-| CustomerIdleMonitor | INITIATED, IN_PROGRESS, TRANSFERRED | customerIdleSeconds | SYS_CUSTOMER_IDLE | lastActivityTs |
-| TransferMonitor | TRANSFERRED | transferTimeoutSeconds | SYS_TRANSFER_TIMEOUT | transferStartTs |
-| EndingGraceMonitor | ENDING | endingGraceSeconds | SYS_ENDING_GRACE_TIMEOUT | endingStartTs |
+| CustomerIdleMonitor | INITIATED, ACTIVE, IN_PROGRESS, TRANSFERRED | customerIdleSeconds | CUSTOMER_IDLE_TIMEOUT | lastInboundAt/activeAt |
+| TransferMonitor | TRANSFERRED | transferTimeoutSeconds | TRANSFER_TIMEOUT | transferDeadlineAt |
+| EndingMonitor | ENDING | endingGraceSeconds | ENDING_TIMEOUT | endingDeadlineAt |
 
 ### 6.3 监控器执行流程
 
@@ -298,7 +298,7 @@ flowchart TD
     D -->|是| F[计算已用时间]
     F --> G{已用 >= 超时?}
     G -->|否| E
-    G -->|是| H[触发 SYS_* 事件]
+    G -->|是| H[触发超时事件]
     H --> I[状态机迁移]
     I --> J[更新 DB 中会话状态]
     J --> K[记录 StateTransitionRecord]
