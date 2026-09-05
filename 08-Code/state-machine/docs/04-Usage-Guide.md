@@ -192,13 +192,13 @@ builder.externalTransition()
 
 ```java
 public enum ConversationState {
-    NEW,                // Initial state, conversation record created but not initialized
-    INITIATED,          // Conversation initialized, waiting for customer connection
-    IN_PROGRESS,        // Customer connected, actively handling (includes survey as sub-phase)
-    TRANSFERRED,        // Transfer to human agent in progress
-    ENDING,             // Conversation ending, grace period for cleanup
-    ERROR,              // Action failed, failover state
-    CLOSED              // Terminal state
+    NEW,                // Initial state, conversation created, waiting for interaction ready
+    INITIATED,          // Current bound interaction ready (InteractionState=CONNECTED)
+    ACTIVE,             // Interaction became active, waiting for first inbound message
+    IN_PROGRESS,        // Business in progress (first inbound message received)
+    TRANSFERRED,        // CBOL cross-channel transfer phase (in-flight)
+    ENDING,             // Irreversible: pre-close orchestration (guarantees eventual CLOSED)
+    CLOSED              // Final terminal state
 }
 ```
 
@@ -213,7 +213,7 @@ ChatEngineStateMachineService service = new ChatEngineStateMachineService();
 CbolStateContext ctx = buildContext();
 
 // Fire event (returns ConversationState directly)
-ConversationState newState = service.fire(ctx, ConversationFact.CUSTOMER_CONNECT);
+ConversationState newState = service.fire(ctx, ConversationFact.INTERACTION_BECAME_ACTIVE);
 ```
 
 ### 5.3 Run Chat Engine Demo
@@ -230,12 +230,14 @@ java -cp chat-engine/target/classes:statemachine-core/target/classes com.selfdev
 
 ```java
 public enum InteractionState {
-    CONNECTING,     // Connection being established
-    CONNECTED,      // Active connection
-    RECONNECTING,   // Reconnection in progress
-    HELD,           // Connection on hold
-    TRANSFERRING,   // Channel transfer in progress
-    DISCONNECTED    // Terminal state, connection closed
+    INITIATED,          // Connection initiated, waiting for connection result
+    CONNECTED,          // Connection established, ready for messaging
+    IN_PROGRESS,        // Active messaging (first inbound received)
+    DEGRADED,           // Connection degraded (heartbeat miss, temporary issues)
+    RECONNECTING,       // Reconnection in progress
+    CONSULT_TRANSFER,   // GENESYS ONLY: consult transfer
+    TRANSFERRED,        // Cross-channel source detached marker
+    CLOSED              // Channel terminated (terminal)
 }
 ```
 
@@ -250,7 +252,7 @@ AgentConnectorStateMachineService service = new AgentConnectorStateMachineServic
 AgentConnectorStateContext ctx = buildContext();
 
 // Fire event (returns InteractionState directly)
-InteractionState newState = service.fire(ctx, InteractionFact.CONNECTION_ESTABLISHED);
+InteractionState newState = service.fire(ctx, InteractionFact.CONNECTION_SUCCESS);
 ```
 
 ### 6.3 Run Agent Connector Demo
