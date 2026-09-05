@@ -322,9 +322,9 @@ public abstract class AbstractTimeoutMonitor {
 
 | Monitor | Applicable States | Timeout Config | Event Fired | Reference Timestamp |
 |---------|-------------------|----------------|-------------|---------------------|
-| CustomerIdleMonitor | INITIATED, IN_PROGRESS, TRANSFERRED | customerIdleSeconds | SYS_CUSTOMER_IDLE | lastActivityTs |
-| TransferMonitor | TRANSFERRED | transferTimeoutSeconds | SYS_TRANSFER_TIMEOUT | transferStartTs |
-| EndingGraceMonitor | ENDING | endingGraceSeconds | SYS_ENDING_GRACE_TIMEOUT | endingStartTs |
+| CustomerIdleMonitor | INITIATED, ACTIVE, IN_PROGRESS, TRANSFERRED | customerIdleSeconds | CUSTOMER_IDLE_TIMEOUT | lastInboundAt/activeAt |
+| TransferMonitor | TRANSFERRED | transferTimeoutSeconds | TRANSFER_TIMEOUT | transferDeadlineAt |
+| EndingMonitor | ENDING | endingGraceSeconds | ENDING_TIMEOUT | endingDeadlineAt |
 
 ### 6.3 Monitor Execution Flow
 
@@ -337,7 +337,7 @@ flowchart TD
     D -->|Yes| F[Calculate elapsed time]
     F --> G{elapsed >= timeout?}
     G -->|No| E
-    G -->|Yes| H[fire SYS_* event]
+    G -->|Yes| H[fire timeout event]
     H --> I[State machine transitions]
     I --> J[Update conversation state in DB]
     J --> K[Log StateTransitionRecord]
