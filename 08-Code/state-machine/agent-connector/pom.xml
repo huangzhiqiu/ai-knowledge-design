@@ -37,6 +37,13 @@
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
         </dependency>
+
+        <!-- Spring Context (optional, for Spring integration) -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+            <optional>true</optional>
+        </dependency>
     </dependencies>
 
     <build>
