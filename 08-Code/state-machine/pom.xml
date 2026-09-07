@@ -87,6 +87,20 @@
                 <artifactId>spring-context</artifactId>
                 <version>${spring.version}</version>
             </dependency>
+
+            <!-- Spring AOP (optional, for aspect-oriented programming) -->
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-aop</artifactId>
+                <version>${spring.version}</version>
+            </dependency>
+
+            <!-- AspectJ (optional, for AOP support) -->
+            <dependency>
+                <groupId>org.aspectj</groupId>
+                <artifactId>aspectjweaver</artifactId>
+                <version>1.9.21</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
