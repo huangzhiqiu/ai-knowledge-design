@@ -16,10 +16,6 @@
     <name>Agent Connector App — Spring Boot Application</name>
     <description>Spring Boot application for agent connector state machine with REST API.</description>
 
-    <properties>
-        <spring-boot.version>3.3.4</spring-boot.version>
-    </properties>
-
     <dependencyManagement>
         <dependencies>
             <dependency>

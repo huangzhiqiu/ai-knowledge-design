@@ -16,10 +16,6 @@
     <name>Chat Engine App — Spring Boot Application</name>
     <description>Spring Boot application for chat engine state machine with REST API.</description>
 
-    <properties>
-        <spring-boot.version>3.3.4</spring-boot.version>
-    </properties>
-
     <dependencyManagement>
         <dependencies>
             <dependency>
