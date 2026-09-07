@@ -7,17 +7,21 @@ import com.alibaba.cola.statemachine.builder.StateMachineBuilderFactory;
 import com.selfdevelopment.agentconnector.action.connection.ConnectionFailAction;
 import com.selfdevelopment.agentconnector.action.connection.ConnectionSuccessAction;
 import com.selfdevelopment.agentconnector.action.ending.EndRequestedAction;
+import com.selfdevelopment.agentconnector.action.ending.InteractionClosedAction;
 import com.selfdevelopment.agentconnector.action.genesys.ConsultTransferEndedAction;
 import com.selfdevelopment.agentconnector.action.genesys.ConsultTransferStartedAction;
 import com.selfdevelopment.agentconnector.action.heartbeat.HeartbeatMissAction;
 import com.selfdevelopment.agentconnector.action.heartbeat.HeartbeatRestoredAction;
 import com.selfdevelopment.agentconnector.action.messaging.FirstInboundMessageReceivedAction;
+import com.selfdevelopment.agentconnector.action.messaging.InboundMessageReceivedAction;
+import com.selfdevelopment.agentconnector.action.messaging.OutboundMessageSentAction;
 import com.selfdevelopment.agentconnector.action.reconnection.ReconnectAttemptAction;
 import com.selfdevelopment.agentconnector.action.reconnection.ReconnectFailAction;
 import com.selfdevelopment.agentconnector.action.reconnection.ReconnectSuccessAction;
 import com.selfdevelopment.agentconnector.action.system.DownstreamUnavailableAction;
 import com.selfdevelopment.agentconnector.action.system.SystemErrorAction;
 import com.selfdevelopment.agentconnector.action.transfer.TransferSuccessAction;
+import com.selfdevelopment.agentconnector.action.transfer.TransferFailedAction;
 import com.selfdevelopment.agentconnector.context.AgentConnectorStateContext;
 import com.selfdevelopment.agentconnector.enums.InteractionFact;
 import com.selfdevelopment.agentconnector.enums.InteractionState;
@@ -48,6 +52,8 @@ public class InteractionStateMachineFactory {
     private static final ConnectionSuccessAction CONNECTION_SUCCESS_ACTION = new ConnectionSuccessAction();
     private static final ConnectionFailAction CONNECTION_FAIL_ACTION = new ConnectionFailAction();
     private static final FirstInboundMessageReceivedAction FIRST_INBOUND_MESSAGE_RECEIVED_ACTION = new FirstInboundMessageReceivedAction();
+    private static final InboundMessageReceivedAction INBOUND_MESSAGE_RECEIVED_ACTION = new InboundMessageReceivedAction();
+    private static final OutboundMessageSentAction OUTBOUND_MESSAGE_SENT_ACTION = new OutboundMessageSentAction();
     private static final HeartbeatMissAction HEARTBEAT_MISS_ACTION = new HeartbeatMissAction();
     private static final HeartbeatRestoredAction HEARTBEAT_RESTORED_ACTION = new HeartbeatRestoredAction();
     private static final ReconnectAttemptAction RECONNECT_ATTEMPT_ACTION = new ReconnectAttemptAction();
@@ -56,7 +62,9 @@ public class InteractionStateMachineFactory {
     private static final ConsultTransferStartedAction CONSULT_TRANSFER_STARTED_ACTION = new ConsultTransferStartedAction();
     private static final ConsultTransferEndedAction CONSULT_TRANSFER_ENDED_ACTION = new ConsultTransferEndedAction();
     private static final TransferSuccessAction TRANSFER_SUCCESS_ACTION = new TransferSuccessAction();
+    private static final TransferFailedAction TRANSFER_FAILED_ACTION = new TransferFailedAction();
     private static final EndRequestedAction END_REQUESTED_ACTION = new EndRequestedAction();
+    private static final InteractionClosedAction INTERACTION_CLOSED_ACTION = new InteractionClosedAction();
     private static final SystemErrorAction SYSTEM_ERROR_ACTION = new SystemErrorAction();
     private static final DownstreamUnavailableAction DOWNSTREAM_UNAVAILABLE_ACTION = new DownstreamUnavailableAction();
 
@@ -140,12 +148,14 @@ public class InteractionStateMachineFactory {
         // I04: IN_PROGRESS → IN_PROGRESS (internal, subsequent inbound messages)
         builder.internalTransition()
                 .within(InteractionState.IN_PROGRESS)
-                .on(InteractionFact.INBOUND_MESSAGE_RECEIVED);
+                .on(InteractionFact.INBOUND_MESSAGE_RECEIVED)
+                .perform(INBOUND_MESSAGE_RECEIVED_ACTION);
 
         // I05: IN_PROGRESS → IN_PROGRESS (internal, outbound messages)
         builder.internalTransition()
                 .within(InteractionState.IN_PROGRESS)
-                .on(InteractionFact.OUTBOUND_MESSAGE_SENT);
+                .on(InteractionFact.OUTBOUND_MESSAGE_SENT)
+                .perform(OUTBOUND_MESSAGE_SENT_ACTION);
 
         // === Heartbeat & Degradation ===
 
@@ -228,7 +238,8 @@ public class InteractionStateMachineFactory {
         // I18: IN_PROGRESS → IN_PROGRESS (internal, transfer failed, stay on original channel)
         builder.internalTransition()
                 .within(InteractionState.IN_PROGRESS)
-                .on(InteractionFact.TRANSFER_FAILED);
+                .on(InteractionFact.TRANSFER_FAILED)
+                .perform(TRANSFER_FAILED_ACTION);
 
         // === Ending (graceful closure) ===
 
@@ -245,7 +256,8 @@ public class InteractionStateMachineFactory {
         // I25: CLOSED → CLOSED (internal, terminal confirmation)
         builder.internalTransition()
                 .within(InteractionState.CLOSED)
-                .on(InteractionFact.INTERACTION_CLOSED);
+                .on(InteractionFact.INTERACTION_CLOSED)
+                .perform(INTERACTION_CLOSED_ACTION);
 
         // === System Error (unrecoverable) ===
 
