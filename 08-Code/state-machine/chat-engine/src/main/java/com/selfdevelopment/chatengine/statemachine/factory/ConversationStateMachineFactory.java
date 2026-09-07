@@ -6,9 +6,14 @@ import com.alibaba.cola.statemachine.builder.StateMachineBuilder;
 import com.alibaba.cola.statemachine.builder.StateMachineBuilderFactory;
 import com.selfdevelopment.chatengine.action.ending.EndingStartedAction;
 import com.selfdevelopment.chatengine.action.ending.EndingTimeoutAction;
+import com.selfdevelopment.chatengine.action.ending.AllInteractionsEndedAction;
+import com.selfdevelopment.chatengine.action.ending.EndingActionsCompletedAction;
 import com.selfdevelopment.chatengine.action.lifecycle.SessionStartedAction;
 import com.selfdevelopment.chatengine.action.lifecycle.InteractionBecameActiveAction;
 import com.selfdevelopment.chatengine.action.lifecycle.InboundMessageReceivedAction;
+import com.selfdevelopment.chatengine.action.survey.SurveySubmittedAction;
+import com.selfdevelopment.chatengine.action.survey.SurveyTimeoutAction;
+import com.selfdevelopment.chatengine.action.survey.SurveySkippedAction;
 import com.selfdevelopment.chatengine.action.system.CustomerIdleTimeoutAction;
 import com.selfdevelopment.chatengine.action.system.SystemErrorAction;
 import com.selfdevelopment.chatengine.action.system.DownstreamUnavailableAction;
@@ -54,6 +59,13 @@ public class ConversationStateMachineFactory {
     // ENDING actions
     private static final EndingStartedAction ENDING_STARTED_ACTION = new EndingStartedAction();
     private static final EndingTimeoutAction ENDING_TIMEOUT_ACTION = new EndingTimeoutAction();
+    private static final AllInteractionsEndedAction ALL_INTERACTIONS_ENDED_ACTION = new AllInteractionsEndedAction();
+    private static final EndingActionsCompletedAction ENDING_ACTIONS_COMPLETED_ACTION = new EndingActionsCompletedAction();
+
+    // SURVEY actions (field-based in ENDING)
+    private static final SurveySubmittedAction SURVEY_SUBMITTED_ACTION = new SurveySubmittedAction();
+    private static final SurveyTimeoutAction SURVEY_TIMEOUT_ACTION = new SurveyTimeoutAction();
+    private static final SurveySkippedAction SURVEY_SKIPPED_ACTION = new SurveySkippedAction();
 
     // SYSTEM actions
     private static final CustomerIdleTimeoutAction CUSTOMER_IDLE_TIMEOUT_ACTION = new CustomerIdleTimeoutAction();
@@ -220,12 +232,14 @@ public class ConversationStateMachineFactory {
         // ENDING → ENDING (internal): ending actions completed (set endingActionsDone=true; if interactionsClosed=true then CLOSED)
         builder.internalTransition()
                 .within(ConversationState.ENDING)
-                .on(ConversationFact.ENDING_ACTIONS_COMPLETED);
+                .on(ConversationFact.ENDING_ACTIONS_COMPLETED)
+                .perform(ENDING_ACTIONS_COMPLETED_ACTION);
 
         // ENDING → ENDING (internal): all interactions ended (set interactionsClosed=true; if endingActionsDone=true then CLOSED)
         builder.internalTransition()
                 .within(ConversationState.ENDING)
-                .on(ConversationFact.ALL_INTERACTIONS_ENDED);
+                .on(ConversationFact.ALL_INTERACTIONS_ENDED)
+                .perform(ALL_INTERACTIONS_ENDED_ACTION);
 
         // ENDING → CLOSED: ending timeout (forced close, record alert reason)
         builder.externalTransition()
@@ -240,17 +254,20 @@ public class ConversationStateMachineFactory {
         // ENDING → ENDING (internal): survey submitted (surveyStatus=SUBMITTED)
         builder.internalTransition()
                 .within(ConversationState.ENDING)
-                .on(ConversationFact.SURVEY_SUBMITTED);
+                .on(ConversationFact.SURVEY_SUBMITTED)
+                .perform(SURVEY_SUBMITTED_ACTION);
 
         // ENDING → ENDING (internal): survey timeout (surveyStatus=TIMEOUT, endReason=CUSTOMER_IDLE)
         builder.internalTransition()
                 .within(ConversationState.ENDING)
-                .on(ConversationFact.SURVEY_TIMEOUT);
+                .on(ConversationFact.SURVEY_TIMEOUT)
+                .perform(SURVEY_TIMEOUT_ACTION);
 
         // ENDING → ENDING (internal): survey skipped (surveyStatus=SKIPPED)
         builder.internalTransition()
                 .within(ConversationState.ENDING)
-                .on(ConversationFact.SURVEY_SKIPPED);
+                .on(ConversationFact.SURVEY_SKIPPED)
+                .perform(SURVEY_SKIPPED_ACTION);
 
         // ===== GENESYS SAME-CHANNEL / CONSULT (conversation no-op) =====
         // These events are handled at the Interaction level, Conversation state machine treats them as no-op
