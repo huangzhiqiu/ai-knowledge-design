@@ -8,6 +8,11 @@ import com.selfdevelopment.chatengine.action.ending.EndingStartedAction;
 import com.selfdevelopment.chatengine.action.ending.EndingTimeoutAction;
 import com.selfdevelopment.chatengine.action.ending.AllInteractionsEndedAction;
 import com.selfdevelopment.chatengine.action.ending.EndingActionsCompletedAction;
+import com.selfdevelopment.chatengine.action.genesys.AgentTransferCompletedAction;
+import com.selfdevelopment.chatengine.action.genesys.AgentTransferFailedAction;
+import com.selfdevelopment.chatengine.action.genesys.AgentTransferStartedAction;
+import com.selfdevelopment.chatengine.action.genesys.ConsultTransferEndedAction;
+import com.selfdevelopment.chatengine.action.genesys.ConsultTransferStartedAction;
 import com.selfdevelopment.chatengine.action.lifecycle.SessionStartedAction;
 import com.selfdevelopment.chatengine.action.lifecycle.InteractionBecameActiveAction;
 import com.selfdevelopment.chatengine.action.lifecycle.InboundMessageReceivedAction;
@@ -66,6 +71,13 @@ public class ConversationStateMachineFactory {
     private static final SurveySubmittedAction SURVEY_SUBMITTED_ACTION = new SurveySubmittedAction();
     private static final SurveyTimeoutAction SURVEY_TIMEOUT_ACTION = new SurveyTimeoutAction();
     private static final SurveySkippedAction SURVEY_SKIPPED_ACTION = new SurveySkippedAction();
+
+    // GENESYS actions (no-op at conversation level, but record audit and metadata)
+    private static final ConsultTransferStartedAction CONSULT_TRANSFER_STARTED_ACTION = new ConsultTransferStartedAction();
+    private static final ConsultTransferEndedAction CONSULT_TRANSFER_ENDED_ACTION = new ConsultTransferEndedAction();
+    private static final AgentTransferStartedAction AGENT_TRANSFER_STARTED_ACTION = new AgentTransferStartedAction();
+    private static final AgentTransferCompletedAction AGENT_TRANSFER_COMPLETED_ACTION = new AgentTransferCompletedAction();
+    private static final AgentTransferFailedAction AGENT_TRANSFER_FAILED_ACTION = new AgentTransferFailedAction();
 
     // SYSTEM actions
     private static final CustomerIdleTimeoutAction CUSTOMER_IDLE_TIMEOUT_ACTION = new CustomerIdleTimeoutAction();
@@ -273,40 +285,47 @@ public class ConversationStateMachineFactory {
         // These events are handled at the Interaction level, Conversation state machine treats them as no-op
         // They can occur in ACTIVE or IN_PROGRESS states (during active conversation)
 
-        // ACTIVE → ACTIVE (internal): Genesys consult transfer started (no-op at conversation level)
+        // ACTIVE → ACTIVE (internal): Genesys consult transfer started (no-op at conversation level, record audit)
         builder.internalTransition()
                 .within(ConversationState.ACTIVE)
-                .on(ConversationFact.GENESYS_CONSULT_TRANSFER_STARTED);
+                .on(ConversationFact.GENESYS_CONSULT_TRANSFER_STARTED)
+                .perform(CONSULT_TRANSFER_STARTED_ACTION);
 
-        // ACTIVE → ACTIVE (internal): Genesys consult transfer ended (no-op at conversation level)
+        // ACTIVE → ACTIVE (internal): Genesys consult transfer ended (no-op at conversation level, record audit)
         builder.internalTransition()
                 .within(ConversationState.ACTIVE)
-                .on(ConversationFact.GENESYS_CONSULT_TRANSFER_ENDED);
+                .on(ConversationFact.GENESYS_CONSULT_TRANSFER_ENDED)
+                .perform(CONSULT_TRANSFER_ENDED_ACTION);
 
-        // IN_PROGRESS → IN_PROGRESS (internal): Genesys consult transfer started (no-op at conversation level)
+        // IN_PROGRESS → IN_PROGRESS (internal): Genesys consult transfer started (no-op at conversation level, record audit)
         builder.internalTransition()
                 .within(ConversationState.IN_PROGRESS)
-                .on(ConversationFact.GENESYS_CONSULT_TRANSFER_STARTED);
+                .on(ConversationFact.GENESYS_CONSULT_TRANSFER_STARTED)
+                .perform(CONSULT_TRANSFER_STARTED_ACTION);
 
-        // IN_PROGRESS → IN_PROGRESS (internal): Genesys consult transfer ended (no-op at conversation level)
+        // IN_PROGRESS → IN_PROGRESS (internal): Genesys consult transfer ended (no-op at conversation level, record audit)
         builder.internalTransition()
                 .within(ConversationState.IN_PROGRESS)
-                .on(ConversationFact.GENESYS_CONSULT_TRANSFER_ENDED);
+                .on(ConversationFact.GENESYS_CONSULT_TRANSFER_ENDED)
+                .perform(CONSULT_TRANSFER_ENDED_ACTION);
 
-        // IN_PROGRESS → IN_PROGRESS (internal): Genesys agent transfer started (no-op at conversation level)
+        // IN_PROGRESS → IN_PROGRESS (internal): Genesys agent transfer started (no-op at conversation level, record audit)
         builder.internalTransition()
                 .within(ConversationState.IN_PROGRESS)
-                .on(ConversationFact.GENESYS_AGENT_TRANSFER_STARTED);
+                .on(ConversationFact.GENESYS_AGENT_TRANSFER_STARTED)
+                .perform(AGENT_TRANSFER_STARTED_ACTION);
 
-        // IN_PROGRESS → IN_PROGRESS (internal): Genesys agent transfer completed (no-op at conversation level)
+        // IN_PROGRESS → IN_PROGRESS (internal): Genesys agent transfer completed (no-op at conversation level, record audit)
         builder.internalTransition()
                 .within(ConversationState.IN_PROGRESS)
-                .on(ConversationFact.GENESYS_AGENT_TRANSFER_COMPLETED);
+                .on(ConversationFact.GENESYS_AGENT_TRANSFER_COMPLETED)
+                .perform(AGENT_TRANSFER_COMPLETED_ACTION);
 
-        // IN_PROGRESS → IN_PROGRESS (internal): Genesys agent transfer failed (no-op at conversation level)
+        // IN_PROGRESS → IN_PROGRESS (internal): Genesys agent transfer failed (no-op at conversation level, record audit)
         builder.internalTransition()
                 .within(ConversationState.IN_PROGRESS)
-                .on(ConversationFact.GENESYS_AGENT_TRANSFER_FAILED);
+                .on(ConversationFact.GENESYS_AGENT_TRANSFER_FAILED)
+                .perform(AGENT_TRANSFER_FAILED_ACTION);
 
         return builder.build(MACHINE_ID);
     }
