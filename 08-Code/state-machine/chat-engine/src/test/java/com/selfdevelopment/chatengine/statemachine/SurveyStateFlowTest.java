@@ -29,7 +29,7 @@ class SurveyStateFlowTest {
 
     @BeforeAll
     static void setUp() {
-        ConversationStateMachineFactory.create();
+        ConversationStateMachineFactory.create(TestActionFactory.createDefaultActions());
         service = new ChatEngineStateMachineService();
     }
 

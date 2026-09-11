@@ -1,26 +1,22 @@
 package com.selfdevelopment.chatengine.app.config;
 
-import com.selfdevelopment.chatengine.service.ChatEngineStateMachineService;
-import com.selfdevelopment.chatengine.statemachine.factory.ConversationStateMachineFactory;
-import org.springframework.context.annotation.Bean;
+import com.selfdevelopment.chatengine.spring.ChatEngineSpringConfig;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
 
 /**
- * Spring configuration for chat engine state machine.
+ * Spring configuration for chat engine application.
+ * <p>
+ * Imports the ChatEngineSpringConfig from the chat-engine module, which provides:
+ * <ul>
+ *   <li>Conversation state machine bean (built with Spring-managed Actions)</li>
+ *   <li>Chat engine state machine service bean</li>
+ *   <li>Action registry for automatic Action discovery and binding</li>
+ *   <li>AOP aspects for logging and performance monitoring</li>
+ * </ul>
  */
 @Configuration
+@Import(ChatEngineSpringConfig.class)
 public class ChatEngineConfig {
-
-    /**
-     * Creates the conversation state machine service bean.
-     * Ensures the state machine is initialized on application startup.
-     *
-     * @return the chat engine state machine service
-     */
-    @Bean
-    public ChatEngineStateMachineService chatEngineStateMachineService() {
-        // Initialize state machine on startup
-        ConversationStateMachineFactory.create();
-        return new ChatEngineStateMachineService();
-    }
+    // All beans are provided by ChatEngineSpringConfig
 }

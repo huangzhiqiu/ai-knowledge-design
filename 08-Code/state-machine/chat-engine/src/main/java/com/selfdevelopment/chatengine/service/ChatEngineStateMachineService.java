@@ -27,10 +27,42 @@ public class ChatEngineStateMachineService {
 
     /**
      * Creates a service using the globally registered conversation state machine.
-     * Ensures the state machine is created and registered on first use.
+     * <p>
+     * The state machine must be registered before this constructor is called.
+     * In Spring applications, the state machine is automatically registered by
+     * the configuration. For non-Spring usage, call
+     * {@link ConversationStateMachineFactory#create(ConversationStateMachineFactory.ConversationActions)}
+     * first to register the state machine.
+     *
+     * @throws IllegalStateException if the conversation state machine is not registered
      */
     public ChatEngineStateMachineService() {
-        this(ConversationStateMachineFactory.create());
+        this(getRegisteredStateMachine());
+    }
+
+    /**
+     * Retrieves the globally registered conversation state machine.
+     *
+     * @return the registered conversation state machine
+     * @throws IllegalStateException if the state machine is not registered
+     */
+    private static StateMachine<ConversationState, ConversationFact, CbolStateContext> getRegisteredStateMachine() {
+        try {
+            StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+                    StateMachineFactory.get(ConversationStateMachineFactory.MACHINE_ID);
+            if (sm == null) {
+                throw new IllegalStateException(
+                        "Conversation state machine is not registered. " +
+                        "Call ConversationStateMachineFactory.create(actions) first, " +
+                        "or use the Spring configuration to auto-register it.");
+            }
+            return sm;
+        } catch (StateMachineException e) {
+            throw new IllegalStateException(
+                    "Conversation state machine is not registered. " +
+                    "Call ConversationStateMachineFactory.create(actions) first, " +
+                    "or use the Spring configuration to auto-register it.", e);
+        }
     }
 
     /**

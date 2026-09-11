@@ -81,12 +81,16 @@ public class ConversationStateMachineFactory {
      * Creates and registers the conversation state machine with all transition rules.
      * Uses double-checked locking for thread-safe singleton initialization.
      * <p>
-     * <b>Note:</b> This static method uses default Action instances (without dependency injection).
-     * For Spring-managed Actions with dependencies, use {@link #buildWithSpringActions()} instead.
+     * The caller must provide the Action instances to use. For Spring-managed Actions
+     * with dependencies, use {@link #buildWithSpringActions()} instead.
      *
+     * @param actions the ConversationActions holder containing all Action instances
      * @return the configured and registered conversation state machine
+     * @throws NullPointerException if actions is null
      */
-    public static StateMachine<ConversationState, ConversationFact, CbolStateContext> create() {
+    public static StateMachine<ConversationState, ConversationFact, CbolStateContext> create(ConversationActions actions) {
+        java.util.Objects.requireNonNull(actions, "actions must not be null");
+
         // Try to get existing state machine first
         try {
             StateMachine<ConversationState, ConversationFact, CbolStateContext> existing =
@@ -112,7 +116,7 @@ public class ConversationStateMachineFactory {
 
             // Build and register
             try {
-                StateMachine<ConversationState, ConversationFact, CbolStateContext> sm = build();
+                StateMachine<ConversationState, ConversationFact, CbolStateContext> sm = buildWithActions(actions);
                 StateMachineFactory.register(sm);
                 return sm;
             } catch (Exception e) {
@@ -120,56 +124,6 @@ public class ConversationStateMachineFactory {
                 return StateMachineFactory.get(MACHINE_ID);
             }
         }
-    }
-
-    /**
-     * Builds the conversation state machine without registering it.
-     * <p>
-     * Creates default Action instances (for non-Spring usage) and delegates to
-     * {@link #buildWithActions(ConversationActions)} for the actual construction.
-     * This ensures a single source of truth for state transition rules.
-     *
-     * @return the configured conversation state machine
-     */
-    public static StateMachine<ConversationState, ConversationFact, CbolStateContext> build() {
-        ConversationActions defaultActions = createDefaultActions();
-        return buildWithActions(defaultActions);
-    }
-
-    /**
-     * Creates default Action instances for non-Spring usage.
-     * <p>
-     * These are simple instantiations without any dependency injection.
-     * For Spring-managed Actions with dependencies, use {@link #buildWithRegistry} instead.
-     *
-     * @return the ConversationActions holder with default Action instances
-     */
-    private static ConversationActions createDefaultActions() {
-        return new ConversationActions(
-                new SessionStartedAction(),
-                new InteractionBecameActiveAction(),
-                new InboundMessageReceivedAction(),
-                new SourceInteractionTransferredAction(),
-                new TargetInteractionInitiatedAction(),
-                new TargetInteractionConnectedAction(),
-                new TargetInteractionConnectFailedAction(),
-                new TransferTimeoutAction(),
-                new EndingStartedAction(),
-                new EndingTimeoutAction(),
-                new AllInteractionsEndedAction(),
-                new EndingActionsCompletedAction(),
-                new SurveySubmittedAction(),
-                new SurveyTimeoutAction(),
-                new SurveySkippedAction(),
-                new ConsultTransferStartedAction(),
-                new ConsultTransferEndedAction(),
-                new AgentTransferStartedAction(),
-                new AgentTransferCompletedAction(),
-                new AgentTransferFailedAction(),
-                new CustomerIdleTimeoutAction(),
-                new SystemErrorAction(),
-                new DownstreamUnavailableAction()
-        );
     }
 
     /**

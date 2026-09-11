@@ -1,6 +1,29 @@
 package com.selfdevelopment.chatengine.demo;
 
 import com.alibaba.cola.statemachine.impl.StateMachineException;
+import com.selfdevelopment.chatengine.action.ending.AllInteractionsEndedAction;
+import com.selfdevelopment.chatengine.action.ending.EndingActionsCompletedAction;
+import com.selfdevelopment.chatengine.action.ending.EndingStartedAction;
+import com.selfdevelopment.chatengine.action.ending.EndingTimeoutAction;
+import com.selfdevelopment.chatengine.action.genesys.AgentTransferCompletedAction;
+import com.selfdevelopment.chatengine.action.genesys.AgentTransferFailedAction;
+import com.selfdevelopment.chatengine.action.genesys.AgentTransferStartedAction;
+import com.selfdevelopment.chatengine.action.genesys.ConsultTransferEndedAction;
+import com.selfdevelopment.chatengine.action.genesys.ConsultTransferStartedAction;
+import com.selfdevelopment.chatengine.action.lifecycle.InboundMessageReceivedAction;
+import com.selfdevelopment.chatengine.action.lifecycle.InteractionBecameActiveAction;
+import com.selfdevelopment.chatengine.action.lifecycle.SessionStartedAction;
+import com.selfdevelopment.chatengine.action.survey.SurveySkippedAction;
+import com.selfdevelopment.chatengine.action.survey.SurveySubmittedAction;
+import com.selfdevelopment.chatengine.action.survey.SurveyTimeoutAction;
+import com.selfdevelopment.chatengine.action.system.CustomerIdleTimeoutAction;
+import com.selfdevelopment.chatengine.action.system.DownstreamUnavailableAction;
+import com.selfdevelopment.chatengine.action.system.SystemErrorAction;
+import com.selfdevelopment.chatengine.action.transfer.SourceInteractionTransferredAction;
+import com.selfdevelopment.chatengine.action.transfer.TargetInteractionConnectFailedAction;
+import com.selfdevelopment.chatengine.action.transfer.TargetInteractionConnectedAction;
+import com.selfdevelopment.chatengine.action.transfer.TargetInteractionInitiatedAction;
+import com.selfdevelopment.chatengine.action.transfer.TransferTimeoutAction;
 import com.selfdevelopment.chatengine.config.StateMachineMarketConfig;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.context.TraceContext;
@@ -25,8 +48,9 @@ public class ChatEngineDemo {
     public static void main(String[] args) {
         DemoLogger.printTitle("Chat Engine Conversation State Machine Demo (COLA)");
 
-        // Build and register the conversation state machine
-        ConversationStateMachineFactory.create();
+        // Build and register the conversation state machine with default Actions
+        ConversationStateMachineFactory.ConversationActions actions = createDefaultActions();
+        ConversationStateMachineFactory.create(actions);
         DemoLogger.printInfo("State machine registered: " + ConversationStateMachineFactory.MACHINE_ID);
 
         runBasicConversationFlow();
@@ -35,6 +59,42 @@ public class ChatEngineDemo {
         runTransferFailureFlow();
 
         DemoLogger.printTitle("All Demos Completed Successfully");
+    }
+
+    /**
+     * Creates default Action instances for the demo.
+     * <p>
+     * These are simple instantiations without any dependency injection.
+     * For Spring-managed Actions with dependencies, use the Spring configuration.
+     *
+     * @return the ConversationActions holder with default Action instances
+     */
+    private static ConversationStateMachineFactory.ConversationActions createDefaultActions() {
+        return new ConversationStateMachineFactory.ConversationActions(
+                new SessionStartedAction(),
+                new InteractionBecameActiveAction(),
+                new InboundMessageReceivedAction(),
+                new SourceInteractionTransferredAction(),
+                new TargetInteractionInitiatedAction(),
+                new TargetInteractionConnectedAction(),
+                new TargetInteractionConnectFailedAction(),
+                new TransferTimeoutAction(),
+                new EndingStartedAction(),
+                new EndingTimeoutAction(),
+                new AllInteractionsEndedAction(),
+                new EndingActionsCompletedAction(),
+                new SurveySubmittedAction(),
+                new SurveyTimeoutAction(),
+                new SurveySkippedAction(),
+                new ConsultTransferStartedAction(),
+                new ConsultTransferEndedAction(),
+                new AgentTransferStartedAction(),
+                new AgentTransferCompletedAction(),
+                new AgentTransferFailedAction(),
+                new CustomerIdleTimeoutAction(),
+                new SystemErrorAction(),
+                new DownstreamUnavailableAction()
+        );
     }
 
     /**

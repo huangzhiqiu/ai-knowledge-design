@@ -19,7 +19,7 @@ class ConversationStateMachineTest {
 
     @BeforeAll
     static void setUp() {
-        ConversationStateMachineFactory.create();
+        ConversationStateMachineFactory.create(TestActionFactory.createDefaultActions());
         service = new ChatEngineStateMachineService();
     }
 

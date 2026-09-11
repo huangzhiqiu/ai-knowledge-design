@@ -6,6 +6,7 @@ import com.selfdevelopment.chatengine.context.TraceContext;
 import com.selfdevelopment.chatengine.enums.ConversationState;
 import com.selfdevelopment.chatengine.model.ConversationInstance;
 import com.selfdevelopment.chatengine.service.ChatEngineStateMachineService;
+import com.selfdevelopment.chatengine.statemachine.TestActionFactory;
 import com.selfdevelopment.chatengine.statemachine.factory.ConversationStateMachineFactory;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -21,7 +22,7 @@ class AllMonitorsTest {
 
     @BeforeAll
     static void setUp() {
-        ConversationStateMachineFactory.create();
+        ConversationStateMachineFactory.create(TestActionFactory.createDefaultActions());
         service = new ChatEngineStateMachineService();
     }
 
