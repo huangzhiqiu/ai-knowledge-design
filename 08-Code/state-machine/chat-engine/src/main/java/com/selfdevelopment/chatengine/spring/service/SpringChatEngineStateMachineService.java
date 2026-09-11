@@ -1,5 +1,6 @@
 package com.selfdevelopment.chatengine.spring.service;
 
+import com.selfdevelopment.chatengine.action.ConversationActionService;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
@@ -8,6 +9,7 @@ import com.selfdevelopment.chatengine.spring.event.ConversationStateChangedEvent
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.ApplicationEventPublisherAware;
+import org.springframework.stereotype.Service;
 
 /**
  * Spring-aware chat engine state machine service that publishes state change events.
@@ -23,16 +25,9 @@ import org.springframework.context.ApplicationEventPublisherAware;
  *   <li>Easy integration with other Spring components</li>
  *   <li>Async event processing with @Async</li>
  * </ul>
- * <p>
- * Usage:
- * <pre>
- * {@code @Bean}
- * public SpringChatEngineStateMachineService springChatEngineStateMachineService() {
- *     return new SpringChatEngineStateMachineService();
- * }
- * </pre>
  */
 @Slf4j
+@Service
 public class SpringChatEngineStateMachineService extends ChatEngineStateMachineService
         implements ApplicationEventPublisherAware {
 
@@ -40,10 +35,13 @@ public class SpringChatEngineStateMachineService extends ChatEngineStateMachineS
 
     /**
      * Creates a new Spring-aware chat engine state machine service.
-     * Uses the default conversation state machine from the factory.
+     * Uses the injected ConversationActionService to build state machines with
+     * auto-discovered Actions.
+     *
+     * @param actionService the conversation action service
      */
-    public SpringChatEngineStateMachineService() {
-        super();
+    public SpringChatEngineStateMachineService(ConversationActionService actionService) {
+        super(actionService);
     }
 
     @Override

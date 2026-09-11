@@ -19,8 +19,7 @@ class ConversationStateMachineTest {
 
     @BeforeAll
     static void setUp() {
-        ConversationStateMachineFactory.create(TestActionFactory.createDefaultActions());
-        service = new ChatEngineStateMachineService();
+        service = new ChatEngineStateMachineService(TestActionFactory.createDefaultActions());
     }
 
     private CbolStateContext buildCtx(ConversationState state) {

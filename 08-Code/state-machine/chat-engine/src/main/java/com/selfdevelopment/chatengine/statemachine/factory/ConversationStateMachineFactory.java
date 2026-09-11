@@ -128,17 +128,7 @@ public class ConversationStateMachineFactory {
      * It accepts a function that maps ConversationFact to the corresponding Action,
      * making the code more intuitive and declarative.
      * <p>
-     * Usage:
-     * <pre>{@code
-     * // With Spring-managed registry
-     * buildWithActionProvider(actionRegistry::getAction);
-     *
-     * // With explicit actions holder
-     * buildWithActionProvider(fact -> switch(fact) {
-     *     case SESSION_STARTED -> actions.sessionStartedAction;
-     *     // ...
-     * });
-     * }</pre>
+     * Uses the default machine ID {@link #MACHINE_ID}.
      *
      * @param actionProvider function that maps ConversationFact to Action
      * @return the configured conversation state machine
@@ -146,7 +136,25 @@ public class ConversationStateMachineFactory {
      */
     public static StateMachine<ConversationState, ConversationFact, CbolStateContext> buildWithActionProvider(
             Function<ConversationFact, Action<ConversationState, ConversationFact, CbolStateContext>> actionProvider) {
+        return buildWithActionProvider(actionProvider, MACHINE_ID);
+    }
+
+    /**
+     * Builds the conversation state machine with an Action provider function and custom machine ID.
+     * <p>
+     * This overload allows specifying a custom machine ID, which is useful when multiple
+     * state machine instances need to be created (e.g., per-fire instance creation).
+     *
+     * @param actionProvider function that maps ConversationFact to Action
+     * @param machineId the unique ID for this state machine instance
+     * @return the configured conversation state machine
+     * @throws NullPointerException if actionProvider or machineId is null
+     */
+    public static StateMachine<ConversationState, ConversationFact, CbolStateContext> buildWithActionProvider(
+            Function<ConversationFact, Action<ConversationState, ConversationFact, CbolStateContext>> actionProvider,
+            String machineId) {
         Objects.requireNonNull(actionProvider, "actionProvider must not be null");
+        Objects.requireNonNull(machineId, "machineId must not be null");
 
         StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> builder =
                 StateMachineBuilderFactory.create();
@@ -343,6 +351,6 @@ public class ConversationStateMachineFactory {
                 .on(ConversationFact.GENESYS_AGENT_TRANSFER_FAILED)
                 .perform(actionProvider.apply(ConversationFact.GENESYS_AGENT_TRANSFER_FAILED));
 
-        return builder.build(MACHINE_ID);
+        return builder.build(machineId);
     }
 }

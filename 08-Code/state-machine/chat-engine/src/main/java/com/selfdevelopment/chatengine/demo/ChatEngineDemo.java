@@ -120,7 +120,7 @@ public class ChatEngineDemo {
         DemoLogger.printSection("Demo 1: Basic Conversation Flow (with Action Execution)");
         DemoLogger.resetCounter();
 
-        ChatEngineStateMachineService service = new ChatEngineStateMachineService();
+        ChatEngineStateMachineService service = new ChatEngineStateMachineService(createDefaultActions());
 
         ConversationInstance conversation = ConversationInstance.builder()
                 .conversationId("conv-001")
@@ -179,7 +179,7 @@ public class ChatEngineDemo {
         DemoLogger.printSection("Demo 2: Survey Flow (Survey as Field in ENDING)");
         DemoLogger.resetCounter();
 
-        ChatEngineStateMachineService service = new ChatEngineStateMachineService();
+        ChatEngineStateMachineService service = new ChatEngineStateMachineService(createDefaultActions());
 
         ConversationInstance conversation = ConversationInstance.builder()
                 .conversationId("conv-002")
@@ -279,7 +279,7 @@ public class ChatEngineDemo {
         DemoLogger.printSection("Demo 4: Transfer Failure Flow (No Rollback, Re-route to INITIATED)");
         DemoLogger.resetCounter();
 
-        ChatEngineStateMachineService service = new ChatEngineStateMachineService();
+        ChatEngineStateMachineService service = new ChatEngineStateMachineService(createDefaultActions());
 
         ConversationInstance conversation = ConversationInstance.builder()
                 .conversationId("conv-004")

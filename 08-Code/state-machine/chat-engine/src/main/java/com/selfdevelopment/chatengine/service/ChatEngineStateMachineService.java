@@ -1,8 +1,9 @@
 package com.selfdevelopment.chatengine.service;
 
+import com.alibaba.cola.statemachine.Action;
 import com.alibaba.cola.statemachine.StateMachine;
-import com.alibaba.cola.statemachine.StateMachineFactory;
 import com.alibaba.cola.statemachine.impl.StateMachineException;
+import com.selfdevelopment.chatengine.action.ConversationActionService;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.context.TraceMdcHelper;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
@@ -11,86 +12,99 @@ import com.selfdevelopment.chatengine.model.StateTransitionRecord;
 import com.selfdevelopment.chatengine.statemachine.factory.ConversationStateMachineFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.util.Assert;
 
-import java.util.Objects;
+import java.util.Map;
+import java.util.UUID;
+import java.util.function.Function;
 
 /**
  * Service for firing conversation events through the state machine.
  * <p>
- * Uses COLA StateMachine. Stateless mode — caller must manage state persistence externally.
+ * Uses COLA StateMachine. A new state machine instance with a unique ID is created
+ * for each fire/verify operation to avoid state pollution and ensure thread safety.
+ * The state machine itself is stateless (only stores transition rules), but creating
+ * new instances with unique IDs avoids COLA's "already built" exception.
+ * <p>
+ * Stateless mode — caller must manage state persistence externally.
  */
 @Slf4j
 @Service
 public class ChatEngineStateMachineService {
 
-    private final StateMachine<ConversationState, ConversationFact, CbolStateContext> convSm;
+    private final Function<ConversationFact, Action<ConversationState, ConversationFact, CbolStateContext>> actionProvider;
 
     /**
-     * Creates a service using the globally registered conversation state machine.
+     * Creates a service using the injected ConversationActionService.
      * <p>
-     * The state machine must be registered before this constructor is called.
-     * In Spring applications, the state machine is automatically registered by
-     * the configuration. For non-Spring usage, call
-     * {@link ConversationStateMachineFactory#create(ConversationStateMachineFactory.ConversationActions)}
-     * first to register the state machine.
+     * Each fire/verify operation creates a new state machine instance with
+     * auto-discovered Actions from the registry.
      *
-     * @throws IllegalStateException if the conversation state machine is not registered
+     * @param actionService the conversation action service
      */
-    public ChatEngineStateMachineService() {
-        this(getRegisteredStateMachine());
+    public ChatEngineStateMachineService(ConversationActionService actionService) {
+        Assert.notNull(actionService, "actionService must not be null");
+        this.actionProvider = fact -> actionService.getAllActions().get(fact);
     }
 
     /**
-     * Retrieves the globally registered conversation state machine.
+     * Creates a service with an explicit action provider function.
+     * <p>
+     * This constructor is primarily for testing — it allows injecting a custom
+     * action provider that creates mock or custom Actions.
      *
-     * @return the registered conversation state machine
-     * @throws IllegalStateException if the state machine is not registered
+     * @param actionProvider function that maps ConversationFact to Action
      */
-    private static StateMachine<ConversationState, ConversationFact, CbolStateContext> getRegisteredStateMachine() {
-        try {
-            StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
-                    StateMachineFactory.get(ConversationStateMachineFactory.MACHINE_ID);
-            if (sm == null) {
-                throw new IllegalStateException(
-                        "Conversation state machine is not registered. " +
-                        "Call ConversationStateMachineFactory.create(actions) first, " +
-                        "or use the Spring configuration to auto-register it.");
-            }
-            return sm;
-        } catch (StateMachineException e) {
-            throw new IllegalStateException(
-                    "Conversation state machine is not registered. " +
-                    "Call ConversationStateMachineFactory.create(actions) first, " +
-                    "or use the Spring configuration to auto-register it.", e);
-        }
+    public ChatEngineStateMachineService(
+            Function<ConversationFact, Action<ConversationState, ConversationFact, CbolStateContext>> actionProvider) {
+        Assert.notNull(actionProvider, "actionProvider must not be null");
+        this.actionProvider = actionProvider;
     }
 
     /**
-     * Creates a service with an explicitly injected state machine.
+     * Creates a service with an explicit map of Actions.
      * <p>
-     * This constructor is primarily for testing — it allows injecting a mock or
-     * custom state machine instead of looking it up from the global factory.
+     * This constructor is useful for non-Spring environments or testing where Actions
+     * are manually instantiated. Each fire/verify operation creates a new state machine
+     * instance with the provided Actions.
      *
-     * @param convSm the conversation state machine (must not be null)
+     * @param actions map of ConversationFact to Action
      */
-    public ChatEngineStateMachineService(StateMachine<ConversationState, ConversationFact, CbolStateContext> convSm) {
-        this.convSm = Objects.requireNonNull(convSm, "convSm must not be null");
+    public ChatEngineStateMachineService(
+            Map<ConversationFact, Action<ConversationState, ConversationFact, CbolStateContext>> actions) {
+        Assert.notNull(actions, "actions must not be null");
+        this.actionProvider = ConversationActionService.toActionProvider(actions);
+    }
+
+    /**
+     * Creates a new state machine instance with a unique ID.
+     * <p>
+     * Called for each fire/verify operation to ensure a fresh instance with a unique ID,
+     * avoiding COLA StateMachine's "already built" exception.
+     *
+     * @return a new state machine instance with a unique ID
+     */
+    private StateMachine<ConversationState, ConversationFact, CbolStateContext> createStateMachine() {
+        String uniqueMachineId = ConversationStateMachineFactory.MACHINE_ID + "-" + UUID.randomUUID();
+        return ConversationStateMachineFactory.buildWithActionProvider(actionProvider, uniqueMachineId);
     }
 
     /**
      * Fires a conversation fact event through the state machine.
+     * <p>
+     * A new state machine instance with a unique ID is created for this operation.
      *
      * @param ctx  the conversation context (must not be null)
      * @param fact the event to fire (must not be null)
      * @return the target state after the transition
-     * @throws NullPointerException     if ctx or fact is null
+     * @throws IllegalArgumentException if ctx or fact is null
      * @throws StateMachineException    if the transition fails
      */
     public ConversationState fire(CbolStateContext ctx, ConversationFact fact) {
-        Objects.requireNonNull(ctx, "ctx must not be null");
-        Objects.requireNonNull(fact, "fact must not be null");
-        Objects.requireNonNull(ctx.conversation(), "ctx.conversation must not be null");
-        Objects.requireNonNull(ctx.traceContext(), "ctx.traceContext must not be null");
+        Assert.notNull(ctx, "ctx must not be null");
+        Assert.notNull(fact, "fact must not be null");
+        Assert.notNull(ctx.conversation(), "ctx.conversation must not be null");
+        Assert.notNull(ctx.traceContext(), "ctx.traceContext must not be null");
 
         return fireStateless(ctx, fact);
     }
@@ -98,16 +112,21 @@ public class ChatEngineStateMachineService {
     /**
      * Fires an event without persistent state storage (stateless mode).
      * <p>
-     * Wraps any state machine exception with conversation context (conversationId, fact,
-     * current state) to make troubleshooting easier.
+     * Creates a new state machine instance with a unique ID for this operation. Wraps any
+     * state machine exception with conversation context (conversationId, fact, current state)
+     * to make troubleshooting easier.
      */
     private ConversationState fireStateless(CbolStateContext ctx, ConversationFact fact) {
         TraceMdcHelper.set(ctx.traceContext());
         long start = System.currentTimeMillis();
         String conversationId = ctx.conversation().conversationId();
         ConversationState from = ctx.conversation().state();
+
+        // Create a fresh state machine instance with a unique ID for this operation
+        StateMachine<ConversationState, ConversationFact, CbolStateContext> sm = createStateMachine();
+
         try {
-            ConversationState target = convSm.fireEvent(from, fact, ctx);
+            ConversationState target = sm.fireEvent(from, fact, ctx);
 
             StateTransitionRecord record = StateTransitionRecord.builder()
                     .businessId(conversationId)
@@ -137,12 +156,15 @@ public class ChatEngineStateMachineService {
 
     /**
      * Verifies if an event can be fired from the current state.
+     * <p>
+     * A new state machine instance with a unique ID is created for this operation.
      *
      * @param currentState the current state
      * @param fact         the event to verify
      * @return true if the event can be fired, false otherwise
      */
     public boolean verify(ConversationState currentState, ConversationFact fact) {
-        return convSm.verify(currentState, fact);
+        StateMachine<ConversationState, ConversationFact, CbolStateContext> sm = createStateMachine();
+        return sm.verify(currentState, fact);
     }
 }

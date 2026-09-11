@@ -104,11 +104,13 @@ public class ChatEngineSpringConfig {
      * Creates the Spring-aware chat engine state machine service bean.
      * This service publishes Spring events on state transitions.
      *
+     * @param actionService the conversation action service
      * @return the Spring-aware chat engine state machine service
      */
     @Bean
-    public SpringChatEngineStateMachineService springChatEngineStateMachineService() {
-        return new SpringChatEngineStateMachineService();
+    public SpringChatEngineStateMachineService springChatEngineStateMachineService(
+            ConversationActionService actionService) {
+        return new SpringChatEngineStateMachineService(actionService);
     }
 
     /**
