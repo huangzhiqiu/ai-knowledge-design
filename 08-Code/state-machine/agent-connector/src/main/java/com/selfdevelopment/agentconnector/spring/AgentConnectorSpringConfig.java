@@ -6,8 +6,11 @@ import com.selfdevelopment.agentconnector.spring.aop.StateMachinePerformanceAspe
 import com.selfdevelopment.agentconnector.spring.service.SpringAgentConnectorStateMachineService;
 import com.selfdevelopment.agentconnector.statemachine.factory.InteractionStateMachineFactory;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.EnableAspectJAutoProxy;
+import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * Spring configuration for agent connector state machine.
@@ -16,7 +19,15 @@ import org.springframework.context.annotation.EnableAspectJAutoProxy;
  * This configuration is optional - the library can also be used without Spring
  * via the static factory methods.
  * <p>
- * Includes AOP support for logging and performance monitoring.
+ * Includes:
+ * <ul>
+ *   <li>@ComponentScan for automatic Action/Service/Ingress bean discovery</li>
+ *   <li>State machine factory bean</li>
+ *   <li>Spring-aware state machine service with event publishing</li>
+ *   <li>AOP support for logging and performance monitoring</li>
+ *   <li>@EnableScheduling for scheduled tasks (heartbeat, reconnection)</li>
+ *   <li>@EnableAsync for asynchronous method execution</li>
+ * </ul>
  * <p>
  * Usage:
  * <pre>
@@ -26,6 +37,13 @@ import org.springframework.context.annotation.EnableAspectJAutoProxy;
  */
 @Configuration
 @EnableAspectJAutoProxy
+@EnableScheduling
+@EnableAsync
+@ComponentScan(basePackages = {
+        "com.selfdevelopment.agentconnector.action",
+        "com.selfdevelopment.agentconnector.service",
+        "com.selfdevelopment.agentconnector.ingress"
+})
 public class AgentConnectorSpringConfig {
 
     /**

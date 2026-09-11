@@ -36,6 +36,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.EnableAspectJAutoProxy;
+import org.springframework.scheduling.annotation.EnableAsync;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * Spring configuration for chat engine state machine.
@@ -51,6 +53,8 @@ import org.springframework.context.annotation.EnableAspectJAutoProxy;
  *   <li>State machine bean built with injected Actions</li>
  *   <li>Spring-aware state machine service with event publishing</li>
  *   <li>AOP support for logging and performance monitoring</li>
+ *   <li>@EnableScheduling for scheduled tasks (monitors, timeouts)</li>
+ *   <li>@EnableAsync for asynchronous method execution</li>
  * </ul>
  * <p>
  * Usage:
@@ -61,6 +65,8 @@ import org.springframework.context.annotation.EnableAspectJAutoProxy;
  */
 @Configuration
 @EnableAspectJAutoProxy
+@EnableScheduling
+@EnableAsync
 @ComponentScan(basePackages = {
         "com.selfdevelopment.chatengine.action",
         "com.selfdevelopment.chatengine.service",

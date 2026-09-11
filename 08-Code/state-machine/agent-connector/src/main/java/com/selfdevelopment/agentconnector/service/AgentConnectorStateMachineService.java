@@ -8,6 +8,7 @@ import com.selfdevelopment.agentconnector.enums.InteractionFact;
 import com.selfdevelopment.agentconnector.enums.InteractionState;
 import com.selfdevelopment.agentconnector.statemachine.factory.InteractionStateMachineFactory;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
 
 import java.util.Objects;
 
@@ -18,6 +19,7 @@ import java.util.Objects;
  * handling connection lifecycle, transfer, and hold states for agent connectors (Genesys, WebSocket).
  */
 @Slf4j
+@Service
 public class AgentConnectorStateMachineService {
 
     private final StateMachine<InteractionState, InteractionFact, AgentConnectorStateContext> interactionSm;
