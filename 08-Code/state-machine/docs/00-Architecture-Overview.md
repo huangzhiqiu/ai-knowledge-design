@@ -110,14 +110,25 @@ repository.save(conversation);
 
 Transitions are stored in a `ConcurrentHashMap` keyed by `(sourceState, event)`, enabling O(1) lookup. Multiple transitions with the same key (different guards) are stored as a list and evaluated in order.
 
-### 2.3 Action-First Transition (Core Principle)
+### 2.3 Action-First Transition with Exception Handling (Core Principle)
 
-Actions execute **before** state change. If an action fails, the state does NOT change. This ensures business logic is the gatekeeper for state transitions.
+Actions execute **before** state change. The project implements a flexible exception handling mechanism that ensures **state transitions continue regardless of Action execution failures**.
 
 **Execution order:**
 1. Guard/Condition check (`when()`) — if false, transition rejected
-2. **Transition action (`perform()`) — failure → `StateMachineException`, state unchanged**
+2. **Transition action (`perform()`) — wrapped with `ExceptionHandlingAction`**
+   - If action succeeds → state transition completes
+   - If action fails → exception caught by wrapper, handled by priority-based handlers, **state transition still completes**
 3. State transition completes
+
+**Exception Handling Architecture:**
+- `ExceptionHandlingAction` wraps all Actions, catches ALL exceptions (including Errors)
+- `ActionExceptionHandlerRegistry` auto-discovers handlers, sorts by priority
+- Default handlers: DownstreamConnection (priority=100), Business (80), System (50), Fallback (-100)
+- Custom handlers can be added by implementing `ActionExceptionHandler` and annotating with `@Component`
+- **Exceptions never block state transitions** — state always changes to target state
+
+> **Note**: This overrides COLA's native action-first behavior where Action failures throw `StateMachineException` and leave state unchanged. Our wrapper design intentionally allows state transitions to continue, as Action side effects (notifications, logging, downstream calls) should not block the core state flow.
 
 ### 2.4 COLA Builder DSL
 

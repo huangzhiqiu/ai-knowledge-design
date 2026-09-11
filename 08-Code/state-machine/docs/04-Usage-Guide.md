@@ -472,7 +472,75 @@ public static StateMachine<...> build() {
 }
 ```
 
-### 12.3 Error Handling
+### 12.3 Action Exception Handling
+
+The state machine includes a flexible exception handling mechanism that ensures **state transitions continue regardless of Action execution failures**. Exceptions are caught by `ExceptionHandlingAction` and handled by priority-based handlers, without blocking the state change.
+
+#### Built-in Exception Types
+
+```java
+// Downstream system connection failure
+throw new DownstreamConnectionException("Genesys", "transferCall", "Connection timeout");
+
+// Business rule violation
+throw new BusinessException("INVALID_STATE", Map.of("reason", "survey already submitted"));
+
+// Unexpected system error
+throw new SystemException("payment-service", "INTERNAL_ERROR", "Null pointer in processor");
+```
+
+#### Using Exception Handling (Spring Environment - Recommended)
+
+```java
+@Service
+@RequiredArgsConstructor
+public class MyService {
+    private final ConversationActionService actionService;
+
+    public void processEvent(CbolStateContext ctx, ConversationFact fact) {
+        // buildWithSpringActions() automatically wraps all Actions with exception handling
+        StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+                actionService.buildWithSpringActions();
+
+        // Exceptions during Action execution will NOT block this state transition
+        ConversationState newState = sm.fireEvent(ctx.conversation().state(), fact, ctx);
+
+        log.info("Transition completed: {} -> {} on {}",
+                ctx.conversation().state(), newState, fact);
+    }
+}
+```
+
+#### Custom Exception Handler
+
+Developers can add custom exception handlers without modifying existing code:
+
+```java
+@Component
+public class PaymentFailureHandler implements ActionExceptionHandler {
+    @Override
+    public boolean canHandle(Throwable ex) {
+        return ex instanceof PaymentFailureException;
+    }
+
+    @Override
+    public void handle(Throwable ex, ConversationState from, ConversationState to,
+                       ConversationFact fact, CbolStateContext ctx) {
+        // Custom logic: alert, refund, retry, etc.
+        log.error("Payment failed, initiating refund: conversationId={}",
+                ctx.conversation().conversationId());
+    }
+
+    @Override
+    public int getPriority() {
+        return 200; // Higher priority = checked first
+    }
+}
+```
+
+#### COLA Native Error Handling (Without Exception Wrapper)
+
+If you choose not to use the exception handling wrapper, COLA follows the action-first principle:
 
 ```java
 try {
@@ -484,6 +552,8 @@ try {
     throw new BusinessException("Transition failed", e);
 }
 ```
+
+> **Note**: When using `buildWithSpringActions()`, Actions are automatically wrapped with `ExceptionHandlingAction`, so `StateMachineException` from Action failures will not occur — state transitions always continue. `StateMachineException` may still be thrown if no transition matches the given (source, event) pair.
 
 ### 12.4 Idempotency
 

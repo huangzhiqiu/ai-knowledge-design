@@ -176,12 +176,13 @@ state-machine/
 
 ## Key Design Principles
 
-1. **Action-First Transition**: Actions are executed synchronously before state transition. If an action fails, an exception is thrown and the state remains unchanged.
+1. **Action-First Transition with Exception Handling**: Actions are executed synchronously before state transition. A flexible exception handling mechanism wraps all Actions with `ExceptionHandlingAction`, ensuring that **state transitions continue regardless of Action execution failures**. Exceptions are caught and handled by priority-based handlers, never blocking state changes.
 2. **Stateless Engine**: The state machine engine only stores transition rules; current state is injected by the business layer.
 3. **Table-Driven**: ConcurrentHashMap O(1) lookup for transitions.
 4. **Generic Type-Safe**: COLA StateMachine uses generics for type-safe states, events, and contexts.
 5. **Multi-Market Support**: Configuration-driven per-market behavior (HK, SG, UK, etc.).
 6. **Independent State Machines**: Conversation and Interaction are independent state machines with separate contexts.
+7. **Extensible Exception Handling**: Custom exception handlers can be added by implementing `ActionExceptionHandler` and annotating with `@Component`. Default handlers include DownstreamConnection (priority=100), Business (80), System (50), and Fallback (-100).
 
 ## Quick Start
 

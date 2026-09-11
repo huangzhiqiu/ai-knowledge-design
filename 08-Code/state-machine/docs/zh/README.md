@@ -176,12 +176,13 @@ state-machine/
 
 ## 关键设计原则
 
-1. **Action-First 转换**：动作在状态转换之前同步执行。如果动作失败，抛出异常，状态保持不变。
+1. **带异常处理的 Action-First 转换**：动作在状态转换之前同步执行。灵活的异常处理机制用 `ExceptionHandlingAction` 包装所有 Action，确保**无论 Action 执行是否失败，状态转换都会继续**。异常被捕获并由基于优先级的处理器处理，永远不会阻塞状态变更。
 2. **无状态引擎**：状态机引擎只存储转换规则；当前状态由业务层注入。
 3. **表驱动**：ConcurrentHashMap O(1) 查找转换。
 4. **泛型类型安全**：COLA StateMachine 使用泛型实现类型安全的状态、事件和上下文。
 5. **多市场支持**：配置驱动的每市场行为（HK、SG、UK 等）。
 6. **独立状态机**：会话和交互是独立的状态机，具有独立的上下文。
+7. **可扩展的异常处理**：自定义异常处理器可通过实现 `ActionExceptionHandler` 并用 `@Component` 注解来添加。默认处理器包括 DownstreamConnection（优先级=100）、Business（80）、System（50）和 Fallback（-100）。
 
 ## 快速开始
 

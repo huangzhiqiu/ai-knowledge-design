@@ -472,7 +472,75 @@ public static StateMachine<...> build() {
 }
 ```
 
-### 12.3 错误处理
+### 12.3 Action 异常处理
+
+状态机包含一套灵活的异常处理机制，确保**无论 Action 执行是否失败，状态转换都会继续**。异常由 `ExceptionHandlingAction` 捕获，并由基于优先级的处理器处理，不会阻塞状态变更。
+
+#### 内置异常类型
+
+```java
+// 下游系统连接失败
+throw new DownstreamConnectionException("Genesys", "transferCall", "连接超时");
+
+// 业务规则违反
+throw new BusinessException("INVALID_STATE", Map.of("reason", "问卷已提交"));
+
+// 意外的系统错误
+throw new SystemException("payment-service", "INTERNAL_ERROR", "处理器中空指针");
+```
+
+#### 使用异常处理（Spring 环境 - 推荐）
+
+```java
+@Service
+@RequiredArgsConstructor
+public class MyService {
+    private final ConversationActionService actionService;
+
+    public void processEvent(CbolStateContext ctx, ConversationFact fact) {
+        // buildWithSpringActions() 自动用异常处理包装所有 Action
+        StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+                actionService.buildWithSpringActions();
+
+        // Action 执行期间的异常不会阻塞此状态转换
+        ConversationState newState = sm.fireEvent(ctx.conversation().state(), fact, ctx);
+
+        log.info("转换完成：{} -> {} on {}",
+                ctx.conversation().state(), newState, fact);
+    }
+}
+```
+
+#### 自定义异常处理器
+
+开发者可以添加自定义异常处理器，无需修改现有代码：
+
+```java
+@Component
+public class PaymentFailureHandler implements ActionExceptionHandler {
+    @Override
+    public boolean canHandle(Throwable ex) {
+        return ex instanceof PaymentFailureException;
+    }
+
+    @Override
+    public void handle(Throwable ex, ConversationState from, ConversationState to,
+                       ConversationFact fact, CbolStateContext ctx) {
+        // 自定义逻辑：告警、退款、重试等
+        log.error("支付失败，发起退款：conversationId={}",
+                ctx.conversation().conversationId());
+    }
+
+    @Override
+    public int getPriority() {
+        return 200; // 优先级越高 = 越先检查
+    }
+}
+```
+
+#### COLA 原生错误处理（不使用异常包装器）
+
+如果选择不使用异常处理包装器，COLA 遵循 action-first 原则：
 
 ```java
 try {
@@ -484,6 +552,8 @@ try {
     throw new BusinessException("转换失败", e);
 }
 ```
+
+> **注意**：使用 `buildWithSpringActions()` 时，Action 会自动用 `ExceptionHandlingAction` 包装，因此不会发生来自 Action 失败的 `StateMachineException`——状态转换始终继续。如果给定的（source, event）对没有匹配的转换，仍可能抛出 `StateMachineException`。
 
 ### 12.4 幂等性
 

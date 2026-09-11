@@ -110,14 +110,25 @@ repository.save(conversation);
 
 转换存储在 `ConcurrentHashMap` 中，键为 `(sourceState, event)`，实现 O(1) 查找。具有相同键（不同守卫）的多个转换存储为列表并按顺序评估。
 
-### 2.3 Action-First 转换（核心原则）
+### 2.3 带异常处理的 Action-First 转换（核心原则）
 
-动作在状态变更**之前**执行。如果动作失败，状态不变。这确保业务逻辑是状态转换的守门人。
+动作在状态变更**之前**执行。项目实现了一套灵活的异常处理机制，确保**无论 Action 执行是否失败，状态转换都会继续**。
 
 **执行顺序：**
 1. 守卫/条件检查（`when()`）— 如果为 false，转换被拒绝
-2. **转换动作（`perform()`）— 失败 → `StateMachineException`，状态不变**
+2. **转换动作（`perform()`）— 用 `ExceptionHandlingAction` 包装**
+   - 如果动作成功 → 状态转换完成
+   - 如果动作失败 → 异常被包装器捕获，由基于优先级的处理器处理，**状态转换仍完成**
 3. 状态转换完成
+
+**异常处理架构：**
+- `ExceptionHandlingAction` 包装所有 Action，捕获所有异常（包括 Error）
+- `ActionExceptionHandlerRegistry` 自动发现处理器，按优先级排序
+- 默认处理器：DownstreamConnection（优先级=100）、Business（80）、System（50）、Fallback（-100）
+- 自定义处理器可通过实现 `ActionExceptionHandler` 并用 `@Component` 注解来添加
+- **异常永远不会阻塞状态转换** — 状态始终变更为目标状态
+
+> **注意**：这覆盖了 COLA 原生的 action-first 行为，即 Action 失败会抛出 `StateMachineException` 并保持状态不变。我们的包装器设计有意允许状态转换继续，因为 Action 的副作用（通知、日志、下游调用）不应阻塞核心状态流。
 
 ### 2.4 COLA Builder DSL
 
