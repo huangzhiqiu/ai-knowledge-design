@@ -1,6 +1,7 @@
 package com.selfdevelopment.chatengine.action.transfer;
 
 import com.alibaba.cola.statemachine.Action;
+import com.selfdevelopment.chatengine.action.HandlesFact;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
@@ -24,6 +25,7 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
+@HandlesFact(ConversationFact.TRANSFER_TIMEOUT)
 public class TransferTimeoutAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override

@@ -1,6 +1,7 @@
 package com.selfdevelopment.chatengine.action.genesys;
 
 import com.alibaba.cola.statemachine.Action;
+import com.selfdevelopment.chatengine.action.HandlesFact;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
@@ -26,6 +27,7 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
+@HandlesFact(ConversationFact.GENESYS_CONSULT_TRANSFER_ENDED)
 public class ConsultTransferEndedAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override

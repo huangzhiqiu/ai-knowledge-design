@@ -543,6 +543,54 @@ public class ConversationStateMachineFactory {
     }
 
     /**
+     * Builds the conversation state machine using the ActionRegistry.
+     * <p>
+     * This method retrieves all Actions from the {@link com.selfdevelopment.chatengine.action.ConversationActionRegistry}
+     * and builds the state machine with them. This is the recommended approach for Spring
+     * applications, as it eliminates manual Action instantiation and binding.
+     * <p>
+     * The registry automatically discovers all Action beans annotated with
+     * {@link com.selfdevelopment.chatengine.action.HandlesFact} and indexes them by fact.
+     *
+     * @param registry the conversation action registry containing all Actions
+     * @return the configured conversation state machine
+     * @throws NullPointerException if registry is null
+     * @throws IllegalStateException if a required Action is missing from the registry
+     */
+    public static StateMachine<ConversationState, ConversationFact, CbolStateContext> buildWithRegistry(
+            com.selfdevelopment.chatengine.action.ConversationActionRegistry registry) {
+        java.util.Objects.requireNonNull(registry, "registry must not be null");
+
+        ConversationActions actions = new ConversationActions(
+                (SessionStartedAction) registry.getRequiredAction(ConversationFact.SESSION_STARTED),
+                (InteractionBecameActiveAction) registry.getRequiredAction(ConversationFact.INTERACTION_BECAME_ACTIVE),
+                (InboundMessageReceivedAction) registry.getRequiredAction(ConversationFact.INBOUND_MESSAGE_RECEIVED),
+                (SourceInteractionTransferredAction) registry.getRequiredAction(ConversationFact.SOURCE_INTERACTION_TRANSFERRED),
+                (TargetInteractionInitiatedAction) registry.getRequiredAction(ConversationFact.TARGET_INTERACTION_INITIATED),
+                (TargetInteractionConnectedAction) registry.getRequiredAction(ConversationFact.TARGET_INTERACTION_CONNECTED),
+                (TargetInteractionConnectFailedAction) registry.getRequiredAction(ConversationFact.TARGET_INTERACTION_CONNECT_FAILED),
+                (TransferTimeoutAction) registry.getRequiredAction(ConversationFact.TRANSFER_TIMEOUT),
+                (EndingStartedAction) registry.getRequiredAction(ConversationFact.ENDING_STARTED),
+                (EndingTimeoutAction) registry.getRequiredAction(ConversationFact.ENDING_TIMEOUT),
+                (AllInteractionsEndedAction) registry.getRequiredAction(ConversationFact.ALL_INTERACTIONS_ENDED),
+                (EndingActionsCompletedAction) registry.getRequiredAction(ConversationFact.ENDING_ACTIONS_COMPLETED),
+                (SurveySubmittedAction) registry.getRequiredAction(ConversationFact.SURVEY_SUBMITTED),
+                (SurveyTimeoutAction) registry.getRequiredAction(ConversationFact.SURVEY_TIMEOUT),
+                (SurveySkippedAction) registry.getRequiredAction(ConversationFact.SURVEY_SKIPPED),
+                (ConsultTransferStartedAction) registry.getRequiredAction(ConversationFact.GENESYS_CONSULT_TRANSFER_STARTED),
+                (ConsultTransferEndedAction) registry.getRequiredAction(ConversationFact.GENESYS_CONSULT_TRANSFER_ENDED),
+                (AgentTransferStartedAction) registry.getRequiredAction(ConversationFact.GENESYS_AGENT_TRANSFER_STARTED),
+                (AgentTransferCompletedAction) registry.getRequiredAction(ConversationFact.GENESYS_AGENT_TRANSFER_COMPLETED),
+                (AgentTransferFailedAction) registry.getRequiredAction(ConversationFact.GENESYS_AGENT_TRANSFER_FAILED),
+                (CustomerIdleTimeoutAction) registry.getRequiredAction(ConversationFact.CUSTOMER_IDLE_TIMEOUT),
+                (SystemErrorAction) registry.getRequiredAction(ConversationFact.SYSTEM_ERROR),
+                (DownstreamUnavailableAction) registry.getRequiredAction(ConversationFact.DOWNSTREAM_UNAVAILABLE)
+        );
+
+        return buildWithActions(actions);
+    }
+
+    /**
      * Holder for all Conversation Action instances.
      * <p>
      * Used for Spring dependency injection - Spring can inject all Action beans

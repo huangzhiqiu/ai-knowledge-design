@@ -24,6 +24,7 @@ import com.selfdevelopment.chatengine.action.transfer.TargetInteractionConnectFa
 import com.selfdevelopment.chatengine.action.transfer.TargetInteractionConnectedAction;
 import com.selfdevelopment.chatengine.action.transfer.TargetInteractionInitiatedAction;
 import com.selfdevelopment.chatengine.action.transfer.TransferTimeoutAction;
+import com.selfdevelopment.chatengine.action.ConversationActionRegistry;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
@@ -137,20 +138,21 @@ public class ChatEngineSpringConfig {
     }
 
     /**
-     * Creates the conversation state machine bean using injected Action instances.
+     * Creates the conversation state machine bean using the ActionRegistry.
      * <p>
-     * Uses buildWithActions() to build the state machine with Spring-managed
-     * Action beans, allowing Actions to have their own dependencies.
+     * Uses buildWithRegistry() to build the state machine with Actions automatically
+     * discovered and indexed by the ConversationActionRegistry. This eliminates
+     * manual Action instantiation and binding in the factory.
      * The state machine is then registered with StateMachineFactory.
      *
-     * @param actions the ConversationActions holder with injected Action beans
+     * @param actionRegistry the conversation action registry
      * @return the conversation state machine
      */
     @Bean
     public StateMachine<ConversationState, ConversationFact, CbolStateContext> conversationStateMachine(
-            ConversationStateMachineFactory.ConversationActions actions) {
+            ConversationActionRegistry actionRegistry) {
         StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
-                ConversationStateMachineFactory.buildWithActions(actions);
+                ConversationStateMachineFactory.buildWithRegistry(actionRegistry);
         // Register the state machine so it can be retrieved by ID
         com.alibaba.cola.statemachine.StateMachineFactory.register(sm);
         return sm;
