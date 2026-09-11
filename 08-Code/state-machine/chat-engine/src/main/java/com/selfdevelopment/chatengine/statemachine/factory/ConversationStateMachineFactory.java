@@ -329,4 +329,104 @@ public class ConversationStateMachineFactory {
 
         return builder.build(MACHINE_ID);
     }
+
+    /**
+     * Holder for all Conversation Action instances.
+     * <p>
+     * Used for Spring dependency injection - Spring can inject all Action beans
+     * into this holder, which is then passed to buildWithActions().
+     * <p>
+     * This allows the state machine to use Spring-managed Action beans with
+     * their own dependencies (Repository, Service, etc.) while keeping the
+     * factory logic clean and testable.
+     */
+    public static class ConversationActions {
+        // LIFECYCLE actions
+        public final SessionStartedAction sessionStartedAction;
+        public final InteractionBecameActiveAction interactionBecameActiveAction;
+        public final InboundMessageReceivedAction inboundMessageReceivedAction;
+
+        // TRANSFER actions
+        public final SourceInteractionTransferredAction sourceInteractionTransferredAction;
+        public final TargetInteractionInitiatedAction targetInteractionInitiatedAction;
+        public final TargetInteractionConnectedAction targetInteractionConnectedAction;
+        public final TargetInteractionConnectFailedAction targetInteractionConnectFailedAction;
+        public final TransferTimeoutAction transferTimeoutAction;
+
+        // ENDING actions
+        public final EndingStartedAction endingStartedAction;
+        public final EndingTimeoutAction endingTimeoutAction;
+        public final AllInteractionsEndedAction allInteractionsEndedAction;
+        public final EndingActionsCompletedAction endingActionsCompletedAction;
+
+        // SURVEY actions
+        public final SurveySubmittedAction surveySubmittedAction;
+        public final SurveyTimeoutAction surveyTimeoutAction;
+        public final SurveySkippedAction surveySkippedAction;
+
+        // GENESYS actions
+        public final ConsultTransferStartedAction consultTransferStartedAction;
+        public final ConsultTransferEndedAction consultTransferEndedAction;
+        public final AgentTransferStartedAction agentTransferStartedAction;
+        public final AgentTransferCompletedAction agentTransferCompletedAction;
+        public final AgentTransferFailedAction agentTransferFailedAction;
+
+        // SYSTEM actions
+        public final CustomerIdleTimeoutAction customerIdleTimeoutAction;
+        public final SystemErrorAction systemErrorAction;
+        public final DownstreamUnavailableAction downstreamUnavailableAction;
+
+        /**
+         * Creates a ConversationActions holder with all Action instances.
+         * Used by Spring configuration to inject managed Action beans.
+         */
+        public ConversationActions(
+                SessionStartedAction sessionStartedAction,
+                InteractionBecameActiveAction interactionBecameActiveAction,
+                InboundMessageReceivedAction inboundMessageReceivedAction,
+                SourceInteractionTransferredAction sourceInteractionTransferredAction,
+                TargetInteractionInitiatedAction targetInteractionInitiatedAction,
+                TargetInteractionConnectedAction targetInteractionConnectedAction,
+                TargetInteractionConnectFailedAction targetInteractionConnectFailedAction,
+                TransferTimeoutAction transferTimeoutAction,
+                EndingStartedAction endingStartedAction,
+                EndingTimeoutAction endingTimeoutAction,
+                AllInteractionsEndedAction allInteractionsEndedAction,
+                EndingActionsCompletedAction endingActionsCompletedAction,
+                SurveySubmittedAction surveySubmittedAction,
+                SurveyTimeoutAction surveyTimeoutAction,
+                SurveySkippedAction surveySkippedAction,
+                ConsultTransferStartedAction consultTransferStartedAction,
+                ConsultTransferEndedAction consultTransferEndedAction,
+                AgentTransferStartedAction agentTransferStartedAction,
+                AgentTransferCompletedAction agentTransferCompletedAction,
+                AgentTransferFailedAction agentTransferFailedAction,
+                CustomerIdleTimeoutAction customerIdleTimeoutAction,
+                SystemErrorAction systemErrorAction,
+                DownstreamUnavailableAction downstreamUnavailableAction) {
+            this.sessionStartedAction = sessionStartedAction;
+            this.interactionBecameActiveAction = interactionBecameActiveAction;
+            this.inboundMessageReceivedAction = inboundMessageReceivedAction;
+            this.sourceInteractionTransferredAction = sourceInteractionTransferredAction;
+            this.targetInteractionInitiatedAction = targetInteractionInitiatedAction;
+            this.targetInteractionConnectedAction = targetInteractionConnectedAction;
+            this.targetInteractionConnectFailedAction = targetInteractionConnectFailedAction;
+            this.transferTimeoutAction = transferTimeoutAction;
+            this.endingStartedAction = endingStartedAction;
+            this.endingTimeoutAction = endingTimeoutAction;
+            this.allInteractionsEndedAction = allInteractionsEndedAction;
+            this.endingActionsCompletedAction = endingActionsCompletedAction;
+            this.surveySubmittedAction = surveySubmittedAction;
+            this.surveyTimeoutAction = surveyTimeoutAction;
+            this.surveySkippedAction = surveySkippedAction;
+            this.consultTransferStartedAction = consultTransferStartedAction;
+            this.consultTransferEndedAction = consultTransferEndedAction;
+            this.agentTransferStartedAction = agentTransferStartedAction;
+            this.agentTransferCompletedAction = agentTransferCompletedAction;
+            this.agentTransferFailedAction = agentTransferFailedAction;
+            this.customerIdleTimeoutAction = customerIdleTimeoutAction;
+            this.systemErrorAction = systemErrorAction;
+            this.downstreamUnavailableAction = downstreamUnavailableAction;
+        }
+    }
 }
