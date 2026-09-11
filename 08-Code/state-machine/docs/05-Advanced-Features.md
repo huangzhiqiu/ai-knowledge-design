@@ -402,57 +402,299 @@ class MyTest {
 
 ---
 
-## 7. Action-First Principle & Error Handling
+## 7. Action Exception Handling Mechanism
 
 ### Problem
 
-What happens when an Action throws an exception during a state transition?
+When an Action throws an exception during a state transition, the default COLA behavior (action-first principle) blocks the state change and throws `StateMachineException`. However, in many production scenarios, we want:
+- State transitions to continue regardless of Action execution failures
+- Different handling strategies for different exception types (downstream connection, business, system)
+- Custom exception handlers that developers can extend
+- A fallback handler for unhandled exceptions
+- Exceptions to be logged and monitored without blocking the state machine flow
 
 ### Solution
 
-COLA StateMachine follows the **action-first principle**:
-1. Action executes **before** state change
-2. If action succeeds → state changes to target state
-3. If action fails → `StateMachineException` is thrown, state remains unchanged
+A comprehensive exception handling mechanism that wraps Actions with `ExceptionHandlingAction`, which catches all exceptions and delegates to a priority-based `ActionExceptionHandlerRegistry`. **Importantly, exceptions do NOT block state transitions** — state changes continue regardless of Action execution failures.
+
+### 7.1 Package Structure
+
+```
+com.selfdevelopment.chatengine.action.exception
+├── BusinessException.java              // Exception type definitions
+├── DownstreamConnectionException.java
+├── SystemException.java
+├── handler/                            // Exception handlers
+│   ├── ActionExceptionHandler.java          // Interface
+│   ├── BusinessExceptionHandler.java
+│   ├── DownstreamConnectionExceptionHandler.java
+│   ├── FallbackActionExceptionHandler.java
+│   └── SystemExceptionHandler.java
+├── registry/                           // Handler registry
+│   └── ActionExceptionHandlerRegistry.java
+└── wrapper/                            // Action wrapper
+    └── ExceptionHandlingAction.java
+```
+
+### 7.2 Exception Types
+
+Three built-in exception types cover common scenarios:
 
 ```java
-try {
-    ConversationState newState = sm.fireEvent(
-            ConversationState.IN_PROGRESS,
-            ConversationFact.CUSTOMER_CLOSE,
-            ctx);
-    // State changed successfully
-} catch (StateMachineException e) {
-    // Action failed OR no transition matched
-    // State remains IN_PROGRESS
-    log.error("Transition failed", e);
+// Downstream system connection failure (database, MQ, external API, Genesys/Aibot)
+public class DownstreamConnectionException extends RuntimeException {
+    private final String downstreamSystem;
+    private final String operation;
+}
 
-    // Business layer can decide: retry, failover, or alert
-    handleFailure(ctx, e);
+// Business rule violation or expected business error
+public class BusinessException extends RuntimeException {
+    private final String businessCode;
+    private final Map<String, Object> businessContext;
+}
+
+// Unexpected system error (NPE, OOM, etc.)
+public class SystemException extends RuntimeException {
+    private final String systemComponent;
+    private final String errorCategory;
 }
 ```
 
-### Failover Pattern (Business Layer)
-
-While COLA doesn't have a built-in failover state machine, the business layer can implement one:
+### 7.3 Exception Handler Interface
 
 ```java
-public ConversationState fireWithFailover(CbolStateContext ctx, ConversationFact event) {
-    try {
-        return sm.fireEvent(ctx.conversation().state(), event, ctx);
-    } catch (StateMachineException e) {
-        log.warn("Primary transition failed, attempting failover: {}", e.getMessage());
+public interface ActionExceptionHandler {
+    // Determines if this handler can handle the exception
+    boolean canHandle(Throwable ex);
 
-        // Try failover event (e.g., SYSTEM_ERROR)
+    // Custom handling logic (alert, retry, fallback, metrics, etc.)
+    void handle(Throwable ex, ConversationState from, ConversationState to,
+                ConversationFact fact, CbolStateContext ctx);
+
+    // Handler priority (higher = checked first), default 0
+    default int getPriority() { return 0; }
+}
+```
+
+### 7.4 Default Exception Handlers
+
+| Handler | Priority | Handles | Behavior |
+|---------|----------|---------|----------|
+| `DownstreamConnectionExceptionHandler` | 100 | `DownstreamConnectionException` | Logs downstream failure details |
+| `BusinessExceptionHandler` | 80 | `BusinessException` | Logs business context and code |
+| `SystemExceptionHandler` | 50 | `SystemException` | Logs system error with stack trace |
+| `FallbackActionExceptionHandler` | -100 | All exceptions (catch-all) | Logs unhandled exception details |
+
+### 7.5 Exception Handler Registry
+
+Automatically discovers all Spring-managed `ActionExceptionHandler` beans, sorts by priority, and finds the first matching handler for each exception.
+
+```java
+@Slf4j
+@Component
+public class ActionExceptionHandlerRegistry implements InitializingBean {
+    private final ApplicationContext applicationContext;
+    private final List<ActionExceptionHandler> handlers = new ArrayList<>();
+    private ActionExceptionHandler fallbackHandler;
+
+    @Override
+    public void afterPropertiesSet() {
+        // Auto-discover all handler beans
+        var handlerBeans = applicationContext.getBeansOfType(ActionExceptionHandler.class);
+
+        for (var entry : handlerBeans.entrySet()) {
+            ActionExceptionHandler handler = entry.getValue();
+            if (handler instanceof FallbackActionExceptionHandler) {
+                this.fallbackHandler = handler;
+            } else {
+                handlers.add(handler);
+            }
+        }
+
+        // Sort by priority (higher first)
+        handlers.sort(Comparator.comparingInt(ActionExceptionHandler::getPriority).reversed());
+
+        // Ensure fallback handler exists
+        if (fallbackHandler == null) {
+            fallbackHandler = new FallbackActionExceptionHandler();
+        }
+    }
+
+    public void handleException(Throwable ex, ConversationState from, ConversationState to,
+                                ConversationFact fact, CbolStateContext ctx) {
+        // Find first matching handler by priority
+        for (ActionExceptionHandler handler : handlers) {
+            if (handler.canHandle(ex)) {
+                try {
+                    handler.handle(ex, from, to, fact, ctx);
+                } catch (Exception handlerEx) {
+                    // Never let handler exceptions propagate
+                    log.error("Exception handler threw an exception", handlerEx);
+                }
+                return;
+            }
+        }
+
+        // Use fallback handler
         try {
-            return sm.fireEvent(ctx.conversation().state(), ConversationFact.SYSTEM_ERROR, ctx);
-        } catch (StateMachineException e2) {
-            log.error("Failover also failed", e2);
-            throw e2;
+            fallbackHandler.handle(ex, from, to, fact, ctx);
+        } catch (Exception handlerEx) {
+            log.error("Fallback handler threw an exception", handlerEx);
         }
     }
 }
 ```
+
+### 7.6 Exception Handling Action Wrapper
+
+Wraps the original Action with exception handling. Catches ALL exceptions (including Errors), delegates to the registry, and **never rethrows** — state transitions always continue.
+
+```java
+@Slf4j
+public class ExceptionHandlingAction<S, E, C> implements Action<S, E, C> {
+    private final Action<S, E, C> delegate;
+    private final ActionExceptionHandlerRegistry exceptionHandlerRegistry;
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public void execute(S from, S to, E e, C ctx) {
+        try {
+            delegate.execute(from, to, e, ctx);
+        } catch (Throwable ex) {
+            // Catch ALL exceptions (including Errors)
+            log.warn("Action execution threw an exception: {}", ex.getClass().getSimpleName());
+
+            try {
+                exceptionHandlerRegistry.handleException(
+                        ex,
+                        (ConversationState) from,
+                        (ConversationState) to,
+                        (ConversationFact) e,
+                        (CbolStateContext) ctx
+                );
+            } catch (Throwable handlerEx) {
+                // Last line of defense - never propagate
+                log.error("Exception handler registry threw an exception", handlerEx);
+            }
+
+            // IMPORTANT: Do NOT rethrow - state transition must continue
+            log.debug("State transition continues despite Action exception: {} -> {} on {}",
+                    from, to, e);
+        }
+    }
+
+    // Factory method - idempotent (won't double-wrap)
+    public static <S, E, C> Action<S, E, C> wrap(Action<S, E, C> action,
+                                                    ActionExceptionHandlerRegistry registry) {
+        if (action == null) return null;
+        if (action instanceof ExceptionHandlingAction) return action; // Already wrapped
+        return new ExceptionHandlingAction<>(action, registry);
+    }
+}
+```
+
+### 7.7 Execution Flow
+
+```mermaid
+sequenceDiagram
+    participant SM as COLA StateMachine
+    participant EHA as ExceptionHandlingAction
+    participant Original as Original Action
+    participant Registry as ActionExceptionHandlerRegistry
+    participant Handler as Matching Handler
+
+    SM->>EHA: execute(from, to, fact, ctx)
+    EHA->>Original: delegate.execute(from, to, fact, ctx)
+    Note over Original: throws DownstreamConnectionException
+    Original-->>EHA: throw exception
+    EHA->>EHA: catch (Throwable ex)
+    EHA->>Registry: handleException(ex, from, to, fact, ctx)
+    Registry->>Handler: canHandle(ex)? → true
+    Registry->>Handler: handle(ex, from, to, fact, ctx)
+    Handler->>Handler: log/alert/metrics
+    Handler-->>Registry: return
+    Registry-->>EHA: return
+    Note over EHA: Do NOT rethrow exception
+    EHA-->>SM: return (normal completion)
+    SM->>SM: Execute state transition from → to
+    SM-->>SM: Return target state
+```
+
+### 7.8 Custom Exception Handler Example
+
+Developers can add custom exception handlers without modifying existing code:
+
+```java
+@Component
+public class MyCustomExceptionHandler implements ActionExceptionHandler {
+    @Override
+    public boolean canHandle(Throwable ex) {
+        return ex instanceof MyCustomException;
+    }
+
+    @Override
+    public void handle(Throwable ex, ConversationState from, ConversationState to,
+                       ConversationFact fact, CbolStateContext ctx) {
+        // Custom logic: alert, retry, fallback, metrics, etc.
+        log.error("Custom exception handled: {}", ex.getMessage());
+    }
+
+    @Override
+    public int getPriority() {
+        return 200; // High priority - checked before default handlers
+    }
+}
+```
+
+### 7.9 Integration with ConversationActionService
+
+The `ConversationActionService` automatically wraps Actions with exception handling:
+
+```java
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class ConversationActionService {
+    private final ConversationActionRegistry actionRegistry;
+    private final ActionExceptionHandlerRegistry exceptionHandlerRegistry;
+
+    // Spring environment (recommended) - auto-discovery + exception handling
+    public StateMachine<ConversationState, ConversationFact, CbolStateContext> buildWithSpringActions() {
+        return buildWithRegistry(actionRegistry, exceptionHandlerRegistry);
+    }
+
+    // Wrap each Action with exception handling
+    private static Action<...> wrapWithExceptionHandling(
+            Action<...> action,
+            ActionExceptionHandlerRegistry registry) {
+        if (action == null) return null;
+        if (action instanceof ExceptionHandlingAction) return action;
+        return new ExceptionHandlingAction<>(action, registry);
+    }
+}
+```
+
+### 7.10 Key Design Principles
+
+| Principle | Description |
+|-----------|-------------|
+| **State transition never blocked** | Exceptions are handled, not propagated; state always changes |
+| **Open/Closed** | Add new exception handlers without modifying existing code |
+| **Priority-based** | More specific handlers (higher priority) checked first |
+| **Fallback guaranteed** | Every exception gets handled (at least by fallback handler) |
+| **Handler exceptions never propagate** | Last line of defense in wrapper |
+| **Auto-discovery** | Spring beans automatically registered |
+| **Idempotent wrapping** | Already-wrapped Actions not double-wrapped |
+| **Backward compatible** | Original APIs without exception handling preserved |
+
+### 7.11 COLA Action-First Principle (Reference)
+
+For reference, COLA StateMachine follows the **action-first principle** by default:
+1. Action executes **before** state change
+2. If action succeeds → state changes to target state
+3. If action fails → `StateMachineException` is thrown, state remains unchanged
+
+Our exception handling mechanism **overrides this behavior** by catching exceptions in the wrapper, allowing state transitions to continue regardless of Action failures. This is intentional for our use case where Action side effects (notifications, logging, downstream calls) should not block the core state flow.
 
 ---
 
@@ -547,7 +789,11 @@ public class ActionWorker {
 | Idempotency | Business layer pattern | Application code |
 | PlantUML generation | COLA built-in `generatePlantUML()` | statemachine-core |
 | Factory caching | Double-checked locking pattern | chat-engine/statemachine/factory |
-| Action-first error handling | COLA built-in | statemachine-core |
+| Action exception handling | `ExceptionHandlingAction` + handler registry | chat-engine/action/exception |
+| Exception types | Business/Downstream/System exceptions | chat-engine/action/exception |
+| Exception handlers | Priority-based handler chain | chat-engine/action/exception/handler |
+| Fallback handler | Catch-all handler for unhandled exceptions | chat-engine/action/exception/handler |
+| COLA action-first error handling | COLA built-in (overridden by our wrapper) | statemachine-core |
 | Failover | Business layer pattern | Application code |
 | Async action worker | Reserved utility class | chat-engine/action |
 
@@ -561,4 +807,4 @@ public class ActionWorker {
 
 ---
 
-*Last updated: 2026-09-05 (v3.0 — rewritten for Alibaba COLA StateMachine)*
+*Last updated: 2026-09-11 (v3.1 — added comprehensive Action exception handling mechanism with package refactoring)*

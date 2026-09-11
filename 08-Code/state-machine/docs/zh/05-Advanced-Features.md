@@ -402,57 +402,299 @@ class MyTest {
 
 ---
 
-## 7. Action-First 原则和错误处理
+## 7. Action 异常处理机制
 
 ### 问题
 
-当 Action 在状态转换期间抛出异常时会发生什么？
+当 Action 在状态转换期间抛出异常时，COLA 的默认行为（action-first 原则）会阻止状态变更并抛出 `StateMachineException`。但在许多生产场景中，我们希望：
+- 无论 Action 执行是否失败，状态转换都应继续
+- 针对不同异常类型（下游连接、业务、系统）有不同的处理策略
+- 开发者可以扩展自定义异常处理器
+- 未处理的异常有兜底处理器
+- 异常被记录和监控，但不阻塞状态机流程
 
 ### 解决方案
 
-COLA StateMachine 遵循 **action-first 原则**：
-1. Action 在状态变更**之前**执行
-2. 如果动作成功 → 状态变更为目标状态
-3. 如果动作失败 → 抛出 `StateMachineException`，状态保持不变
+一套完整的异常处理机制，使用 `ExceptionHandlingAction` 包装 Action，捕获所有异常并委托给基于优先级的 `ActionExceptionHandlerRegistry`。**重要的是，异常不会阻止状态转换**——无论 Action 执行是否失败，状态变更都会继续。
+
+### 7.1 包结构
+
+```
+com.selfdevelopment.chatengine.action.exception
+├── BusinessException.java              // 异常类型定义
+├── DownstreamConnectionException.java
+├── SystemException.java
+├── handler/                            // 异常处理器
+│   ├── ActionExceptionHandler.java          // 接口
+│   ├── BusinessExceptionHandler.java
+│   ├── DownstreamConnectionExceptionHandler.java
+│   ├── FallbackActionExceptionHandler.java
+│   └── SystemExceptionHandler.java
+├── registry/                           // 处理器注册表
+│   └── ActionExceptionHandlerRegistry.java
+└── wrapper/                            // Action 包装器
+    └── ExceptionHandlingAction.java
+```
+
+### 7.2 异常类型
+
+三种内置异常类型覆盖常见场景：
 
 ```java
-try {
-    ConversationState newState = sm.fireEvent(
-            ConversationState.IN_PROGRESS,
-            ConversationFact.CUSTOMER_CLOSE,
-            ctx);
-    // 状态成功变更
-} catch (StateMachineException e) {
-    // 动作失败或没有匹配的转换
-    // 状态保持 IN_PROGRESS
-    log.error("转换失败", e);
+// 下游系统连接失败（数据库、消息队列、外部API、Genesys/Aibot）
+public class DownstreamConnectionException extends RuntimeException {
+    private final String downstreamSystem;
+    private final String operation;
+}
 
-    // 业务层可以决定：重试、故障转移或告警
-    handleFailure(ctx, e);
+// 业务规则违反或预期的业务错误
+public class BusinessException extends RuntimeException {
+    private final String businessCode;
+    private final Map<String, Object> businessContext;
+}
+
+// 意外的系统错误（空指针、内存溢出等）
+public class SystemException extends RuntimeException {
+    private final String systemComponent;
+    private final String errorCategory;
 }
 ```
 
-### 故障转移模式（业务层）
-
-虽然 COLA 没有内置的故障转移状态机，但业务层可以实现一个：
+### 7.3 异常处理器接口
 
 ```java
-public ConversationState fireWithFailover(CbolStateContext ctx, ConversationFact event) {
-    try {
-        return sm.fireEvent(ctx.conversation().state(), event, ctx);
-    } catch (StateMachineException e) {
-        log.warn("主转换失败，尝试故障转移：{}", e.getMessage());
+public interface ActionExceptionHandler {
+    // 判断此处理器是否能处理该异常
+    boolean canHandle(Throwable ex);
 
-        // 尝试故障转移事件（例如，SYSTEM_ERROR）
+    // 自定义处理逻辑（告警、重试、降级、指标等）
+    void handle(Throwable ex, ConversationState from, ConversationState to,
+                ConversationFact fact, CbolStateContext ctx);
+
+    // 处理器优先级（越高越先检查），默认 0
+    default int getPriority() { return 0; }
+}
+```
+
+### 7.4 默认异常处理器
+
+| 处理器 | 优先级 | 处理类型 | 行为 |
+|--------|--------|----------|------|
+| `DownstreamConnectionExceptionHandler` | 100 | `DownstreamConnectionException` | 记录下游失败详情 |
+| `BusinessExceptionHandler` | 80 | `BusinessException` | 记录业务上下文和代码 |
+| `SystemExceptionHandler` | 50 | `SystemException` | 记录系统错误及堆栈 |
+| `FallbackActionExceptionHandler` | -100 | 所有异常（兜底） | 记录未处理异常详情 |
+
+### 7.5 异常处理器注册表
+
+自动发现所有 Spring 管理的 `ActionExceptionHandler` Bean，按优先级排序，并为每个异常找到第一个匹配的处理器。
+
+```java
+@Slf4j
+@Component
+public class ActionExceptionHandlerRegistry implements InitializingBean {
+    private final ApplicationContext applicationContext;
+    private final List<ActionExceptionHandler> handlers = new ArrayList<>();
+    private ActionExceptionHandler fallbackHandler;
+
+    @Override
+    public void afterPropertiesSet() {
+        // 自动发现所有处理器 Bean
+        var handlerBeans = applicationContext.getBeansOfType(ActionExceptionHandler.class);
+
+        for (var entry : handlerBeans.entrySet()) {
+            ActionExceptionHandler handler = entry.getValue();
+            if (handler instanceof FallbackActionExceptionHandler) {
+                this.fallbackHandler = handler;
+            } else {
+                handlers.add(handler);
+            }
+        }
+
+        // 按优先级排序（高优先级在前）
+        handlers.sort(Comparator.comparingInt(ActionExceptionHandler::getPriority).reversed());
+
+        // 确保兜底处理器存在
+        if (fallbackHandler == null) {
+            fallbackHandler = new FallbackActionExceptionHandler();
+        }
+    }
+
+    public void handleException(Throwable ex, ConversationState from, ConversationState to,
+                                ConversationFact fact, CbolStateContext ctx) {
+        // 按优先级查找第一个匹配的处理器
+        for (ActionExceptionHandler handler : handlers) {
+            if (handler.canHandle(ex)) {
+                try {
+                    handler.handle(ex, from, to, fact, ctx);
+                } catch (Exception handlerEx) {
+                    // 永远不让处理器异常传播
+                    log.error("异常处理器抛出异常", handlerEx);
+                }
+                return;
+            }
+        }
+
+        // 使用兜底处理器
         try {
-            return sm.fireEvent(ctx.conversation().state(), ConversationFact.SYSTEM_ERROR, ctx);
-        } catch (StateMachineException e2) {
-            log.error("故障转移也失败了", e2);
-            throw e2;
+            fallbackHandler.handle(ex, from, to, fact, ctx);
+        } catch (Exception handlerEx) {
+            log.error("兜底处理器抛出异常", handlerEx);
         }
     }
 }
 ```
+
+### 7.6 异常处理 Action 包装器
+
+用异常处理包装原始 Action。捕获所有异常（包括 Error），委托给注册表，并且**永远不重新抛出**——状态转换始终继续。
+
+```java
+@Slf4j
+public class ExceptionHandlingAction<S, E, C> implements Action<S, E, C> {
+    private final Action<S, E, C> delegate;
+    private final ActionExceptionHandlerRegistry exceptionHandlerRegistry;
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public void execute(S from, S to, E e, C ctx) {
+        try {
+            delegate.execute(from, to, e, ctx);
+        } catch (Throwable ex) {
+            // 捕获所有异常（包括 Error）
+            log.warn("Action 执行抛出异常: {}", ex.getClass().getSimpleName());
+
+            try {
+                exceptionHandlerRegistry.handleException(
+                        ex,
+                        (ConversationState) from,
+                        (ConversationState) to,
+                        (ConversationFact) e,
+                        (CbolStateContext) ctx
+                );
+            } catch (Throwable handlerEx) {
+                // 最后一道防线——永远不传播
+                log.error("异常处理器注册表抛出异常", handlerEx);
+            }
+
+            // 重要：不重新抛出异常——状态转换必须继续
+            log.debug("尽管 Action 异常，状态转换仍继续: {} -> {} on {}",
+                    from, to, e);
+        }
+    }
+
+    // 工厂方法——幂等（不会重复包装）
+    public static <S, E, C> Action<S, E, C> wrap(Action<S, E, C> action,
+                                                    ActionExceptionHandlerRegistry registry) {
+        if (action == null) return null;
+        if (action instanceof ExceptionHandlingAction) return action; // 已包装
+        return new ExceptionHandlingAction<>(action, registry);
+    }
+}
+```
+
+### 7.7 执行流程
+
+```mermaid
+sequenceDiagram
+    participant SM as COLA StateMachine
+    participant EHA as ExceptionHandlingAction
+    participant Original as 原始 Action
+    participant Registry as ActionExceptionHandlerRegistry
+    participant Handler as 匹配的处理器
+
+    SM->>EHA: execute(from, to, fact, ctx)
+    EHA->>Original: delegate.execute(from, to, fact, ctx)
+    Note over Original: 抛出 DownstreamConnectionException
+    Original-->>EHA: throw exception
+    EHA->>EHA: catch (Throwable ex)
+    EHA->>Registry: handleException(ex, from, to, fact, ctx)
+    Registry->>Handler: canHandle(ex)? → true
+    Registry->>Handler: handle(ex, from, to, fact, ctx)
+    Handler->>Handler: 记录日志/告警/指标
+    Handler-->>Registry: return
+    Registry-->>EHA: return
+    Note over EHA: 不重新抛出异常
+    EHA-->>SM: return（正常完成）
+    SM->>SM: 执行状态转换 from → to
+    SM-->>SM: 返回目标状态
+```
+
+### 7.8 自定义异常处理器示例
+
+开发者可以添加自定义异常处理器，无需修改现有代码：
+
+```java
+@Component
+public class MyCustomExceptionHandler implements ActionExceptionHandler {
+    @Override
+    public boolean canHandle(Throwable ex) {
+        return ex instanceof MyCustomException;
+    }
+
+    @Override
+    public void handle(Throwable ex, ConversationState from, ConversationState to,
+                       ConversationFact fact, CbolStateContext ctx) {
+        // 自定义逻辑：告警、重试、降级、指标等
+        log.error("自定义异常已处理: {}", ex.getMessage());
+    }
+
+    @Override
+    public int getPriority() {
+        return 200; // 高优先级——在默认处理器之前检查
+    }
+}
+```
+
+### 7.9 与 ConversationActionService 的集成
+
+`ConversationActionService` 自动用异常处理包装 Action：
+
+```java
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class ConversationActionService {
+    private final ConversationActionRegistry actionRegistry;
+    private final ActionExceptionHandlerRegistry exceptionHandlerRegistry;
+
+    // Spring 环境（推荐）——自动发现 + 异常处理
+    public StateMachine<ConversationState, ConversationFact, CbolStateContext> buildWithSpringActions() {
+        return buildWithRegistry(actionRegistry, exceptionHandlerRegistry);
+    }
+
+    // 用异常处理包装每个 Action
+    private static Action<...> wrapWithExceptionHandling(
+            Action<...> action,
+            ActionExceptionHandlerRegistry registry) {
+        if (action == null) return null;
+        if (action instanceof ExceptionHandlingAction) return action;
+        return new ExceptionHandlingAction<>(action, registry);
+    }
+}
+```
+
+### 7.10 关键设计原则
+
+| 原则 | 说明 |
+|------|------|
+| **状态转换永不阻塞** | 异常被处理，而不是传播；状态始终变更 |
+| **开闭原则** | 添加新异常处理器无需修改现有代码 |
+| **基于优先级** | 更具体的处理器（更高优先级）先检查 |
+| **兜底保证** | 每个异常都会被处理（至少由兜底处理器） |
+| **处理器异常永不传播** | 包装器中的最后一道防线 |
+| **自动发现** | Spring Bean 自动注册 |
+| **幂等包装** | 已包装的 Action 不会重复包装 |
+| **向后兼容** | 保留无异常处理的原始 API |
+
+### 7.11 COLA Action-First 原则（参考）
+
+作为参考，COLA StateMachine 默认遵循 **action-first 原则**：
+1. Action 在状态变更**之前**执行
+2. 如果动作成功 → 状态变更为目标状态
+3. 如果动作失败 → 抛出 `StateMachineException`，状态保持不变
+
+我们的异常处理机制**覆盖了此行为**，通过在包装器中捕获异常，允许状态转换无论 Action 失败与否都继续。这对于我们的用例是有意为之的，因为 Action 的副作用（通知、日志、下游调用）不应阻塞核心状态流。
 
 ---
 
@@ -547,7 +789,11 @@ public class ActionWorker {
 | 幂等性 | 业务层模式 | 应用代码 |
 | PlantUML 生成 | COLA 内置 `generatePlantUML()` | statemachine-core |
 | 工厂缓存 | 双重检查锁定模式 | chat-engine/statemachine/factory |
-| Action-first 错误处理 | COLA 内置 | statemachine-core |
+| Action 异常处理 | `ExceptionHandlingAction` + 处理器注册表 | chat-engine/action/exception |
+| 异常类型 | 业务/下游/系统异常 | chat-engine/action/exception |
+| 异常处理器 | 基于优先级的处理器链 | chat-engine/action/exception/handler |
+| 兜底处理器 | 用于未处理异常的 catch-all 处理器 | chat-engine/action/exception/handler |
+| COLA action-first 错误处理 | COLA 内置（被我们的包装器覆盖） | statemachine-core |
 | 故障转移 | 业务层模式 | 应用代码 |
 | 异步 Action Worker | 预留工具类 | chat-engine/action |
 
@@ -561,4 +807,4 @@ public class ActionWorker {
 
 ---
 
-*最后更新：2026-09-05（v3.0 — 为阿里巴巴 COLA StateMachine 重写）*
+*最后更新：2026-09-11（v3.1 — 新增完整的 Action 异常处理机制及包重构）*

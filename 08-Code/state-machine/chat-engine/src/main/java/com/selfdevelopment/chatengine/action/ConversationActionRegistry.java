@@ -1,6 +1,7 @@
 package com.selfdevelopment.chatengine.action;
 
 import com.alibaba.cola.statemachine.Action;
+import com.selfdevelopment.chatengine.action.annotation.HandlesFact;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;

@@ -1,5 +1,6 @@
 package com.selfdevelopment.chatengine.action.lifecycle;
 
+import com.selfdevelopment.chatengine.action.actions.lifecycle.SessionStartedAction;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
