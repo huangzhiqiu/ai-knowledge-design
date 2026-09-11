@@ -127,19 +127,32 @@ public class ConversationStateMachineFactory {
     }
 
     /**
-     * Builds the conversation state machine with injected Action instances.
+     * Builds the conversation state machine with an Action provider function.
      * <p>
-     * This method is designed for Spring dependency injection - it accepts a
-     * ConversationActions holder containing Spring-managed Action beans, allowing
-     * Actions to have their own dependencies (Repository, Service, etc.).
+     * This is the core construction method that all other build methods delegate to.
+     * It accepts a function that maps ConversationFact to the corresponding Action,
+     * making the code more intuitive and declarative.
      * <p>
-     * The state machine built by this method is NOT registered automatically.
-     * Caller should register it via StateMachineFactory.register() if needed.
+     * Usage:
+     * <pre>{@code
+     * // With Spring-managed registry
+     * buildWithActionProvider(actionRegistry::getAction);
      *
-     * @param actions the ConversationActions holder containing all Action instances
+     * // With explicit actions holder
+     * buildWithActionProvider(fact -> switch(fact) {
+     *     case SESSION_STARTED -> actions.sessionStartedAction;
+     *     // ...
+     * });
+     * }</pre>
+     *
+     * @param actionProvider function that maps ConversationFact to Action
      * @return the configured conversation state machine
+     * @throws NullPointerException if actionProvider is null
      */
-    public static StateMachine<ConversationState, ConversationFact, CbolStateContext> buildWithActions(ConversationActions actions) {
+    private static StateMachine<ConversationState, ConversationFact, CbolStateContext> buildWithActionProvider(
+            java.util.function.Function<ConversationFact, com.alibaba.cola.statemachine.Action<ConversationState, ConversationFact, CbolStateContext>> actionProvider) {
+        java.util.Objects.requireNonNull(actionProvider, "actionProvider must not be null");
+
         StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> builder =
                 StateMachineBuilderFactory.create();
 
@@ -151,27 +164,27 @@ public class ConversationStateMachineFactory {
                 .from(ConversationState.NEW)
                 .to(ConversationState.INITIATED)
                 .on(ConversationFact.SESSION_STARTED)
-                .perform(actions.sessionStartedAction);
+                .perform(actionProvider.apply(ConversationFact.SESSION_STARTED));
 
         // INITIATED → ACTIVE: interaction became active (InteractionState=CONNECTED)
         builder.externalTransition()
                 .from(ConversationState.INITIATED)
                 .to(ConversationState.ACTIVE)
                 .on(ConversationFact.INTERACTION_BECAME_ACTIVE)
-                .perform(actions.interactionBecameActiveAction);
+                .perform(actionProvider.apply(ConversationFact.INTERACTION_BECAME_ACTIVE));
 
         // ACTIVE → IN_PROGRESS: inbound message received
         builder.externalTransition()
                 .from(ConversationState.ACTIVE)
                 .to(ConversationState.IN_PROGRESS)
                 .on(ConversationFact.INBOUND_MESSAGE_RECEIVED)
-                .perform(actions.inboundMessageReceivedAction);
+                .perform(actionProvider.apply(ConversationFact.INBOUND_MESSAGE_RECEIVED));
 
         // INITIATED → INITIATED: downstream unavailable (stay, notify)
         builder.internalTransition()
                 .within(ConversationState.INITIATED)
                 .on(ConversationFact.DOWNSTREAM_UNAVAILABLE)
-                .perform(actions.downstreamUnavailableAction);
+                .perform(actionProvider.apply(ConversationFact.DOWNSTREAM_UNAVAILABLE));
 
         // ===== 5.2 CROSS-CHANNEL TRANSFER (TRANSFERRED, 180s deadline) =====
         // Latest policy: transfer failure/timeout does NOT rollback, Conversation returns directly to INITIATED
@@ -181,34 +194,34 @@ public class ConversationStateMachineFactory {
                 .from(ConversationState.IN_PROGRESS)
                 .to(ConversationState.TRANSFERRED)
                 .on(ConversationFact.SOURCE_INTERACTION_TRANSFERRED)
-                .perform(actions.sourceInteractionTransferredAction);
+                .perform(actionProvider.apply(ConversationFact.SOURCE_INTERACTION_TRANSFERRED));
 
         // TRANSFERRED → TRANSFERRED (internal): target interaction initiated
         builder.internalTransition()
                 .within(ConversationState.TRANSFERRED)
                 .on(ConversationFact.TARGET_INTERACTION_INITIATED)
-                .perform(actions.targetInteractionInitiatedAction);
+                .perform(actionProvider.apply(ConversationFact.TARGET_INTERACTION_INITIATED));
 
         // TRANSFERRED → ACTIVE: target interaction connected (no rollback)
         builder.externalTransition()
                 .from(ConversationState.TRANSFERRED)
                 .to(ConversationState.ACTIVE)
                 .on(ConversationFact.TARGET_INTERACTION_CONNECTED)
-                .perform(actions.targetInteractionConnectedAction);
+                .perform(actionProvider.apply(ConversationFact.TARGET_INTERACTION_CONNECTED));
 
         // TRANSFERRED → INITIATED: target connect failed (no rollback, re-route/fallback)
         builder.externalTransition()
                 .from(ConversationState.TRANSFERRED)
                 .to(ConversationState.INITIATED)
                 .on(ConversationFact.TARGET_INTERACTION_CONNECT_FAILED)
-                .perform(actions.targetInteractionConnectFailedAction);
+                .perform(actionProvider.apply(ConversationFact.TARGET_INTERACTION_CONNECT_FAILED));
 
         // TRANSFERRED → INITIATED: transfer timeout (>=180s, no rollback, re-route/fallback)
         builder.externalTransition()
                 .from(ConversationState.TRANSFERRED)
                 .to(ConversationState.INITIATED)
                 .on(ConversationFact.TRANSFER_TIMEOUT)
-                .perform(actions.transferTimeoutAction);
+                .perform(actionProvider.apply(ConversationFact.TRANSFER_TIMEOUT));
 
         // ===== 5.3 ENTER ENDING (unified convergence entry) =====
 
@@ -218,7 +231,7 @@ public class ConversationStateMachineFactory {
                         ConversationState.IN_PROGRESS, ConversationState.TRANSFERRED)
                 .to(ConversationState.ENDING)
                 .on(ConversationFact.ENDING_STARTED)
-                .perform(actions.endingStartedAction);
+                .perform(actionProvider.apply(ConversationFact.ENDING_STARTED));
 
         // ANY(except CLOSED) → ENDING: system error (endReason=SYSTEM_ERROR, trigger ending actions)
         builder.externalTransitions()
@@ -226,7 +239,7 @@ public class ConversationStateMachineFactory {
                         ConversationState.IN_PROGRESS, ConversationState.TRANSFERRED)
                 .to(ConversationState.ENDING)
                 .on(ConversationFact.SYSTEM_ERROR)
-                .perform(actions.systemErrorAction);
+                .perform(actionProvider.apply(ConversationFact.SYSTEM_ERROR));
 
         // ===== 5.4 CUSTOMER IDLE (ideal rule: full coverage enter ENDING, reason=customer idle) =====
 
@@ -236,7 +249,7 @@ public class ConversationStateMachineFactory {
                         ConversationState.IN_PROGRESS, ConversationState.TRANSFERRED)
                 .to(ConversationState.ENDING)
                 .on(ConversationFact.CUSTOMER_IDLE_TIMEOUT)
-                .perform(actions.customerIdleTimeoutAction);
+                .perform(actionProvider.apply(ConversationFact.CUSTOMER_IDLE_TIMEOUT));
 
         // ENDING → ENDING (internal): customer idle timeout (no-op, can confirm reason=customer idle)
         builder.internalTransition()
@@ -253,20 +266,20 @@ public class ConversationStateMachineFactory {
         builder.internalTransition()
                 .within(ConversationState.ENDING)
                 .on(ConversationFact.ENDING_ACTIONS_COMPLETED)
-                .perform(actions.endingActionsCompletedAction);
+                .perform(actionProvider.apply(ConversationFact.ENDING_ACTIONS_COMPLETED));
 
         // ENDING → ENDING (internal): all interactions ended (set interactionsClosed=true; if endingActionsDone=true then CLOSED)
         builder.internalTransition()
                 .within(ConversationState.ENDING)
                 .on(ConversationFact.ALL_INTERACTIONS_ENDED)
-                .perform(actions.allInteractionsEndedAction);
+                .perform(actionProvider.apply(ConversationFact.ALL_INTERACTIONS_ENDED));
 
         // ENDING → CLOSED: ending timeout (forced close, record alert reason)
         builder.externalTransition()
                 .from(ConversationState.ENDING)
                 .to(ConversationState.CLOSED)
                 .on(ConversationFact.ENDING_TIMEOUT)
-                .perform(actions.endingTimeoutAction);
+                .perform(actionProvider.apply(ConversationFact.ENDING_TIMEOUT));
 
         // ===== 7.4 SURVEY FIELD-BASED (no longer SURVEY state, handled in ENDING) =====
         // Survey events are internal transitions in ENDING (no-op, update surveyStatus field)
@@ -275,19 +288,19 @@ public class ConversationStateMachineFactory {
         builder.internalTransition()
                 .within(ConversationState.ENDING)
                 .on(ConversationFact.SURVEY_SUBMITTED)
-                .perform(actions.surveySubmittedAction);
+                .perform(actionProvider.apply(ConversationFact.SURVEY_SUBMITTED));
 
         // ENDING → ENDING (internal): survey timeout (surveyStatus=TIMEOUT, endReason=CUSTOMER_IDLE)
         builder.internalTransition()
                 .within(ConversationState.ENDING)
                 .on(ConversationFact.SURVEY_TIMEOUT)
-                .perform(actions.surveyTimeoutAction);
+                .perform(actionProvider.apply(ConversationFact.SURVEY_TIMEOUT));
 
         // ENDING → ENDING (internal): survey skipped (surveyStatus=SKIPPED)
         builder.internalTransition()
                 .within(ConversationState.ENDING)
                 .on(ConversationFact.SURVEY_SKIPPED)
-                .perform(actions.surveySkippedAction);
+                .perform(actionProvider.apply(ConversationFact.SURVEY_SKIPPED));
 
         // ===== GENESYS SAME-CHANNEL / CONSULT (conversation no-op) =====
         // These events are handled at the Interaction level, Conversation state machine treats them as no-op
@@ -297,43 +310,43 @@ public class ConversationStateMachineFactory {
         builder.internalTransition()
                 .within(ConversationState.ACTIVE)
                 .on(ConversationFact.GENESYS_CONSULT_TRANSFER_STARTED)
-                .perform(actions.consultTransferStartedAction);
+                .perform(actionProvider.apply(ConversationFact.GENESYS_CONSULT_TRANSFER_STARTED));
 
         // ACTIVE → ACTIVE (internal): Genesys consult transfer ended (no-op at conversation level, record audit)
         builder.internalTransition()
                 .within(ConversationState.ACTIVE)
                 .on(ConversationFact.GENESYS_CONSULT_TRANSFER_ENDED)
-                .perform(actions.consultTransferEndedAction);
+                .perform(actionProvider.apply(ConversationFact.GENESYS_CONSULT_TRANSFER_ENDED));
 
         // IN_PROGRESS → IN_PROGRESS (internal): Genesys consult transfer started (no-op at conversation level, record audit)
         builder.internalTransition()
                 .within(ConversationState.IN_PROGRESS)
                 .on(ConversationFact.GENESYS_CONSULT_TRANSFER_STARTED)
-                .perform(actions.consultTransferStartedAction);
+                .perform(actionProvider.apply(ConversationFact.GENESYS_CONSULT_TRANSFER_STARTED));
 
         // IN_PROGRESS → IN_PROGRESS (internal): Genesys consult transfer ended (no-op at conversation level, record audit)
         builder.internalTransition()
                 .within(ConversationState.IN_PROGRESS)
                 .on(ConversationFact.GENESYS_CONSULT_TRANSFER_ENDED)
-                .perform(actions.consultTransferEndedAction);
+                .perform(actionProvider.apply(ConversationFact.GENESYS_CONSULT_TRANSFER_ENDED));
 
         // IN_PROGRESS → IN_PROGRESS (internal): Genesys agent transfer started (no-op at conversation level, record audit)
         builder.internalTransition()
                 .within(ConversationState.IN_PROGRESS)
                 .on(ConversationFact.GENESYS_AGENT_TRANSFER_STARTED)
-                .perform(actions.agentTransferStartedAction);
+                .perform(actionProvider.apply(ConversationFact.GENESYS_AGENT_TRANSFER_STARTED));
 
         // IN_PROGRESS → IN_PROGRESS (internal): Genesys agent transfer completed (no-op at conversation level, record audit)
         builder.internalTransition()
                 .within(ConversationState.IN_PROGRESS)
                 .on(ConversationFact.GENESYS_AGENT_TRANSFER_COMPLETED)
-                .perform(actions.agentTransferCompletedAction);
+                .perform(actionProvider.apply(ConversationFact.GENESYS_AGENT_TRANSFER_COMPLETED));
 
         // IN_PROGRESS → IN_PROGRESS (internal): Genesys agent transfer failed (no-op at conversation level, record audit)
         builder.internalTransition()
                 .within(ConversationState.IN_PROGRESS)
                 .on(ConversationFact.GENESYS_AGENT_TRANSFER_FAILED)
-                .perform(actions.agentTransferFailedAction);
+                .perform(actionProvider.apply(ConversationFact.GENESYS_AGENT_TRANSFER_FAILED));
 
         return builder.build(MACHINE_ID);
     }
@@ -356,34 +369,52 @@ public class ConversationStateMachineFactory {
     public static StateMachine<ConversationState, ConversationFact, CbolStateContext> buildWithRegistry(
             com.selfdevelopment.chatengine.action.ConversationActionRegistry registry) {
         java.util.Objects.requireNonNull(registry, "registry must not be null");
+        return buildWithActionProvider(registry::getAction);
+    }
 
-        ConversationActions actions = new ConversationActions(
-                (SessionStartedAction) registry.getRequiredAction(ConversationFact.SESSION_STARTED),
-                (InteractionBecameActiveAction) registry.getRequiredAction(ConversationFact.INTERACTION_BECAME_ACTIVE),
-                (InboundMessageReceivedAction) registry.getRequiredAction(ConversationFact.INBOUND_MESSAGE_RECEIVED),
-                (SourceInteractionTransferredAction) registry.getRequiredAction(ConversationFact.SOURCE_INTERACTION_TRANSFERRED),
-                (TargetInteractionInitiatedAction) registry.getRequiredAction(ConversationFact.TARGET_INTERACTION_INITIATED),
-                (TargetInteractionConnectedAction) registry.getRequiredAction(ConversationFact.TARGET_INTERACTION_CONNECTED),
-                (TargetInteractionConnectFailedAction) registry.getRequiredAction(ConversationFact.TARGET_INTERACTION_CONNECT_FAILED),
-                (TransferTimeoutAction) registry.getRequiredAction(ConversationFact.TRANSFER_TIMEOUT),
-                (EndingStartedAction) registry.getRequiredAction(ConversationFact.ENDING_STARTED),
-                (EndingTimeoutAction) registry.getRequiredAction(ConversationFact.ENDING_TIMEOUT),
-                (AllInteractionsEndedAction) registry.getRequiredAction(ConversationFact.ALL_INTERACTIONS_ENDED),
-                (EndingActionsCompletedAction) registry.getRequiredAction(ConversationFact.ENDING_ACTIONS_COMPLETED),
-                (SurveySubmittedAction) registry.getRequiredAction(ConversationFact.SURVEY_SUBMITTED),
-                (SurveyTimeoutAction) registry.getRequiredAction(ConversationFact.SURVEY_TIMEOUT),
-                (SurveySkippedAction) registry.getRequiredAction(ConversationFact.SURVEY_SKIPPED),
-                (ConsultTransferStartedAction) registry.getRequiredAction(ConversationFact.GENESYS_CONSULT_TRANSFER_STARTED),
-                (ConsultTransferEndedAction) registry.getRequiredAction(ConversationFact.GENESYS_CONSULT_TRANSFER_ENDED),
-                (AgentTransferStartedAction) registry.getRequiredAction(ConversationFact.GENESYS_AGENT_TRANSFER_STARTED),
-                (AgentTransferCompletedAction) registry.getRequiredAction(ConversationFact.GENESYS_AGENT_TRANSFER_COMPLETED),
-                (AgentTransferFailedAction) registry.getRequiredAction(ConversationFact.GENESYS_AGENT_TRANSFER_FAILED),
-                (CustomerIdleTimeoutAction) registry.getRequiredAction(ConversationFact.CUSTOMER_IDLE_TIMEOUT),
-                (SystemErrorAction) registry.getRequiredAction(ConversationFact.SYSTEM_ERROR),
-                (DownstreamUnavailableAction) registry.getRequiredAction(ConversationFact.DOWNSTREAM_UNAVAILABLE)
-        );
-
-        return buildWithActions(actions);
+    /**
+     * Builds the conversation state machine with injected Action instances.
+     * <p>
+     * This method is designed for Spring dependency injection - it accepts a
+     * ConversationActions holder containing Spring-managed Action beans, allowing
+     * Actions to have their own dependencies (Repository, Service, etc.).
+     * <p>
+     * The state machine built by this method is NOT registered automatically.
+     * Caller should register it via StateMachineFactory.register() if needed.
+     *
+     * @param actions the ConversationActions holder containing all Action instances
+     * @return the configured conversation state machine
+     * @throws NullPointerException if actions is null
+     */
+    public static StateMachine<ConversationState, ConversationFact, CbolStateContext> buildWithActions(ConversationActions actions) {
+        java.util.Objects.requireNonNull(actions, "actions must not be null");
+        return buildWithActionProvider(fact -> {
+            return switch (fact) {
+                case SESSION_STARTED -> actions.sessionStartedAction;
+                case INTERACTION_BECAME_ACTIVE -> actions.interactionBecameActiveAction;
+                case INBOUND_MESSAGE_RECEIVED -> actions.inboundMessageReceivedAction;
+                case SOURCE_INTERACTION_TRANSFERRED -> actions.sourceInteractionTransferredAction;
+                case TARGET_INTERACTION_INITIATED -> actions.targetInteractionInitiatedAction;
+                case TARGET_INTERACTION_CONNECTED -> actions.targetInteractionConnectedAction;
+                case TARGET_INTERACTION_CONNECT_FAILED -> actions.targetInteractionConnectFailedAction;
+                case TRANSFER_TIMEOUT -> actions.transferTimeoutAction;
+                case ENDING_STARTED -> actions.endingStartedAction;
+                case ENDING_TIMEOUT -> actions.endingTimeoutAction;
+                case ALL_INTERACTIONS_ENDED -> actions.allInteractionsEndedAction;
+                case ENDING_ACTIONS_COMPLETED -> actions.endingActionsCompletedAction;
+                case SURVEY_SUBMITTED -> actions.surveySubmittedAction;
+                case SURVEY_TIMEOUT -> actions.surveyTimeoutAction;
+                case SURVEY_SKIPPED -> actions.surveySkippedAction;
+                case GENESYS_CONSULT_TRANSFER_STARTED -> actions.consultTransferStartedAction;
+                case GENESYS_CONSULT_TRANSFER_ENDED -> actions.consultTransferEndedAction;
+                case GENESYS_AGENT_TRANSFER_STARTED -> actions.agentTransferStartedAction;
+                case GENESYS_AGENT_TRANSFER_COMPLETED -> actions.agentTransferCompletedAction;
+                case GENESYS_AGENT_TRANSFER_FAILED -> actions.agentTransferFailedAction;
+                case CUSTOMER_IDLE_TIMEOUT -> actions.customerIdleTimeoutAction;
+                case SYSTEM_ERROR -> actions.systemErrorAction;
+                case DOWNSTREAM_UNAVAILABLE -> actions.downstreamUnavailableAction;
+            };
+        });
     }
 
     /**
