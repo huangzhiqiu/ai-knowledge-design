@@ -1,10 +1,12 @@
 package com.selfdevelopment.chatengine.statemachine.factory;
 
 import com.alibaba.cola.statemachine.Action;
+import com.alibaba.cola.statemachine.Condition;
 import com.alibaba.cola.statemachine.StateMachine;
 import com.alibaba.cola.statemachine.StateMachineFactory;
 import com.alibaba.cola.statemachine.builder.StateMachineBuilder;
 import com.alibaba.cola.statemachine.builder.StateMachineBuilderFactory;
+import com.selfdevelopment.chatengine.action.ConditionalAction;
 import com.selfdevelopment.chatengine.action.ConversationActionRegistry;
 import com.selfdevelopment.chatengine.action.ConversationActionService;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
@@ -159,6 +161,20 @@ public class ConversationStateMachineFactory {
         StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> builder =
                 StateMachineBuilderFactory.create();
 
+        // Default condition that always returns true (for Actions without conditions)
+        Condition<CbolStateContext> alwaysTrue = ctx -> true;
+
+        // Helper: extract condition from action if it implements ConditionalAction
+        Function<ConversationFact, Condition<CbolStateContext>> conditionProvider = fact -> {
+            Action<ConversationState, ConversationFact, CbolStateContext> action = actionProvider.apply(fact);
+            if (action instanceof ConditionalAction) {
+                Condition<CbolStateContext> condition =
+                        ((ConditionalAction<ConversationState, ConversationFact, CbolStateContext>) action).getCondition();
+                return condition != null ? condition : alwaysTrue;
+            }
+            return alwaysTrue; // No condition, action always executes
+        };
+
         // ===== 5.1 BASIC LIFECYCLE =====
         // COLA API order: from → to → on → when → perform
 
@@ -167,6 +183,7 @@ public class ConversationStateMachineFactory {
                 .from(ConversationState.NEW)
                 .to(ConversationState.INITIATED)
                 .on(ConversationFact.SESSION_STARTED)
+                .when(conditionProvider.apply(ConversationFact.SESSION_STARTED))
                 .perform(actionProvider.apply(ConversationFact.SESSION_STARTED));
 
         // INITIATED → ACTIVE: interaction became active (InteractionState=CONNECTED)
@@ -174,6 +191,7 @@ public class ConversationStateMachineFactory {
                 .from(ConversationState.INITIATED)
                 .to(ConversationState.ACTIVE)
                 .on(ConversationFact.INTERACTION_BECAME_ACTIVE)
+                .when(conditionProvider.apply(ConversationFact.INTERACTION_BECAME_ACTIVE))
                 .perform(actionProvider.apply(ConversationFact.INTERACTION_BECAME_ACTIVE));
 
         // ACTIVE → IN_PROGRESS: inbound message received
@@ -181,12 +199,14 @@ public class ConversationStateMachineFactory {
                 .from(ConversationState.ACTIVE)
                 .to(ConversationState.IN_PROGRESS)
                 .on(ConversationFact.INBOUND_MESSAGE_RECEIVED)
+                .when(conditionProvider.apply(ConversationFact.INBOUND_MESSAGE_RECEIVED))
                 .perform(actionProvider.apply(ConversationFact.INBOUND_MESSAGE_RECEIVED));
 
         // INITIATED → INITIATED: downstream unavailable (stay, notify)
         builder.internalTransition()
                 .within(ConversationState.INITIATED)
                 .on(ConversationFact.DOWNSTREAM_UNAVAILABLE)
+                .when(conditionProvider.apply(ConversationFact.DOWNSTREAM_UNAVAILABLE))
                 .perform(actionProvider.apply(ConversationFact.DOWNSTREAM_UNAVAILABLE));
 
         // ===== 5.2 CROSS-CHANNEL TRANSFER (TRANSFERRED, 180s deadline) =====
@@ -197,12 +217,14 @@ public class ConversationStateMachineFactory {
                 .from(ConversationState.IN_PROGRESS)
                 .to(ConversationState.TRANSFERRED)
                 .on(ConversationFact.SOURCE_INTERACTION_TRANSFERRED)
+                .when(conditionProvider.apply(ConversationFact.SOURCE_INTERACTION_TRANSFERRED))
                 .perform(actionProvider.apply(ConversationFact.SOURCE_INTERACTION_TRANSFERRED));
 
         // TRANSFERRED → TRANSFERRED (internal): target interaction initiated
         builder.internalTransition()
                 .within(ConversationState.TRANSFERRED)
                 .on(ConversationFact.TARGET_INTERACTION_INITIATED)
+                .when(conditionProvider.apply(ConversationFact.TARGET_INTERACTION_INITIATED))
                 .perform(actionProvider.apply(ConversationFact.TARGET_INTERACTION_INITIATED));
 
         // TRANSFERRED → ACTIVE: target interaction connected (no rollback)
@@ -210,6 +232,7 @@ public class ConversationStateMachineFactory {
                 .from(ConversationState.TRANSFERRED)
                 .to(ConversationState.ACTIVE)
                 .on(ConversationFact.TARGET_INTERACTION_CONNECTED)
+                .when(conditionProvider.apply(ConversationFact.TARGET_INTERACTION_CONNECTED))
                 .perform(actionProvider.apply(ConversationFact.TARGET_INTERACTION_CONNECTED));
 
         // TRANSFERRED → INITIATED: target connect failed (no rollback, re-route/fallback)
@@ -217,6 +240,7 @@ public class ConversationStateMachineFactory {
                 .from(ConversationState.TRANSFERRED)
                 .to(ConversationState.INITIATED)
                 .on(ConversationFact.TARGET_INTERACTION_CONNECT_FAILED)
+                .when(conditionProvider.apply(ConversationFact.TARGET_INTERACTION_CONNECT_FAILED))
                 .perform(actionProvider.apply(ConversationFact.TARGET_INTERACTION_CONNECT_FAILED));
 
         // TRANSFERRED → INITIATED: transfer timeout (>=180s, no rollback, re-route/fallback)
@@ -224,6 +248,7 @@ public class ConversationStateMachineFactory {
                 .from(ConversationState.TRANSFERRED)
                 .to(ConversationState.INITIATED)
                 .on(ConversationFact.TRANSFER_TIMEOUT)
+                .when(conditionProvider.apply(ConversationFact.TRANSFER_TIMEOUT))
                 .perform(actionProvider.apply(ConversationFact.TRANSFER_TIMEOUT));
 
         // ===== 5.3 ENTER ENDING (unified convergence entry) =====
@@ -234,6 +259,7 @@ public class ConversationStateMachineFactory {
                         ConversationState.IN_PROGRESS, ConversationState.TRANSFERRED)
                 .to(ConversationState.ENDING)
                 .on(ConversationFact.ENDING_STARTED)
+                .when(conditionProvider.apply(ConversationFact.ENDING_STARTED))
                 .perform(actionProvider.apply(ConversationFact.ENDING_STARTED));
 
         // ANY(except CLOSED) → ENDING: system error (endReason=SYSTEM_ERROR, trigger ending actions)
@@ -242,6 +268,7 @@ public class ConversationStateMachineFactory {
                         ConversationState.IN_PROGRESS, ConversationState.TRANSFERRED)
                 .to(ConversationState.ENDING)
                 .on(ConversationFact.SYSTEM_ERROR)
+                .when(conditionProvider.apply(ConversationFact.SYSTEM_ERROR))
                 .perform(actionProvider.apply(ConversationFact.SYSTEM_ERROR));
 
         // ===== 5.4 CUSTOMER IDLE (ideal rule: full coverage enter ENDING, reason=customer idle) =====
@@ -252,12 +279,14 @@ public class ConversationStateMachineFactory {
                         ConversationState.IN_PROGRESS, ConversationState.TRANSFERRED)
                 .to(ConversationState.ENDING)
                 .on(ConversationFact.CUSTOMER_IDLE_TIMEOUT)
+                .when(conditionProvider.apply(ConversationFact.CUSTOMER_IDLE_TIMEOUT))
                 .perform(actionProvider.apply(ConversationFact.CUSTOMER_IDLE_TIMEOUT));
 
         // ENDING → ENDING (internal): customer idle timeout (no-op, can confirm reason=customer idle)
         builder.internalTransition()
                 .within(ConversationState.ENDING)
-                .on(ConversationFact.CUSTOMER_IDLE_TIMEOUT);
+                .on(ConversationFact.CUSTOMER_IDLE_TIMEOUT)
+                .when(conditionProvider.apply(ConversationFact.CUSTOMER_IDLE_TIMEOUT));
 
         // ===== 7.2 ENDING CONVERGENCE RULES (two conditions + timeout forced) =====
         // endingActionsDone=true (ENDING_ACTIONS_COMPLETED)
@@ -269,12 +298,14 @@ public class ConversationStateMachineFactory {
         builder.internalTransition()
                 .within(ConversationState.ENDING)
                 .on(ConversationFact.ENDING_ACTIONS_COMPLETED)
+                .when(conditionProvider.apply(ConversationFact.ENDING_ACTIONS_COMPLETED))
                 .perform(actionProvider.apply(ConversationFact.ENDING_ACTIONS_COMPLETED));
 
         // ENDING → ENDING (internal): all interactions ended (set interactionsClosed=true; if endingActionsDone=true then CLOSED)
         builder.internalTransition()
                 .within(ConversationState.ENDING)
                 .on(ConversationFact.ALL_INTERACTIONS_ENDED)
+                .when(conditionProvider.apply(ConversationFact.ALL_INTERACTIONS_ENDED))
                 .perform(actionProvider.apply(ConversationFact.ALL_INTERACTIONS_ENDED));
 
         // ENDING → CLOSED: ending timeout (forced close, record alert reason)
@@ -282,6 +313,7 @@ public class ConversationStateMachineFactory {
                 .from(ConversationState.ENDING)
                 .to(ConversationState.CLOSED)
                 .on(ConversationFact.ENDING_TIMEOUT)
+                .when(conditionProvider.apply(ConversationFact.ENDING_TIMEOUT))
                 .perform(actionProvider.apply(ConversationFact.ENDING_TIMEOUT));
 
         // ===== 7.4 SURVEY FIELD-BASED (no longer SURVEY state, handled in ENDING) =====
@@ -291,18 +323,21 @@ public class ConversationStateMachineFactory {
         builder.internalTransition()
                 .within(ConversationState.ENDING)
                 .on(ConversationFact.SURVEY_SUBMITTED)
+                .when(conditionProvider.apply(ConversationFact.SURVEY_SUBMITTED))
                 .perform(actionProvider.apply(ConversationFact.SURVEY_SUBMITTED));
 
         // ENDING → ENDING (internal): survey timeout (surveyStatus=TIMEOUT, endReason=CUSTOMER_IDLE)
         builder.internalTransition()
                 .within(ConversationState.ENDING)
                 .on(ConversationFact.SURVEY_TIMEOUT)
+                .when(conditionProvider.apply(ConversationFact.SURVEY_TIMEOUT))
                 .perform(actionProvider.apply(ConversationFact.SURVEY_TIMEOUT));
 
         // ENDING → ENDING (internal): survey skipped (surveyStatus=SKIPPED)
         builder.internalTransition()
                 .within(ConversationState.ENDING)
                 .on(ConversationFact.SURVEY_SKIPPED)
+                .when(conditionProvider.apply(ConversationFact.SURVEY_SKIPPED))
                 .perform(actionProvider.apply(ConversationFact.SURVEY_SKIPPED));
 
         // ===== GENESYS SAME-CHANNEL / CONSULT (conversation no-op) =====
@@ -313,42 +348,49 @@ public class ConversationStateMachineFactory {
         builder.internalTransition()
                 .within(ConversationState.ACTIVE)
                 .on(ConversationFact.GENESYS_CONSULT_TRANSFER_STARTED)
+                .when(conditionProvider.apply(ConversationFact.GENESYS_CONSULT_TRANSFER_STARTED))
                 .perform(actionProvider.apply(ConversationFact.GENESYS_CONSULT_TRANSFER_STARTED));
 
         // ACTIVE → ACTIVE (internal): Genesys consult transfer ended (no-op at conversation level, record audit)
         builder.internalTransition()
                 .within(ConversationState.ACTIVE)
                 .on(ConversationFact.GENESYS_CONSULT_TRANSFER_ENDED)
+                .when(conditionProvider.apply(ConversationFact.GENESYS_CONSULT_TRANSFER_ENDED))
                 .perform(actionProvider.apply(ConversationFact.GENESYS_CONSULT_TRANSFER_ENDED));
 
         // IN_PROGRESS → IN_PROGRESS (internal): Genesys consult transfer started (no-op at conversation level, record audit)
         builder.internalTransition()
                 .within(ConversationState.IN_PROGRESS)
                 .on(ConversationFact.GENESYS_CONSULT_TRANSFER_STARTED)
+                .when(conditionProvider.apply(ConversationFact.GENESYS_CONSULT_TRANSFER_STARTED))
                 .perform(actionProvider.apply(ConversationFact.GENESYS_CONSULT_TRANSFER_STARTED));
 
         // IN_PROGRESS → IN_PROGRESS (internal): Genesys consult transfer ended (no-op at conversation level, record audit)
         builder.internalTransition()
                 .within(ConversationState.IN_PROGRESS)
                 .on(ConversationFact.GENESYS_CONSULT_TRANSFER_ENDED)
+                .when(conditionProvider.apply(ConversationFact.GENESYS_CONSULT_TRANSFER_ENDED))
                 .perform(actionProvider.apply(ConversationFact.GENESYS_CONSULT_TRANSFER_ENDED));
 
         // IN_PROGRESS → IN_PROGRESS (internal): Genesys agent transfer started (no-op at conversation level, record audit)
         builder.internalTransition()
                 .within(ConversationState.IN_PROGRESS)
                 .on(ConversationFact.GENESYS_AGENT_TRANSFER_STARTED)
+                .when(conditionProvider.apply(ConversationFact.GENESYS_AGENT_TRANSFER_STARTED))
                 .perform(actionProvider.apply(ConversationFact.GENESYS_AGENT_TRANSFER_STARTED));
 
         // IN_PROGRESS → IN_PROGRESS (internal): Genesys agent transfer completed (no-op at conversation level, record audit)
         builder.internalTransition()
                 .within(ConversationState.IN_PROGRESS)
                 .on(ConversationFact.GENESYS_AGENT_TRANSFER_COMPLETED)
+                .when(conditionProvider.apply(ConversationFact.GENESYS_AGENT_TRANSFER_COMPLETED))
                 .perform(actionProvider.apply(ConversationFact.GENESYS_AGENT_TRANSFER_COMPLETED));
 
         // IN_PROGRESS → IN_PROGRESS (internal): Genesys agent transfer failed (no-op at conversation level, record audit)
         builder.internalTransition()
                 .within(ConversationState.IN_PROGRESS)
                 .on(ConversationFact.GENESYS_AGENT_TRANSFER_FAILED)
+                .when(conditionProvider.apply(ConversationFact.GENESYS_AGENT_TRANSFER_FAILED))
                 .perform(actionProvider.apply(ConversationFact.GENESYS_AGENT_TRANSFER_FAILED));
 
         return builder.build(machineId);

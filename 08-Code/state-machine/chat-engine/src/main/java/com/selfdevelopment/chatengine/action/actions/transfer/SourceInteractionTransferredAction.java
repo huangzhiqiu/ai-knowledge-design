@@ -1,6 +1,8 @@
 package com.selfdevelopment.chatengine.action.actions.transfer;
 
 import com.alibaba.cola.statemachine.Action;
+import com.alibaba.cola.statemachine.Condition;
+import com.selfdevelopment.chatengine.action.ConditionalAction;
 import com.selfdevelopment.chatengine.action.annotation.HandlesFact;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
@@ -18,11 +20,24 @@ import org.springframework.stereotype.Component;
  *   <li>Detaches source interaction</li>
  *   <li>Initiates target interaction connection</li>
  * </ul>
+ * <p>
+ * Condition: Requires transfer to be enabled in market configuration.
  */
 @Slf4j
 @Component
 @HandlesFact(ConversationFact.SOURCE_INTERACTION_TRANSFERRED)
-public class SourceInteractionTransferredAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
+public class SourceInteractionTransferredAction implements ConditionalAction<ConversationState, ConversationFact, CbolStateContext> {
+
+    @Override
+    public Condition<CbolStateContext> getCondition() {
+        return ctx -> {
+            if (ctx == null || ctx.conversation() == null) {
+                log.warn("SourceInteractionTransferredAction condition failed: context or conversation is null");
+                return false;
+            }
+            return true;
+        };
+    }
 
     @Override
     public void execute(ConversationState from, ConversationState to, ConversationFact event, CbolStateContext ctx) {

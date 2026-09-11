@@ -1,6 +1,8 @@
 package com.selfdevelopment.chatengine.action.actions.lifecycle;
 
 import com.alibaba.cola.statemachine.Action;
+import com.alibaba.cola.statemachine.Condition;
+import com.selfdevelopment.chatengine.action.ConditionalAction;
 import com.selfdevelopment.chatengine.action.annotation.HandlesFact;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
@@ -18,11 +20,32 @@ import org.springframework.stereotype.Component;
  *   <li>Initializes session data</li>
  *   <li>Sets up monitoring timers</li>
  * </ul>
+ * <p>
+ * Condition: Requires conversation and sessionId to be present before execution.
  */
 @Slf4j
 @Component
 @HandlesFact(ConversationFact.SESSION_STARTED)
-public class SessionStartedAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
+public class SessionStartedAction implements ConditionalAction<ConversationState, ConversationFact, CbolStateContext> {
+
+    @Override
+    public Condition<CbolStateContext> getCondition() {
+        return ctx -> {
+            if (ctx == null) {
+                log.warn("SessionStartedAction condition failed: context is null");
+                return false;
+            }
+            if (ctx.conversation() == null) {
+                log.warn("SessionStartedAction condition failed: conversation is null");
+                return false;
+            }
+            if (ctx.conversation().conversationId() == null || ctx.conversation().conversationId().isBlank()) {
+                log.warn("SessionStartedAction condition failed: conversationId is null or blank");
+                return false;
+            }
+            return true;
+        };
+    }
 
     @Override
     public void execute(ConversationState from, ConversationState to, ConversationFact event, CbolStateContext ctx) {
