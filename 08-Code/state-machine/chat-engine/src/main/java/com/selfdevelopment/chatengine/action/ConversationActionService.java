@@ -2,6 +2,8 @@ package com.selfdevelopment.chatengine.action;
 
 import com.alibaba.cola.statemachine.Action;
 import com.alibaba.cola.statemachine.StateMachine;
+import com.selfdevelopment.chatengine.action.exception.ActionExceptionHandlerRegistry;
+import com.selfdevelopment.chatengine.action.exception.ExceptionHandlingAction;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
@@ -28,9 +30,12 @@ import java.util.function.Function;
  * </ol>
  * No changes to this service are needed when adding new Actions.
  * <p>
+ * Actions are automatically wrapped with exception handling via {@link ExceptionHandlingAction},
+ * ensuring that exceptions during Action execution do not block state transitions.
+ * <p>
  * Usage:
  * <pre>{@code
- * // Spring environment (recommended) - auto-discovery
+ * // Spring environment (recommended) - auto-discovery + exception handling
  * ConversationActionService actionService = ...;
  * StateMachine<...> sm = actionService.buildWithSpringActions();
  *
@@ -43,6 +48,8 @@ import java.util.function.Function;
  * @see HandlesFact
  * @see ConversationActionRegistry
  * @see ConversationStateMachineFactory
+ * @see ExceptionHandlingAction
+ * @see ActionExceptionHandlerRegistry
  */
 @Slf4j
 @Service
@@ -50,21 +57,31 @@ import java.util.function.Function;
 public class ConversationActionService {
 
     private final ConversationActionRegistry actionRegistry;
+    private final ActionExceptionHandlerRegistry exceptionHandlerRegistry;
 
     /**
      * Builds the conversation state machine using Spring-managed Actions from the registry.
      * <p>
      * This is the recommended method for Spring applications. Actions are automatically
-     * discovered via the {@link HandlesFact} annotation - no manual configuration needed.
+     * discovered via the {@link HandlesFact} annotation and wrapped with exception handling
+     * via {@link ExceptionHandlingAction}. Exceptions during Action execution do not block
+     * state transitions.
      *
      * @return the configured conversation state machine
      */
     public StateMachine<ConversationState, ConversationFact, CbolStateContext> buildWithSpringActions() {
         log.debug("Building conversation state machine with auto-discovered Actions ({} registered)",
                 actionRegistry.size());
-        return buildWithRegistry(actionRegistry);
+        return buildWithRegistry(actionRegistry, exceptionHandlerRegistry);
     }
 
+    /**
+     * Builds the conversation state machine using the ActionRegistry.
+     *
+     * @param registry the conversation action registry
+     * @return the configured conversation state machine
+     * @throws IllegalArgumentException if registry is null
+     */
     /**
      * Builds the conversation state machine using the ActionRegistry.
      *
@@ -77,6 +94,27 @@ public class ConversationActionService {
         Assert.notNull(registry, "registry must not be null");
         log.debug("Building conversation state machine with ActionRegistry");
         return ConversationStateMachineFactory.buildWithActionProvider(registry::getAction);
+    }
+
+    /**
+     * Builds the conversation state machine using the ActionRegistry with exception handling.
+     * <p>
+     * Actions are wrapped with {@link ExceptionHandlingAction} to ensure that exceptions
+     * during Action execution do not block state transitions.
+     *
+     * @param registry                 the conversation action registry
+     * @param exceptionHandlerRegistry the registry for finding exception handlers
+     * @return the configured conversation state machine
+     * @throws IllegalArgumentException if registry or exceptionHandlerRegistry is null
+     */
+    public static StateMachine<ConversationState, ConversationFact, CbolStateContext> buildWithRegistry(
+            ConversationActionRegistry registry,
+            ActionExceptionHandlerRegistry exceptionHandlerRegistry) {
+        Assert.notNull(registry, "registry must not be null");
+        Assert.notNull(exceptionHandlerRegistry, "exceptionHandlerRegistry must not be null");
+        log.debug("Building conversation state machine with ActionRegistry and exception handling");
+        return ConversationStateMachineFactory.buildWithActionProvider(
+                fact -> wrapWithExceptionHandling(registry.getAction(fact), exceptionHandlerRegistry));
     }
 
     /**
@@ -94,6 +132,28 @@ public class ConversationActionService {
         Assert.notNull(actions, "actions must not be null");
         log.debug("Building conversation state machine with explicit Actions ({} provided)", actions.size());
         return ConversationStateMachineFactory.buildWithActionProvider(toActionProvider(actions));
+    }
+
+    /**
+     * Builds the conversation state machine with an explicit Map of Actions and exception handling.
+     * <p>
+     * Actions are wrapped with {@link ExceptionHandlingAction} to ensure that exceptions
+     * during Action execution do not block state transitions.
+     *
+     * @param actions                  map of ConversationFact to Action
+     * @param exceptionHandlerRegistry the registry for finding exception handlers
+     * @return the configured conversation state machine
+     * @throws IllegalArgumentException if actions or exceptionHandlerRegistry is null
+     */
+    public static StateMachine<ConversationState, ConversationFact, CbolStateContext> buildWithActions(
+            Map<ConversationFact, Action<ConversationState, ConversationFact, CbolStateContext>> actions,
+            ActionExceptionHandlerRegistry exceptionHandlerRegistry) {
+        Assert.notNull(actions, "actions must not be null");
+        Assert.notNull(exceptionHandlerRegistry, "exceptionHandlerRegistry must not be null");
+        log.debug("Building conversation state machine with explicit Actions and exception handling ({} provided)",
+                actions.size());
+        return ConversationStateMachineFactory.buildWithActionProvider(
+                toActionProvider(actions, exceptionHandlerRegistry));
     }
 
     /**
@@ -116,6 +176,55 @@ public class ConversationActionService {
             }
             return action;
         };
+    }
+
+    /**
+     * Converts a Map of Actions to an ActionProvider function with exception handling.
+     * <p>
+     * Each Action is wrapped with {@link ExceptionHandlingAction} to ensure that exceptions
+     * during Action execution do not block state transitions.
+     *
+     * @param actions                  map of ConversationFact to Action
+     * @param exceptionHandlerRegistry the registry for finding exception handlers
+     * @return the ActionProvider function
+     * @throws IllegalArgumentException if actions or exceptionHandlerRegistry is null
+     */
+    public static Function<ConversationFact, Action<ConversationState, ConversationFact, CbolStateContext>> toActionProvider(
+            Map<ConversationFact, Action<ConversationState, ConversationFact, CbolStateContext>> actions,
+            ActionExceptionHandlerRegistry exceptionHandlerRegistry) {
+        Assert.notNull(actions, "actions must not be null");
+        Assert.notNull(exceptionHandlerRegistry, "exceptionHandlerRegistry must not be null");
+        return fact -> {
+            Action<ConversationState, ConversationFact, CbolStateContext> action = actions.get(fact);
+            if (action == null) {
+                log.warn("No Action found for ConversationFact: {}", fact);
+                return null;
+            }
+            return wrapWithExceptionHandling(action, exceptionHandlerRegistry);
+        };
+    }
+
+    /**
+     * Wraps an Action with exception handling.
+     * <p>
+     * If the Action is already wrapped, it is returned as-is. Otherwise, it is wrapped
+     * with {@link ExceptionHandlingAction} to ensure that exceptions during Action execution
+     * do not block state transitions.
+     *
+     * @param action                   the Action to wrap
+     * @param exceptionHandlerRegistry the registry for finding exception handlers
+     * @return the wrapped Action, or null if action is null
+     */
+    private static Action<ConversationState, ConversationFact, CbolStateContext> wrapWithExceptionHandling(
+            Action<ConversationState, ConversationFact, CbolStateContext> action,
+            ActionExceptionHandlerRegistry exceptionHandlerRegistry) {
+        if (action == null) {
+            return null;
+        }
+        if (action instanceof ExceptionHandlingAction) {
+            return action; // Already wrapped
+        }
+        return new ExceptionHandlingAction<>(action, exceptionHandlerRegistry);
     }
 
     /**
