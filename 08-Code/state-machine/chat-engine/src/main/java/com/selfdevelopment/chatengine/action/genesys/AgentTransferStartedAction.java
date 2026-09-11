@@ -5,6 +5,7 @@ import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 /**
  * Action executed when Genesys agent transfer starts (IN_PROGRESS → IN_PROGRESS internal).
@@ -26,6 +27,7 @@ import lombok.extern.slf4j.Slf4j;
  * - On completion: Conversation may transition based on transfer outcome
  */
 @Slf4j
+@Component
 public class AgentTransferStartedAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override

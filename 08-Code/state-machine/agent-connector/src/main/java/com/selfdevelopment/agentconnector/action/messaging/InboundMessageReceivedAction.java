@@ -5,6 +5,7 @@ import com.selfdevelopment.agentconnector.context.AgentConnectorStateContext;
 import com.selfdevelopment.agentconnector.enums.InteractionFact;
 import com.selfdevelopment.agentconnector.enums.InteractionState;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 /**
  * Action executed when a subsequent inbound message is received (IN_PROGRESS → IN_PROGRESS internal).
@@ -26,6 +27,7 @@ import lombok.extern.slf4j.Slf4j;
  * - INBOUND_MESSAGE_RECEIVED: IN_PROGRESS → IN_PROGRESS (internal, subsequent messages)
  */
 @Slf4j
+@Component
 public class InboundMessageReceivedAction implements Action<InteractionState, InteractionFact, AgentConnectorStateContext> {
 
     @Override

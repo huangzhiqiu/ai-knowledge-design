@@ -5,6 +5,7 @@ import com.selfdevelopment.agentconnector.context.AgentConnectorStateContext;
 import com.selfdevelopment.agentconnector.enums.InteractionFact;
 import com.selfdevelopment.agentconnector.enums.InteractionState;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 /**
  * Action executed when a cross-channel transfer fails (IN_PROGRESS → IN_PROGRESS internal).
@@ -28,6 +29,7 @@ import lombok.extern.slf4j.Slf4j;
  * - TRANSFER_FAILED: IN_PROGRESS → IN_PROGRESS (internal, transfer rejected, stay)
  */
 @Slf4j
+@Component
 public class TransferFailedAction implements Action<InteractionState, InteractionFact, AgentConnectorStateContext> {
 
     @Override

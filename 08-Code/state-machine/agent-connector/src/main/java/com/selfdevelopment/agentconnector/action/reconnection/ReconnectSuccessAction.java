@@ -5,6 +5,7 @@ import com.selfdevelopment.agentconnector.context.AgentConnectorStateContext;
 import com.selfdevelopment.agentconnector.enums.InteractionFact;
 import com.selfdevelopment.agentconnector.enums.InteractionState;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 /**
  * Action executed when reconnection succeeds (RECONNECTING → CONNECTED/IN_PROGRESS).
@@ -19,6 +20,7 @@ import lombok.extern.slf4j.Slf4j;
  * </ul>
  */
 @Slf4j
+@Component
 public class ReconnectSuccessAction implements Action<InteractionState, InteractionFact, AgentConnectorStateContext> {
 
     @Override

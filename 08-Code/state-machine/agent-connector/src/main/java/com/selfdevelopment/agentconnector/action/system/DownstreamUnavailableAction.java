@@ -5,6 +5,7 @@ import com.selfdevelopment.agentconnector.context.AgentConnectorStateContext;
 import com.selfdevelopment.agentconnector.enums.InteractionFact;
 import com.selfdevelopment.agentconnector.enums.InteractionState;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 /**
  * Action executed when downstream is unavailable (CONNECTED/IN_PROGRESS → DEGRADED).
@@ -19,6 +20,7 @@ import lombok.extern.slf4j.Slf4j;
  * </ul>
  */
 @Slf4j
+@Component
 public class DownstreamUnavailableAction implements Action<InteractionState, InteractionFact, AgentConnectorStateContext> {
 
     @Override

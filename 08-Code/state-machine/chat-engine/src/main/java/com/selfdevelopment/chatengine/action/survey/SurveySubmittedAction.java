@@ -5,6 +5,7 @@ import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 /**
  * Action executed when survey is submitted (ENDING → ENDING internal transition).
@@ -22,6 +23,7 @@ import lombok.extern.slf4j.Slf4j;
  * This is an internal transition (ENDING → ENDING) that only updates the survey field.
  */
 @Slf4j
+@Component
 public class SurveySubmittedAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override

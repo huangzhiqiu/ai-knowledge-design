@@ -5,6 +5,7 @@ import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 /**
  * Action executed when transfer times out (TRANSFERRED → INITIATED).
@@ -22,6 +23,7 @@ import lombok.extern.slf4j.Slf4j;
  * </ul>
  */
 @Slf4j
+@Component
 public class TransferTimeoutAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override

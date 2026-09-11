@@ -6,6 +6,7 @@ import com.selfdevelopment.chatengine.context.TraceMdcHelper;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -36,6 +37,7 @@ import java.util.function.Consumer;
  * Uses COLA {@link Action} interface.
  */
 @Slf4j
+@Component
 public class ActionWorker {
 
     private static final int DEFAULT_CORE_POOL_SIZE = Runtime.getRuntime().availableProcessors();

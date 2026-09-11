@@ -5,6 +5,7 @@ import com.selfdevelopment.agentconnector.context.AgentConnectorStateContext;
 import com.selfdevelopment.agentconnector.enums.InteractionFact;
 import com.selfdevelopment.agentconnector.enums.InteractionState;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 /**
  * Action executed when interaction is confirmed closed (CLOSED → CLOSED internal terminal confirmation).
@@ -29,6 +30,7 @@ import lombok.extern.slf4j.Slf4j;
  * - INTERACTION_CLOSED: CLOSED → CLOSED (internal, terminal confirmation and cleanup)
  */
 @Slf4j
+@Component
 public class InteractionClosedAction implements Action<InteractionState, InteractionFact, AgentConnectorStateContext> {
 
     @Override

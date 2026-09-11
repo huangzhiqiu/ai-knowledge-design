@@ -5,6 +5,7 @@ import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 /**
  * Action executed when Genesys consult transfer starts (ACTIVE/IN_PROGRESS → ACTIVE/IN_PROGRESS internal).
@@ -25,6 +26,7 @@ import lombok.extern.slf4j.Slf4j;
  * - Interaction state transitions to CONSULT_TRANSFER
  */
 @Slf4j
+@Component
 public class ConsultTransferStartedAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override

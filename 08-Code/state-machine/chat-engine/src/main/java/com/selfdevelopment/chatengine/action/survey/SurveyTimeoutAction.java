@@ -5,6 +5,7 @@ import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 /**
  * Action executed when survey times out (ENDING → ENDING internal transition).
@@ -23,6 +24,7 @@ import lombok.extern.slf4j.Slf4j;
  * Survey timeout typically indicates customer idle during the survey phase.
  */
 @Slf4j
+@Component
 public class SurveyTimeoutAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override

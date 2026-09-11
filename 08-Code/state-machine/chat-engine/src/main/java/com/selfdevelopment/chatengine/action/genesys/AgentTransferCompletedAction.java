@@ -5,6 +5,7 @@ import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 /**
  * Action executed when Genesys agent transfer completes (IN_PROGRESS → IN_PROGRESS internal).
@@ -26,6 +27,7 @@ import lombok.extern.slf4j.Slf4j;
  * - Current agent information should be updated to new agent
  */
 @Slf4j
+@Component
 public class AgentTransferCompletedAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override

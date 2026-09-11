@@ -5,6 +5,7 @@ import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 /**
  * Action executed when source interaction is transferred (IN_PROGRESS → TRANSFERRED).
@@ -18,6 +19,7 @@ import lombok.extern.slf4j.Slf4j;
  * </ul>
  */
 @Slf4j
+@Component
 public class SourceInteractionTransferredAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override

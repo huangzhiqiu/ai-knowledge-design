@@ -5,6 +5,7 @@ import com.selfdevelopment.agentconnector.context.AgentConnectorStateContext;
 import com.selfdevelopment.agentconnector.enums.InteractionFact;
 import com.selfdevelopment.agentconnector.enums.InteractionState;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 /**
  * Action executed when an outbound message is sent (IN_PROGRESS → IN_PROGRESS internal).
@@ -22,6 +23,7 @@ import lombok.extern.slf4j.Slf4j;
  * but updates important fields and triggers side effects for audit and monitoring.
  */
 @Slf4j
+@Component
 public class OutboundMessageSentAction implements Action<InteractionState, InteractionFact, AgentConnectorStateContext> {
 
     @Override
