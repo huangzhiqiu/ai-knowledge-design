@@ -25,6 +25,7 @@ import com.selfdevelopment.chatengine.action.transfer.TargetInteractionConnected
 import com.selfdevelopment.chatengine.action.transfer.TargetInteractionInitiatedAction;
 import com.selfdevelopment.chatengine.action.transfer.TransferTimeoutAction;
 import com.selfdevelopment.chatengine.action.ConversationActionRegistry;
+import com.selfdevelopment.chatengine.action.ConversationActionService;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
@@ -87,7 +88,7 @@ public class ChatEngineSpringConfig {
      * @return the ConversationActions holder
      */
     @Bean
-    public ConversationStateMachineFactory.ConversationActions conversationActions(
+    public ConversationActionService.ConversationActions conversationActions(
             SessionStartedAction sessionStartedAction,
             InteractionBecameActiveAction interactionBecameActiveAction,
             InboundMessageReceivedAction inboundMessageReceivedAction,
@@ -111,7 +112,7 @@ public class ChatEngineSpringConfig {
             CustomerIdleTimeoutAction customerIdleTimeoutAction,
             SystemErrorAction systemErrorAction,
             DownstreamUnavailableAction downstreamUnavailableAction) {
-        return new ConversationStateMachineFactory.ConversationActions(
+        return new ConversationActionService.ConversationActions(
                 sessionStartedAction,
                 interactionBecameActiveAction,
                 inboundMessageReceivedAction,

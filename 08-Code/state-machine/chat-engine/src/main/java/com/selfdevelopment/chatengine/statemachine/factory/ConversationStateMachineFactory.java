@@ -1,43 +1,40 @@
 package com.selfdevelopment.chatengine.statemachine.factory;
 
+import com.alibaba.cola.statemachine.Action;
 import com.alibaba.cola.statemachine.StateMachine;
 import com.alibaba.cola.statemachine.StateMachineFactory;
 import com.alibaba.cola.statemachine.builder.StateMachineBuilder;
 import com.alibaba.cola.statemachine.builder.StateMachineBuilderFactory;
-import com.selfdevelopment.chatengine.action.ending.EndingStartedAction;
-import com.selfdevelopment.chatengine.action.ending.EndingTimeoutAction;
-import com.selfdevelopment.chatengine.action.ending.AllInteractionsEndedAction;
-import com.selfdevelopment.chatengine.action.ending.EndingActionsCompletedAction;
-import com.selfdevelopment.chatengine.action.genesys.AgentTransferCompletedAction;
-import com.selfdevelopment.chatengine.action.genesys.AgentTransferFailedAction;
-import com.selfdevelopment.chatengine.action.genesys.AgentTransferStartedAction;
-import com.selfdevelopment.chatengine.action.genesys.ConsultTransferEndedAction;
-import com.selfdevelopment.chatengine.action.genesys.ConsultTransferStartedAction;
-import com.selfdevelopment.chatengine.action.lifecycle.SessionStartedAction;
-import com.selfdevelopment.chatengine.action.lifecycle.InteractionBecameActiveAction;
-import com.selfdevelopment.chatengine.action.lifecycle.InboundMessageReceivedAction;
-import com.selfdevelopment.chatengine.action.survey.SurveySubmittedAction;
-import com.selfdevelopment.chatengine.action.survey.SurveyTimeoutAction;
-import com.selfdevelopment.chatengine.action.survey.SurveySkippedAction;
-import com.selfdevelopment.chatengine.action.system.CustomerIdleTimeoutAction;
-import com.selfdevelopment.chatengine.action.system.SystemErrorAction;
-import com.selfdevelopment.chatengine.action.system.DownstreamUnavailableAction;
-import com.selfdevelopment.chatengine.action.transfer.SourceInteractionTransferredAction;
-import com.selfdevelopment.chatengine.action.transfer.TargetInteractionInitiatedAction;
-import com.selfdevelopment.chatengine.action.transfer.TargetInteractionConnectedAction;
-import com.selfdevelopment.chatengine.action.transfer.TargetInteractionConnectFailedAction;
-import com.selfdevelopment.chatengine.action.transfer.TransferTimeoutAction;
 import com.selfdevelopment.chatengine.action.ConversationActionRegistry;
+import com.selfdevelopment.chatengine.action.ConversationActionService;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
 import org.springframework.stereotype.Component;
 
+import java.util.Objects;
+import java.util.function.Function;
+
 /**
  * Factory for building the Conversation state machine.
  * <p>
- * Uses COLA StateMachine builder API. Can be used as a Spring-managed bean
- * (with injected ActionRegistry) or as a static utility (with default Actions).
+ * Uses COLA StateMachine builder API. This factory focuses solely on state machine
+ * construction - defining states, transitions, and events. Action management is
+ * handled by {@link ConversationActionService}.
+ * <p>
+ * Usage:
+ * <pre>{@code
+ * // With Spring-managed Actions (recommended)
+ * ConversationActionService actionService = ...;
+ * StateMachine<...> sm = actionService.buildWithSpringActions();
+ *
+ * // With explicit Actions
+ * ConversationActionService.ConversationActions actions = ...;
+ * StateMachine<...> sm = ConversationActionService.buildWithActions(actions);
+ *
+ * // With custom ActionProvider
+ * StateMachine<...> sm = ConversationStateMachineFactory.buildWithActionProvider(fact -> ...);
+ * }</pre>
  * <p>
  * Based on Event-Driven Orchestration Design (v4.0):
  * - Conversation states: NEW, INITIATED, ACTIVE, IN_PROGRESS, TRANSFERRED, ENDING, CLOSED
@@ -65,16 +62,12 @@ public class ConversationStateMachineFactory {
     /**
      * Builds the conversation state machine using Spring-managed Actions from the registry.
      * <p>
-     * This is the recommended method for Spring applications. It retrieves all Actions
-     * from the injected ConversationActionRegistry and builds the state machine with them.
-     * <p>
-     * The state machine built by this method is NOT registered automatically.
-     * Caller should register it via StateMachineFactory.register() if needed.
+     * Delegates to {@link ConversationActionService#buildWithRegistry(ConversationActionRegistry)}.
      *
      * @return the configured conversation state machine
      */
     public StateMachine<ConversationState, ConversationFact, CbolStateContext> buildWithSpringActions() {
-        return buildWithRegistry(actionRegistry);
+        return ConversationActionService.buildWithRegistry(actionRegistry);
     }
 
     /**
@@ -88,8 +81,9 @@ public class ConversationStateMachineFactory {
      * @return the configured and registered conversation state machine
      * @throws NullPointerException if actions is null
      */
-    public static StateMachine<ConversationState, ConversationFact, CbolStateContext> create(ConversationActions actions) {
-        java.util.Objects.requireNonNull(actions, "actions must not be null");
+    public static StateMachine<ConversationState, ConversationFact, CbolStateContext> create(
+            ConversationActionService.ConversationActions actions) {
+        Objects.requireNonNull(actions, "actions must not be null");
 
         // Try to get existing state machine first
         try {
@@ -116,7 +110,8 @@ public class ConversationStateMachineFactory {
 
             // Build and register
             try {
-                StateMachine<ConversationState, ConversationFact, CbolStateContext> sm = buildWithActions(actions);
+                StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+                        ConversationActionService.buildWithActions(actions);
                 StateMachineFactory.register(sm);
                 return sm;
             } catch (Exception e) {
@@ -149,9 +144,9 @@ public class ConversationStateMachineFactory {
      * @return the configured conversation state machine
      * @throws NullPointerException if actionProvider is null
      */
-    private static StateMachine<ConversationState, ConversationFact, CbolStateContext> buildWithActionProvider(
-            java.util.function.Function<ConversationFact, com.alibaba.cola.statemachine.Action<ConversationState, ConversationFact, CbolStateContext>> actionProvider) {
-        java.util.Objects.requireNonNull(actionProvider, "actionProvider must not be null");
+    public static StateMachine<ConversationState, ConversationFact, CbolStateContext> buildWithActionProvider(
+            Function<ConversationFact, Action<ConversationState, ConversationFact, CbolStateContext>> actionProvider) {
+        Objects.requireNonNull(actionProvider, "actionProvider must not be null");
 
         StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> builder =
                 StateMachineBuilderFactory.create();
@@ -349,171 +344,5 @@ public class ConversationStateMachineFactory {
                 .perform(actionProvider.apply(ConversationFact.GENESYS_AGENT_TRANSFER_FAILED));
 
         return builder.build(MACHINE_ID);
-    }
-
-    /**
-     * Builds the conversation state machine using the ActionRegistry.
-     * <p>
-     * This method retrieves all Actions from the {@link com.selfdevelopment.chatengine.action.ConversationActionRegistry}
-     * and builds the state machine with them. This is the recommended approach for Spring
-     * applications, as it eliminates manual Action instantiation and binding.
-     * <p>
-     * The registry automatically discovers all Action beans annotated with
-     * {@link com.selfdevelopment.chatengine.action.HandlesFact} and indexes them by fact.
-     *
-     * @param registry the conversation action registry containing all Actions
-     * @return the configured conversation state machine
-     * @throws NullPointerException if registry is null
-     * @throws IllegalStateException if a required Action is missing from the registry
-     */
-    public static StateMachine<ConversationState, ConversationFact, CbolStateContext> buildWithRegistry(
-            com.selfdevelopment.chatengine.action.ConversationActionRegistry registry) {
-        java.util.Objects.requireNonNull(registry, "registry must not be null");
-        return buildWithActionProvider(registry::getAction);
-    }
-
-    /**
-     * Builds the conversation state machine with injected Action instances.
-     * <p>
-     * This method is designed for Spring dependency injection - it accepts a
-     * ConversationActions holder containing Spring-managed Action beans, allowing
-     * Actions to have their own dependencies (Repository, Service, etc.).
-     * <p>
-     * The state machine built by this method is NOT registered automatically.
-     * Caller should register it via StateMachineFactory.register() if needed.
-     *
-     * @param actions the ConversationActions holder containing all Action instances
-     * @return the configured conversation state machine
-     * @throws NullPointerException if actions is null
-     */
-    public static StateMachine<ConversationState, ConversationFact, CbolStateContext> buildWithActions(ConversationActions actions) {
-        java.util.Objects.requireNonNull(actions, "actions must not be null");
-        return buildWithActionProvider(fact -> {
-            return switch (fact) {
-                case SESSION_STARTED -> actions.sessionStartedAction;
-                case INTERACTION_BECAME_ACTIVE -> actions.interactionBecameActiveAction;
-                case INBOUND_MESSAGE_RECEIVED -> actions.inboundMessageReceivedAction;
-                case SOURCE_INTERACTION_TRANSFERRED -> actions.sourceInteractionTransferredAction;
-                case TARGET_INTERACTION_INITIATED -> actions.targetInteractionInitiatedAction;
-                case TARGET_INTERACTION_CONNECTED -> actions.targetInteractionConnectedAction;
-                case TARGET_INTERACTION_CONNECT_FAILED -> actions.targetInteractionConnectFailedAction;
-                case TRANSFER_TIMEOUT -> actions.transferTimeoutAction;
-                case ENDING_STARTED -> actions.endingStartedAction;
-                case ENDING_TIMEOUT -> actions.endingTimeoutAction;
-                case ALL_INTERACTIONS_ENDED -> actions.allInteractionsEndedAction;
-                case ENDING_ACTIONS_COMPLETED -> actions.endingActionsCompletedAction;
-                case SURVEY_SUBMITTED -> actions.surveySubmittedAction;
-                case SURVEY_TIMEOUT -> actions.surveyTimeoutAction;
-                case SURVEY_SKIPPED -> actions.surveySkippedAction;
-                case GENESYS_CONSULT_TRANSFER_STARTED -> actions.consultTransferStartedAction;
-                case GENESYS_CONSULT_TRANSFER_ENDED -> actions.consultTransferEndedAction;
-                case GENESYS_AGENT_TRANSFER_STARTED -> actions.agentTransferStartedAction;
-                case GENESYS_AGENT_TRANSFER_COMPLETED -> actions.agentTransferCompletedAction;
-                case GENESYS_AGENT_TRANSFER_FAILED -> actions.agentTransferFailedAction;
-                case CUSTOMER_IDLE_TIMEOUT -> actions.customerIdleTimeoutAction;
-                case SYSTEM_ERROR -> actions.systemErrorAction;
-                case DOWNSTREAM_UNAVAILABLE -> actions.downstreamUnavailableAction;
-            };
-        });
-    }
-
-    /**
-     * Holder for all Conversation Action instances.
-     * <p>
-     * Used for Spring dependency injection - Spring can inject all Action beans
-     * into this holder, which is then passed to buildWithActions().
-     * <p>
-     * This allows the state machine to use Spring-managed Action beans with
-     * their own dependencies (Repository, Service, etc.) while keeping the
-     * factory logic clean and testable.
-     */
-    public static class ConversationActions {
-        // LIFECYCLE actions
-        public final SessionStartedAction sessionStartedAction;
-        public final InteractionBecameActiveAction interactionBecameActiveAction;
-        public final InboundMessageReceivedAction inboundMessageReceivedAction;
-
-        // TRANSFER actions
-        public final SourceInteractionTransferredAction sourceInteractionTransferredAction;
-        public final TargetInteractionInitiatedAction targetInteractionInitiatedAction;
-        public final TargetInteractionConnectedAction targetInteractionConnectedAction;
-        public final TargetInteractionConnectFailedAction targetInteractionConnectFailedAction;
-        public final TransferTimeoutAction transferTimeoutAction;
-
-        // ENDING actions
-        public final EndingStartedAction endingStartedAction;
-        public final EndingTimeoutAction endingTimeoutAction;
-        public final AllInteractionsEndedAction allInteractionsEndedAction;
-        public final EndingActionsCompletedAction endingActionsCompletedAction;
-
-        // SURVEY actions
-        public final SurveySubmittedAction surveySubmittedAction;
-        public final SurveyTimeoutAction surveyTimeoutAction;
-        public final SurveySkippedAction surveySkippedAction;
-
-        // GENESYS actions
-        public final ConsultTransferStartedAction consultTransferStartedAction;
-        public final ConsultTransferEndedAction consultTransferEndedAction;
-        public final AgentTransferStartedAction agentTransferStartedAction;
-        public final AgentTransferCompletedAction agentTransferCompletedAction;
-        public final AgentTransferFailedAction agentTransferFailedAction;
-
-        // SYSTEM actions
-        public final CustomerIdleTimeoutAction customerIdleTimeoutAction;
-        public final SystemErrorAction systemErrorAction;
-        public final DownstreamUnavailableAction downstreamUnavailableAction;
-
-        /**
-         * Creates a ConversationActions holder with all Action instances.
-         * Used by Spring configuration to inject managed Action beans.
-         */
-        public ConversationActions(
-                SessionStartedAction sessionStartedAction,
-                InteractionBecameActiveAction interactionBecameActiveAction,
-                InboundMessageReceivedAction inboundMessageReceivedAction,
-                SourceInteractionTransferredAction sourceInteractionTransferredAction,
-                TargetInteractionInitiatedAction targetInteractionInitiatedAction,
-                TargetInteractionConnectedAction targetInteractionConnectedAction,
-                TargetInteractionConnectFailedAction targetInteractionConnectFailedAction,
-                TransferTimeoutAction transferTimeoutAction,
-                EndingStartedAction endingStartedAction,
-                EndingTimeoutAction endingTimeoutAction,
-                AllInteractionsEndedAction allInteractionsEndedAction,
-                EndingActionsCompletedAction endingActionsCompletedAction,
-                SurveySubmittedAction surveySubmittedAction,
-                SurveyTimeoutAction surveyTimeoutAction,
-                SurveySkippedAction surveySkippedAction,
-                ConsultTransferStartedAction consultTransferStartedAction,
-                ConsultTransferEndedAction consultTransferEndedAction,
-                AgentTransferStartedAction agentTransferStartedAction,
-                AgentTransferCompletedAction agentTransferCompletedAction,
-                AgentTransferFailedAction agentTransferFailedAction,
-                CustomerIdleTimeoutAction customerIdleTimeoutAction,
-                SystemErrorAction systemErrorAction,
-                DownstreamUnavailableAction downstreamUnavailableAction) {
-            this.sessionStartedAction = sessionStartedAction;
-            this.interactionBecameActiveAction = interactionBecameActiveAction;
-            this.inboundMessageReceivedAction = inboundMessageReceivedAction;
-            this.sourceInteractionTransferredAction = sourceInteractionTransferredAction;
-            this.targetInteractionInitiatedAction = targetInteractionInitiatedAction;
-            this.targetInteractionConnectedAction = targetInteractionConnectedAction;
-            this.targetInteractionConnectFailedAction = targetInteractionConnectFailedAction;
-            this.transferTimeoutAction = transferTimeoutAction;
-            this.endingStartedAction = endingStartedAction;
-            this.endingTimeoutAction = endingTimeoutAction;
-            this.allInteractionsEndedAction = allInteractionsEndedAction;
-            this.endingActionsCompletedAction = endingActionsCompletedAction;
-            this.surveySubmittedAction = surveySubmittedAction;
-            this.surveyTimeoutAction = surveyTimeoutAction;
-            this.surveySkippedAction = surveySkippedAction;
-            this.consultTransferStartedAction = consultTransferStartedAction;
-            this.consultTransferEndedAction = consultTransferEndedAction;
-            this.agentTransferStartedAction = agentTransferStartedAction;
-            this.agentTransferCompletedAction = agentTransferCompletedAction;
-            this.agentTransferFailedAction = agentTransferFailedAction;
-            this.customerIdleTimeoutAction = customerIdleTimeoutAction;
-            this.systemErrorAction = systemErrorAction;
-            this.downstreamUnavailableAction = downstreamUnavailableAction;
-        }
     }
 }

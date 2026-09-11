@@ -23,6 +23,7 @@ import com.selfdevelopment.chatengine.action.transfer.TargetInteractionConnectFa
 import com.selfdevelopment.chatengine.action.transfer.TargetInteractionConnectedAction;
 import com.selfdevelopment.chatengine.action.transfer.TargetInteractionInitiatedAction;
 import com.selfdevelopment.chatengine.action.transfer.TransferTimeoutAction;
+import com.selfdevelopment.chatengine.action.ConversationActionService;
 import com.selfdevelopment.chatengine.statemachine.factory.ConversationStateMachineFactory;
 
 /**
@@ -43,8 +44,8 @@ public final class TestActionFactory {
      *
      * @return the ConversationActions holder with default Action instances
      */
-    public static ConversationStateMachineFactory.ConversationActions createDefaultActions() {
-        return new ConversationStateMachineFactory.ConversationActions(
+    public static ConversationActionService.ConversationActions createDefaultActions() {
+        return new ConversationActionService.ConversationActions(
                 new SessionStartedAction(),
                 new InteractionBecameActiveAction(),
                 new InboundMessageReceivedAction(),

@@ -1,6 +1,7 @@
 package com.selfdevelopment.chatengine.demo;
 
 import com.alibaba.cola.statemachine.impl.StateMachineException;
+import com.selfdevelopment.chatengine.action.ConversationActionService;
 import com.selfdevelopment.chatengine.action.ending.AllInteractionsEndedAction;
 import com.selfdevelopment.chatengine.action.ending.EndingActionsCompletedAction;
 import com.selfdevelopment.chatengine.action.ending.EndingStartedAction;
@@ -49,7 +50,7 @@ public class ChatEngineDemo {
         DemoLogger.printTitle("Chat Engine Conversation State Machine Demo (COLA)");
 
         // Build and register the conversation state machine with default Actions
-        ConversationStateMachineFactory.ConversationActions actions = createDefaultActions();
+        ConversationActionService.ConversationActions actions = createDefaultActions();
         ConversationStateMachineFactory.create(actions);
         DemoLogger.printInfo("State machine registered: " + ConversationStateMachineFactory.MACHINE_ID);
 
@@ -69,8 +70,8 @@ public class ChatEngineDemo {
      *
      * @return the ConversationActions holder with default Action instances
      */
-    private static ConversationStateMachineFactory.ConversationActions createDefaultActions() {
-        return new ConversationStateMachineFactory.ConversationActions(
+    private static ConversationActionService.ConversationActions createDefaultActions() {
+        return new ConversationActionService.ConversationActions(
                 new SessionStartedAction(),
                 new InteractionBecameActiveAction(),
                 new InboundMessageReceivedAction(),
