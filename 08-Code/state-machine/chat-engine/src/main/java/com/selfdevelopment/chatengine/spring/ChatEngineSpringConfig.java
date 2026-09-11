@@ -138,34 +138,24 @@ public class ChatEngineSpringConfig {
     }
 
     /**
-     * Creates the conversation state machine bean using the ActionRegistry.
+     * Creates the conversation state machine bean using the injected Factory.
      * <p>
-     * Uses buildWithRegistry() to build the state machine with Actions automatically
-     * discovered and indexed by the ConversationActionRegistry. This eliminates
-     * manual Action instantiation and binding in the factory.
+     * Uses the Spring-managed ConversationStateMachineFactory bean, which uses
+     * the ConversationActionRegistry to automatically discover and bind Actions.
+     * This eliminates manual Action instantiation and uses Spring-managed Action beans.
      * The state machine is then registered with StateMachineFactory.
      *
-     * @param actionRegistry the conversation action registry
+     * @param factory the Spring-managed conversation state machine factory
      * @return the conversation state machine
      */
     @Bean
     public StateMachine<ConversationState, ConversationFact, CbolStateContext> conversationStateMachine(
-            ConversationActionRegistry actionRegistry) {
+            ConversationStateMachineFactory factory) {
         StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
-                ConversationStateMachineFactory.buildWithRegistry(actionRegistry);
+                factory.buildWithSpringActions();
         // Register the state machine so it can be retrieved by ID
         com.alibaba.cola.statemachine.StateMachineFactory.register(sm);
         return sm;
-    }
-
-    /**
-     * Creates the conversation state machine factory bean.
-     *
-     * @return the conversation state machine factory
-     */
-    @Bean
-    public ConversationStateMachineFactory conversationStateMachineFactory() {
-        return new ConversationStateMachineFactory();
     }
 
     /**

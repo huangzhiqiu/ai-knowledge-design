@@ -27,14 +27,17 @@ import com.selfdevelopment.chatengine.action.transfer.TargetInteractionInitiated
 import com.selfdevelopment.chatengine.action.transfer.TargetInteractionConnectedAction;
 import com.selfdevelopment.chatengine.action.transfer.TargetInteractionConnectFailedAction;
 import com.selfdevelopment.chatengine.action.transfer.TransferTimeoutAction;
+import com.selfdevelopment.chatengine.action.ConversationActionRegistry;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
+import org.springframework.stereotype.Component;
 
 /**
  * Factory for building the Conversation state machine.
  * <p>
- * Uses COLA StateMachine builder API.
+ * Uses COLA StateMachine builder API. Can be used as a Spring-managed bean
+ * (with injected ActionRegistry) or as a static utility (with default Actions).
  * <p>
  * Based on Event-Driven Orchestration Design (v4.0):
  * - Conversation states: NEW, INITIATED, ACTIVE, IN_PROGRESS, TRANSFERRED, ENDING, CLOSED
@@ -43,13 +46,43 @@ import com.selfdevelopment.chatengine.enums.ConversationState;
  * - Customer Idle ideal logic: all wait-capable states timeout -> ENDING
  * - ENDING is irreversible, defaults to 120s forced convergence to CLOSED
  */
+@Component
 public class ConversationStateMachineFactory {
 
     public static final String MACHINE_ID = "conversation";
 
+    private final ConversationActionRegistry actionRegistry;
+
+    /**
+     * Creates the factory with the injected ActionRegistry (Spring usage).
+     *
+     * @param actionRegistry the conversation action registry
+     */
+    public ConversationStateMachineFactory(ConversationActionRegistry actionRegistry) {
+        this.actionRegistry = actionRegistry;
+    }
+
+    /**
+     * Builds the conversation state machine using Spring-managed Actions from the registry.
+     * <p>
+     * This is the recommended method for Spring applications. It retrieves all Actions
+     * from the injected ConversationActionRegistry and builds the state machine with them.
+     * <p>
+     * The state machine built by this method is NOT registered automatically.
+     * Caller should register it via StateMachineFactory.register() if needed.
+     *
+     * @return the configured conversation state machine
+     */
+    public StateMachine<ConversationState, ConversationFact, CbolStateContext> buildWithSpringActions() {
+        return buildWithRegistry(actionRegistry);
+    }
+
     /**
      * Creates and registers the conversation state machine with all transition rules.
      * Uses double-checked locking for thread-safe singleton initialization.
+     * <p>
+     * <b>Note:</b> This static method uses default Action instances (without dependency injection).
+     * For Spring-managed Actions with dependencies, use {@link #buildWithSpringActions()} instead.
      *
      * @return the configured and registered conversation state machine
      */
