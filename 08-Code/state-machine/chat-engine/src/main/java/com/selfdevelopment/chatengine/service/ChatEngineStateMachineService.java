@@ -10,6 +10,7 @@ import com.selfdevelopment.chatengine.enums.ConversationState;
 import com.selfdevelopment.chatengine.model.StateTransitionRecord;
 import com.selfdevelopment.chatengine.statemachine.factory.ConversationStateMachineFactory;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
 
 import java.util.Objects;
 
@@ -19,6 +20,7 @@ import java.util.Objects;
  * Uses COLA StateMachine. Stateless mode — caller must manage state persistence externally.
  */
 @Slf4j
+@Service
 public class ChatEngineStateMachineService {
 
     private final StateMachine<ConversationState, ConversationFact, CbolStateContext> convSm;

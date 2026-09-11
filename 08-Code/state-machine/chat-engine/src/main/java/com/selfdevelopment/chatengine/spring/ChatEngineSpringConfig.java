@@ -61,7 +61,14 @@ import org.springframework.context.annotation.EnableAspectJAutoProxy;
  */
 @Configuration
 @EnableAspectJAutoProxy
-@ComponentScan(basePackages = "com.selfdevelopment.chatengine.action")
+@ComponentScan(basePackages = {
+        "com.selfdevelopment.chatengine.action",
+        "com.selfdevelopment.chatengine.service",
+        "com.selfdevelopment.chatengine.monitor",
+        "com.selfdevelopment.chatengine.repository",
+        "com.selfdevelopment.chatengine.config",
+        "com.selfdevelopment.chatengine.ingress"
+})
 public class ChatEngineSpringConfig {
 
     /**

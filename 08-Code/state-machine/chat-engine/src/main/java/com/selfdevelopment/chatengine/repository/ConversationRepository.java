@@ -4,6 +4,7 @@ import com.selfdevelopment.chatengine.enums.ConversationState;
 import com.selfdevelopment.chatengine.model.ConversationInstance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Repository;
 
 import java.util.Map;
 import java.util.Objects;
@@ -34,6 +35,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * boolean success = repository.compareAndSetState("conv-123", version, ConversationState.IN_PROGRESS);
  * }</pre>
  */
+@Repository
 public class ConversationRepository {
 
     private static final Logger log = LoggerFactory.getLogger(ConversationRepository.class);
