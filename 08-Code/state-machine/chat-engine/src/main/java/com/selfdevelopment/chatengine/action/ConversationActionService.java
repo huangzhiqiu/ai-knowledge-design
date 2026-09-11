@@ -29,9 +29,14 @@ import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
 import com.selfdevelopment.chatengine.statemachine.factory.ConversationStateMachineFactory;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.util.Assert;
 
-import java.util.Objects;
+import java.util.EnumMap;
+import java.util.Map;
 import java.util.function.Function;
 
 /**
@@ -51,19 +56,12 @@ import java.util.function.Function;
  * @see ConversationActionRegistry
  * @see ConversationStateMachineFactory
  */
+@Slf4j
 @Service
+@RequiredArgsConstructor
 public class ConversationActionService {
 
     private final ConversationActionRegistry actionRegistry;
-
-    /**
-     * Creates the service with the injected ActionRegistry (Spring usage).
-     *
-     * @param actionRegistry the conversation action registry
-     */
-    public ConversationActionService(ConversationActionRegistry actionRegistry) {
-        this.actionRegistry = actionRegistry;
-    }
 
     /**
      * Builds the conversation state machine using Spring-managed Actions from the registry.
@@ -73,6 +71,7 @@ public class ConversationActionService {
      * @return the configured conversation state machine
      */
     public StateMachine<ConversationState, ConversationFact, CbolStateContext> buildWithSpringActions() {
+        log.debug("Building conversation state machine with Spring-managed Actions");
         return buildWithRegistry(actionRegistry);
     }
 
@@ -81,11 +80,12 @@ public class ConversationActionService {
      *
      * @param registry the conversation action registry
      * @return the configured conversation state machine
-     * @throws NullPointerException if registry is null
+     * @throws IllegalArgumentException if registry is null
      */
     public static StateMachine<ConversationState, ConversationFact, CbolStateContext> buildWithRegistry(
             ConversationActionRegistry registry) {
-        Objects.requireNonNull(registry, "registry must not be null");
+        Assert.notNull(registry, "registry must not be null");
+        log.debug("Building conversation state machine with ActionRegistry");
         return ConversationStateMachineFactory.buildWithActionProvider(registry::getAction);
     }
 
@@ -94,46 +94,72 @@ public class ConversationActionService {
      *
      * @param actions the ConversationActions holder containing all Action instances
      * @return the configured conversation state machine
-     * @throws NullPointerException if actions is null
+     * @throws IllegalArgumentException if actions is null
      */
     public static StateMachine<ConversationState, ConversationFact, CbolStateContext> buildWithActions(
             ConversationActions actions) {
-        Objects.requireNonNull(actions, "actions must not be null");
+        Assert.notNull(actions, "actions must not be null");
+        log.debug("Building conversation state machine with explicit Actions");
         return ConversationStateMachineFactory.buildWithActionProvider(toActionProvider(actions));
     }
 
     /**
      * Converts a ConversationActions holder to an ActionProvider function.
+     * <p>
+     * Uses an EnumMap for efficient O(1) lookup instead of a large switch expression.
      *
      * @param actions the ConversationActions holder
      * @return the ActionProvider function
+     * @throws IllegalArgumentException if actions is null
      */
     public static Function<ConversationFact, Action<ConversationState, ConversationFact, CbolStateContext>> toActionProvider(
             ConversationActions actions) {
-        return fact -> switch (fact) {
-            case SESSION_STARTED -> actions.sessionStartedAction;
-            case INTERACTION_BECAME_ACTIVE -> actions.interactionBecameActiveAction;
-            case INBOUND_MESSAGE_RECEIVED -> actions.inboundMessageReceivedAction;
-            case SOURCE_INTERACTION_TRANSFERRED -> actions.sourceInteractionTransferredAction;
-            case TARGET_INTERACTION_INITIATED -> actions.targetInteractionInitiatedAction;
-            case TARGET_INTERACTION_CONNECTED -> actions.targetInteractionConnectedAction;
-            case TARGET_INTERACTION_CONNECT_FAILED -> actions.targetInteractionConnectFailedAction;
-            case TRANSFER_TIMEOUT -> actions.transferTimeoutAction;
-            case ENDING_STARTED -> actions.endingStartedAction;
-            case ENDING_TIMEOUT -> actions.endingTimeoutAction;
-            case ALL_INTERACTIONS_ENDED -> actions.allInteractionsEndedAction;
-            case ENDING_ACTIONS_COMPLETED -> actions.endingActionsCompletedAction;
-            case SURVEY_SUBMITTED -> actions.surveySubmittedAction;
-            case SURVEY_TIMEOUT -> actions.surveyTimeoutAction;
-            case SURVEY_SKIPPED -> actions.surveySkippedAction;
-            case GENESYS_CONSULT_TRANSFER_STARTED -> actions.consultTransferStartedAction;
-            case GENESYS_CONSULT_TRANSFER_ENDED -> actions.consultTransferEndedAction;
-            case GENESYS_AGENT_TRANSFER_STARTED -> actions.agentTransferStartedAction;
-            case GENESYS_AGENT_TRANSFER_COMPLETED -> actions.agentTransferCompletedAction;
-            case GENESYS_AGENT_TRANSFER_FAILED -> actions.agentTransferFailedAction;
-            case CUSTOMER_IDLE_TIMEOUT -> actions.customerIdleTimeoutAction;
-            case SYSTEM_ERROR -> actions.systemErrorAction;
-            case DOWNSTREAM_UNAVAILABLE -> actions.downstreamUnavailableAction;
+        Assert.notNull(actions, "actions must not be null");
+
+        Map<ConversationFact, Action<ConversationState, ConversationFact, CbolStateContext>> actionMap =
+                new EnumMap<>(ConversationFact.class);
+
+        // LIFECYCLE
+        actionMap.put(ConversationFact.SESSION_STARTED, actions.getSessionStartedAction());
+        actionMap.put(ConversationFact.INTERACTION_BECAME_ACTIVE, actions.getInteractionBecameActiveAction());
+        actionMap.put(ConversationFact.INBOUND_MESSAGE_RECEIVED, actions.getInboundMessageReceivedAction());
+        actionMap.put(ConversationFact.ALL_INTERACTIONS_ENDED, actions.getAllInteractionsEndedAction());
+
+        // TRANSFER
+        actionMap.put(ConversationFact.SOURCE_INTERACTION_TRANSFERRED, actions.getSourceInteractionTransferredAction());
+        actionMap.put(ConversationFact.TARGET_INTERACTION_INITIATED, actions.getTargetInteractionInitiatedAction());
+        actionMap.put(ConversationFact.TARGET_INTERACTION_CONNECTED, actions.getTargetInteractionConnectedAction());
+        actionMap.put(ConversationFact.TARGET_INTERACTION_CONNECT_FAILED, actions.getTargetInteractionConnectFailedAction());
+        actionMap.put(ConversationFact.TRANSFER_TIMEOUT, actions.getTransferTimeoutAction());
+
+        // ENDING
+        actionMap.put(ConversationFact.ENDING_STARTED, actions.getEndingStartedAction());
+        actionMap.put(ConversationFact.ENDING_TIMEOUT, actions.getEndingTimeoutAction());
+        actionMap.put(ConversationFact.ENDING_ACTIONS_COMPLETED, actions.getEndingActionsCompletedAction());
+
+        // SURVEY
+        actionMap.put(ConversationFact.SURVEY_SUBMITTED, actions.getSurveySubmittedAction());
+        actionMap.put(ConversationFact.SURVEY_TIMEOUT, actions.getSurveyTimeoutAction());
+        actionMap.put(ConversationFact.SURVEY_SKIPPED, actions.getSurveySkippedAction());
+
+        // GENESYS
+        actionMap.put(ConversationFact.GENESYS_CONSULT_TRANSFER_STARTED, actions.getConsultTransferStartedAction());
+        actionMap.put(ConversationFact.GENESYS_CONSULT_TRANSFER_ENDED, actions.getConsultTransferEndedAction());
+        actionMap.put(ConversationFact.GENESYS_AGENT_TRANSFER_STARTED, actions.getAgentTransferStartedAction());
+        actionMap.put(ConversationFact.GENESYS_AGENT_TRANSFER_COMPLETED, actions.getAgentTransferCompletedAction());
+        actionMap.put(ConversationFact.GENESYS_AGENT_TRANSFER_FAILED, actions.getAgentTransferFailedAction());
+
+        // SYSTEM
+        actionMap.put(ConversationFact.CUSTOMER_IDLE_TIMEOUT, actions.getCustomerIdleTimeoutAction());
+        actionMap.put(ConversationFact.SYSTEM_ERROR, actions.getSystemErrorAction());
+        actionMap.put(ConversationFact.DOWNSTREAM_UNAVAILABLE, actions.getDownstreamUnavailableAction());
+
+        return fact -> {
+            Action<ConversationState, ConversationFact, CbolStateContext> action = actionMap.get(fact);
+            if (action == null) {
+                log.warn("No Action found for ConversationFact: {}", fact);
+            }
+            return action;
         };
     }
 
@@ -146,117 +172,47 @@ public class ConversationActionService {
      * This allows the state machine to use Spring-managed Action beans with
      * their own dependencies (Repository, Service, etc.) while keeping the
      * factory logic clean and testable.
+     * <p>
+     * Uses Lombok {@link Getter} and {@link RequiredArgsConstructor} to eliminate
+     * boilerplate code for getters and constructor.
      */
+    @Getter
+    @RequiredArgsConstructor
     public static class ConversationActions {
+
         // LIFECYCLE actions
-        public final SessionStartedAction sessionStartedAction;
-        public final InteractionBecameActiveAction interactionBecameActiveAction;
-        public final InboundMessageReceivedAction inboundMessageReceivedAction;
+        private final SessionStartedAction sessionStartedAction;
+        private final InteractionBecameActiveAction interactionBecameActiveAction;
+        private final InboundMessageReceivedAction inboundMessageReceivedAction;
 
         // TRANSFER actions
-        public final SourceInteractionTransferredAction sourceInteractionTransferredAction;
-        public final TargetInteractionInitiatedAction targetInteractionInitiatedAction;
-        public final TargetInteractionConnectedAction targetInteractionConnectedAction;
-        public final TargetInteractionConnectFailedAction targetInteractionConnectFailedAction;
-        public final TransferTimeoutAction transferTimeoutAction;
+        private final SourceInteractionTransferredAction sourceInteractionTransferredAction;
+        private final TargetInteractionInitiatedAction targetInteractionInitiatedAction;
+        private final TargetInteractionConnectedAction targetInteractionConnectedAction;
+        private final TargetInteractionConnectFailedAction targetInteractionConnectFailedAction;
+        private final TransferTimeoutAction transferTimeoutAction;
 
         // ENDING actions
-        public final EndingStartedAction endingStartedAction;
-        public final EndingTimeoutAction endingTimeoutAction;
-        public final AllInteractionsEndedAction allInteractionsEndedAction;
-        public final EndingActionsCompletedAction endingActionsCompletedAction;
+        private final EndingStartedAction endingStartedAction;
+        private final EndingTimeoutAction endingTimeoutAction;
+        private final AllInteractionsEndedAction allInteractionsEndedAction;
+        private final EndingActionsCompletedAction endingActionsCompletedAction;
 
         // SURVEY actions
-        public final SurveySubmittedAction surveySubmittedAction;
-        public final SurveyTimeoutAction surveyTimeoutAction;
-        public final SurveySkippedAction surveySkippedAction;
+        private final SurveySubmittedAction surveySubmittedAction;
+        private final SurveyTimeoutAction surveyTimeoutAction;
+        private final SurveySkippedAction surveySkippedAction;
 
         // GENESYS actions
-        public final ConsultTransferStartedAction consultTransferStartedAction;
-        public final ConsultTransferEndedAction consultTransferEndedAction;
-        public final AgentTransferStartedAction agentTransferStartedAction;
-        public final AgentTransferCompletedAction agentTransferCompletedAction;
-        public final AgentTransferFailedAction agentTransferFailedAction;
+        private final ConsultTransferStartedAction consultTransferStartedAction;
+        private final ConsultTransferEndedAction consultTransferEndedAction;
+        private final AgentTransferStartedAction agentTransferStartedAction;
+        private final AgentTransferCompletedAction agentTransferCompletedAction;
+        private final AgentTransferFailedAction agentTransferFailedAction;
 
         // SYSTEM actions
-        public final CustomerIdleTimeoutAction customerIdleTimeoutAction;
-        public final SystemErrorAction systemErrorAction;
-        public final DownstreamUnavailableAction downstreamUnavailableAction;
-
-        /**
-         * Creates the holder with all Action instances.
-         *
-         * @param sessionStartedAction the session started action
-         * @param interactionBecameActiveAction the interaction became active action
-         * @param inboundMessageReceivedAction the inbound message received action
-         * @param sourceInteractionTransferredAction the source interaction transferred action
-         * @param targetInteractionInitiatedAction the target interaction initiated action
-         * @param targetInteractionConnectedAction the target interaction connected action
-         * @param targetInteractionConnectFailedAction the target interaction connect failed action
-         * @param transferTimeoutAction the transfer timeout action
-         * @param endingStartedAction the ending started action
-         * @param endingTimeoutAction the ending timeout action
-         * @param allInteractionsEndedAction the all interactions ended action
-         * @param endingActionsCompletedAction the ending actions completed action
-         * @param surveySubmittedAction the survey submitted action
-         * @param surveyTimeoutAction the survey timeout action
-         * @param surveySkippedAction the survey skipped action
-         * @param consultTransferStartedAction the consult transfer started action
-         * @param consultTransferEndedAction the consult transfer ended action
-         * @param agentTransferStartedAction the agent transfer started action
-         * @param agentTransferCompletedAction the agent transfer completed action
-         * @param agentTransferFailedAction the agent transfer failed action
-         * @param customerIdleTimeoutAction the customer idle timeout action
-         * @param systemErrorAction the system error action
-         * @param downstreamUnavailableAction the downstream unavailable action
-         */
-        public ConversationActions(
-                SessionStartedAction sessionStartedAction,
-                InteractionBecameActiveAction interactionBecameActiveAction,
-                InboundMessageReceivedAction inboundMessageReceivedAction,
-                SourceInteractionTransferredAction sourceInteractionTransferredAction,
-                TargetInteractionInitiatedAction targetInteractionInitiatedAction,
-                TargetInteractionConnectedAction targetInteractionConnectedAction,
-                TargetInteractionConnectFailedAction targetInteractionConnectFailedAction,
-                TransferTimeoutAction transferTimeoutAction,
-                EndingStartedAction endingStartedAction,
-                EndingTimeoutAction endingTimeoutAction,
-                AllInteractionsEndedAction allInteractionsEndedAction,
-                EndingActionsCompletedAction endingActionsCompletedAction,
-                SurveySubmittedAction surveySubmittedAction,
-                SurveyTimeoutAction surveyTimeoutAction,
-                SurveySkippedAction surveySkippedAction,
-                ConsultTransferStartedAction consultTransferStartedAction,
-                ConsultTransferEndedAction consultTransferEndedAction,
-                AgentTransferStartedAction agentTransferStartedAction,
-                AgentTransferCompletedAction agentTransferCompletedAction,
-                AgentTransferFailedAction agentTransferFailedAction,
-                CustomerIdleTimeoutAction customerIdleTimeoutAction,
-                SystemErrorAction systemErrorAction,
-                DownstreamUnavailableAction downstreamUnavailableAction) {
-            this.sessionStartedAction = sessionStartedAction;
-            this.interactionBecameActiveAction = interactionBecameActiveAction;
-            this.inboundMessageReceivedAction = inboundMessageReceivedAction;
-            this.sourceInteractionTransferredAction = sourceInteractionTransferredAction;
-            this.targetInteractionInitiatedAction = targetInteractionInitiatedAction;
-            this.targetInteractionConnectedAction = targetInteractionConnectedAction;
-            this.targetInteractionConnectFailedAction = targetInteractionConnectFailedAction;
-            this.transferTimeoutAction = transferTimeoutAction;
-            this.endingStartedAction = endingStartedAction;
-            this.endingTimeoutAction = endingTimeoutAction;
-            this.allInteractionsEndedAction = allInteractionsEndedAction;
-            this.endingActionsCompletedAction = endingActionsCompletedAction;
-            this.surveySubmittedAction = surveySubmittedAction;
-            this.surveyTimeoutAction = surveyTimeoutAction;
-            this.surveySkippedAction = surveySkippedAction;
-            this.consultTransferStartedAction = consultTransferStartedAction;
-            this.consultTransferEndedAction = consultTransferEndedAction;
-            this.agentTransferStartedAction = agentTransferStartedAction;
-            this.agentTransferCompletedAction = agentTransferCompletedAction;
-            this.agentTransferFailedAction = agentTransferFailedAction;
-            this.customerIdleTimeoutAction = customerIdleTimeoutAction;
-            this.systemErrorAction = systemErrorAction;
-            this.downstreamUnavailableAction = downstreamUnavailableAction;
-        }
+        private final CustomerIdleTimeoutAction customerIdleTimeoutAction;
+        private final SystemErrorAction systemErrorAction;
+        private final DownstreamUnavailableAction downstreamUnavailableAction;
     }
 }
