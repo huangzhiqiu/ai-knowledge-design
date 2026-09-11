@@ -50,7 +50,7 @@ public class ChatEngineDemo {
         DemoLogger.printTitle("Chat Engine Conversation State Machine Demo (COLA)");
 
         // Build and register the conversation state machine with default Actions
-        ConversationActionService.ConversationActions actions = createDefaultActions();
+        java.util.Map<ConversationFact, com.alibaba.cola.statemachine.Action<ConversationState, ConversationFact, CbolStateContext>> actions = createDefaultActions();
         ConversationStateMachineFactory.create(actions);
         DemoLogger.printInfo("State machine registered: " + ConversationStateMachineFactory.MACHINE_ID);
 
@@ -68,34 +68,48 @@ public class ChatEngineDemo {
      * These are simple instantiations without any dependency injection.
      * For Spring-managed Actions with dependencies, use the Spring configuration.
      *
-     * @return the ConversationActions holder with default Action instances
+     * @return the Map of ConversationFact to Action with default Action instances
      */
-    private static ConversationActionService.ConversationActions createDefaultActions() {
-        return new ConversationActionService.ConversationActions(
-                new SessionStartedAction(),
-                new InteractionBecameActiveAction(),
-                new InboundMessageReceivedAction(),
-                new SourceInteractionTransferredAction(),
-                new TargetInteractionInitiatedAction(),
-                new TargetInteractionConnectedAction(),
-                new TargetInteractionConnectFailedAction(),
-                new TransferTimeoutAction(),
-                new EndingStartedAction(),
-                new EndingTimeoutAction(),
-                new AllInteractionsEndedAction(),
-                new EndingActionsCompletedAction(),
-                new SurveySubmittedAction(),
-                new SurveyTimeoutAction(),
-                new SurveySkippedAction(),
-                new ConsultTransferStartedAction(),
-                new ConsultTransferEndedAction(),
-                new AgentTransferStartedAction(),
-                new AgentTransferCompletedAction(),
-                new AgentTransferFailedAction(),
-                new CustomerIdleTimeoutAction(),
-                new SystemErrorAction(),
-                new DownstreamUnavailableAction()
-        );
+    private static java.util.Map<ConversationFact, com.alibaba.cola.statemachine.Action<ConversationState, ConversationFact, CbolStateContext>> createDefaultActions() {
+        java.util.Map<ConversationFact, com.alibaba.cola.statemachine.Action<ConversationState, ConversationFact, CbolStateContext>> actions =
+                new java.util.EnumMap<>(ConversationFact.class);
+
+        // LIFECYCLE
+        actions.put(ConversationFact.SESSION_STARTED, new SessionStartedAction());
+        actions.put(ConversationFact.INTERACTION_BECAME_ACTIVE, new InteractionBecameActiveAction());
+        actions.put(ConversationFact.INBOUND_MESSAGE_RECEIVED, new InboundMessageReceivedAction());
+        actions.put(ConversationFact.ALL_INTERACTIONS_ENDED, new AllInteractionsEndedAction());
+
+        // TRANSFER
+        actions.put(ConversationFact.SOURCE_INTERACTION_TRANSFERRED, new SourceInteractionTransferredAction());
+        actions.put(ConversationFact.TARGET_INTERACTION_INITIATED, new TargetInteractionInitiatedAction());
+        actions.put(ConversationFact.TARGET_INTERACTION_CONNECTED, new TargetInteractionConnectedAction());
+        actions.put(ConversationFact.TARGET_INTERACTION_CONNECT_FAILED, new TargetInteractionConnectFailedAction());
+        actions.put(ConversationFact.TRANSFER_TIMEOUT, new TransferTimeoutAction());
+
+        // ENDING
+        actions.put(ConversationFact.ENDING_STARTED, new EndingStartedAction());
+        actions.put(ConversationFact.ENDING_TIMEOUT, new EndingTimeoutAction());
+        actions.put(ConversationFact.ENDING_ACTIONS_COMPLETED, new EndingActionsCompletedAction());
+
+        // SURVEY
+        actions.put(ConversationFact.SURVEY_SUBMITTED, new SurveySubmittedAction());
+        actions.put(ConversationFact.SURVEY_TIMEOUT, new SurveyTimeoutAction());
+        actions.put(ConversationFact.SURVEY_SKIPPED, new SurveySkippedAction());
+
+        // GENESYS
+        actions.put(ConversationFact.GENESYS_CONSULT_TRANSFER_STARTED, new ConsultTransferStartedAction());
+        actions.put(ConversationFact.GENESYS_CONSULT_TRANSFER_ENDED, new ConsultTransferEndedAction());
+        actions.put(ConversationFact.GENESYS_AGENT_TRANSFER_STARTED, new AgentTransferStartedAction());
+        actions.put(ConversationFact.GENESYS_AGENT_TRANSFER_COMPLETED, new AgentTransferCompletedAction());
+        actions.put(ConversationFact.GENESYS_AGENT_TRANSFER_FAILED, new AgentTransferFailedAction());
+
+        // SYSTEM
+        actions.put(ConversationFact.CUSTOMER_IDLE_TIMEOUT, new CustomerIdleTimeoutAction());
+        actions.put(ConversationFact.SYSTEM_ERROR, new SystemErrorAction());
+        actions.put(ConversationFact.DOWNSTREAM_UNAVAILABLE, new DownstreamUnavailableAction());
+
+        return actions;
     }
 
     /**

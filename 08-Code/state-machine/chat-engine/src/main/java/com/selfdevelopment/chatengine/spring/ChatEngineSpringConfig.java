@@ -80,65 +80,6 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 public class ChatEngineSpringConfig {
 
     /**
-     * Creates the ConversationActions holder bean with all injected Action beans.
-     * <p>
-     * This holder centralizes all Action dependencies and can be passed to
-     * the state machine builder for Spring-managed Action instances.
-     *
-     * @return the ConversationActions holder
-     */
-    @Bean
-    public ConversationActionService.ConversationActions conversationActions(
-            SessionStartedAction sessionStartedAction,
-            InteractionBecameActiveAction interactionBecameActiveAction,
-            InboundMessageReceivedAction inboundMessageReceivedAction,
-            SourceInteractionTransferredAction sourceInteractionTransferredAction,
-            TargetInteractionInitiatedAction targetInteractionInitiatedAction,
-            TargetInteractionConnectedAction targetInteractionConnectedAction,
-            TargetInteractionConnectFailedAction targetInteractionConnectFailedAction,
-            TransferTimeoutAction transferTimeoutAction,
-            EndingStartedAction endingStartedAction,
-            EndingTimeoutAction endingTimeoutAction,
-            AllInteractionsEndedAction allInteractionsEndedAction,
-            EndingActionsCompletedAction endingActionsCompletedAction,
-            SurveySubmittedAction surveySubmittedAction,
-            SurveyTimeoutAction surveyTimeoutAction,
-            SurveySkippedAction surveySkippedAction,
-            ConsultTransferStartedAction consultTransferStartedAction,
-            ConsultTransferEndedAction consultTransferEndedAction,
-            AgentTransferStartedAction agentTransferStartedAction,
-            AgentTransferCompletedAction agentTransferCompletedAction,
-            AgentTransferFailedAction agentTransferFailedAction,
-            CustomerIdleTimeoutAction customerIdleTimeoutAction,
-            SystemErrorAction systemErrorAction,
-            DownstreamUnavailableAction downstreamUnavailableAction) {
-        return new ConversationActionService.ConversationActions(
-                sessionStartedAction,
-                interactionBecameActiveAction,
-                inboundMessageReceivedAction,
-                sourceInteractionTransferredAction,
-                targetInteractionInitiatedAction,
-                targetInteractionConnectedAction,
-                targetInteractionConnectFailedAction,
-                transferTimeoutAction,
-                endingStartedAction,
-                endingTimeoutAction,
-                allInteractionsEndedAction,
-                endingActionsCompletedAction,
-                surveySubmittedAction,
-                surveyTimeoutAction,
-                surveySkippedAction,
-                consultTransferStartedAction,
-                consultTransferEndedAction,
-                agentTransferStartedAction,
-                agentTransferCompletedAction,
-                agentTransferFailedAction,
-                customerIdleTimeoutAction,
-                systemErrorAction,
-                downstreamUnavailableAction);
-    }
-
-    /**
      * Creates the conversation state machine bean using the injected Factory.
      * <p>
      * Uses the Spring-managed ConversationStateMachineFactory bean, which uses

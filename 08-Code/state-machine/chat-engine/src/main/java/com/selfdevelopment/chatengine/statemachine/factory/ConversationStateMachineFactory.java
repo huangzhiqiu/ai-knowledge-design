@@ -77,12 +77,12 @@ public class ConversationStateMachineFactory {
      * The caller must provide the Action instances to use. For Spring-managed Actions
      * with dependencies, use {@link #buildWithSpringActions()} instead.
      *
-     * @param actions the ConversationActions holder containing all Action instances
+     * @param actions map of ConversationFact to Action
      * @return the configured and registered conversation state machine
      * @throws NullPointerException if actions is null
      */
     public static StateMachine<ConversationState, ConversationFact, CbolStateContext> create(
-            ConversationActionService.ConversationActions actions) {
+            java.util.Map<ConversationFact, com.alibaba.cola.statemachine.Action<ConversationState, ConversationFact, CbolStateContext>> actions) {
         Objects.requireNonNull(actions, "actions must not be null");
 
         // Try to get existing state machine first

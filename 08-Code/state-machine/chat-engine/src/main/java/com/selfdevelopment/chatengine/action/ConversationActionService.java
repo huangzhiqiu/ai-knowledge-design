@@ -2,39 +2,16 @@ package com.selfdevelopment.chatengine.action;
 
 import com.alibaba.cola.statemachine.Action;
 import com.alibaba.cola.statemachine.StateMachine;
-import com.selfdevelopment.chatengine.action.ending.AllInteractionsEndedAction;
-import com.selfdevelopment.chatengine.action.ending.EndingActionsCompletedAction;
-import com.selfdevelopment.chatengine.action.ending.EndingStartedAction;
-import com.selfdevelopment.chatengine.action.ending.EndingTimeoutAction;
-import com.selfdevelopment.chatengine.action.genesys.AgentTransferCompletedAction;
-import com.selfdevelopment.chatengine.action.genesys.AgentTransferFailedAction;
-import com.selfdevelopment.chatengine.action.genesys.AgentTransferStartedAction;
-import com.selfdevelopment.chatengine.action.genesys.ConsultTransferEndedAction;
-import com.selfdevelopment.chatengine.action.genesys.ConsultTransferStartedAction;
-import com.selfdevelopment.chatengine.action.lifecycle.InboundMessageReceivedAction;
-import com.selfdevelopment.chatengine.action.lifecycle.InteractionBecameActiveAction;
-import com.selfdevelopment.chatengine.action.lifecycle.SessionStartedAction;
-import com.selfdevelopment.chatengine.action.survey.SurveySkippedAction;
-import com.selfdevelopment.chatengine.action.survey.SurveySubmittedAction;
-import com.selfdevelopment.chatengine.action.survey.SurveyTimeoutAction;
-import com.selfdevelopment.chatengine.action.system.CustomerIdleTimeoutAction;
-import com.selfdevelopment.chatengine.action.system.DownstreamUnavailableAction;
-import com.selfdevelopment.chatengine.action.system.SystemErrorAction;
-import com.selfdevelopment.chatengine.action.transfer.SourceInteractionTransferredAction;
-import com.selfdevelopment.chatengine.action.transfer.TargetInteractionConnectFailedAction;
-import com.selfdevelopment.chatengine.action.transfer.TargetInteractionConnectedAction;
-import com.selfdevelopment.chatengine.action.transfer.TargetInteractionInitiatedAction;
-import com.selfdevelopment.chatengine.action.transfer.TransferTimeoutAction;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
 import com.selfdevelopment.chatengine.enums.ConversationState;
 import com.selfdevelopment.chatengine.statemachine.factory.ConversationStateMachineFactory;
-import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.Assert;
 
+import java.util.Collections;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.function.Function;
@@ -42,17 +19,28 @@ import java.util.function.Function;
 /**
  * Service for managing Conversation Actions and their association with ConversationFact events.
  * <p>
- * This service handles all Action-related operations, including:
- * <ul>
- *   <li>Holding Action instances in a structured holder</li>
- *   <li>Converting Actions/Registry to ActionProvider functions</li>
- *   <li>Building state machines with Actions from various sources</li>
- * </ul>
+ * This service provides a universal, auto-discovering Action management layer. Actions are
+ * automatically discovered via the {@link HandlesFact} annotation and indexed by
+ * {@link ConversationActionRegistry}. Adding a new Action requires only two steps:
+ * <ol>
+ *   <li>Annotate the Action class with {@code @Component}</li>
+ *   <li>Annotate it with {@code @HandlesFact(ConversationFact.XXX)}</li>
+ * </ol>
+ * No changes to this service are needed when adding new Actions.
  * <p>
- * The {@link ConversationStateMachineFactory} focuses solely on state machine construction,
- * while this service manages the Action layer.
+ * Usage:
+ * <pre>{@code
+ * // Spring environment (recommended) - auto-discovery
+ * ConversationActionService actionService = ...;
+ * StateMachine<...> sm = actionService.buildWithSpringActions();
  *
- * @see ConversationActions
+ * // Non-Spring environment - explicit Map
+ * Map<ConversationFact, Action<...>> actions = new EnumMap<>(ConversationFact.class);
+ * actions.put(ConversationFact.SESSION_STARTED, new SessionStartedAction());
+ * StateMachine<...> sm = ConversationActionService.buildWithActions(actions);
+ * }</pre>
+ *
+ * @see HandlesFact
  * @see ConversationActionRegistry
  * @see ConversationStateMachineFactory
  */
@@ -66,12 +54,14 @@ public class ConversationActionService {
     /**
      * Builds the conversation state machine using Spring-managed Actions from the registry.
      * <p>
-     * This is the recommended method for Spring applications.
+     * This is the recommended method for Spring applications. Actions are automatically
+     * discovered via the {@link HandlesFact} annotation - no manual configuration needed.
      *
      * @return the configured conversation state machine
      */
     public StateMachine<ConversationState, ConversationFact, CbolStateContext> buildWithSpringActions() {
-        log.debug("Building conversation state machine with Spring-managed Actions");
+        log.debug("Building conversation state machine with auto-discovered Actions ({} registered)",
+                actionRegistry.size());
         return buildWithRegistry(actionRegistry);
     }
 
@@ -90,72 +80,37 @@ public class ConversationActionService {
     }
 
     /**
-     * Builds the conversation state machine with injected Action instances.
+     * Builds the conversation state machine with an explicit Map of Actions.
+     * <p>
+     * This method is useful for testing or non-Spring environments where Actions are
+     * manually instantiated. For Spring applications, use {@link #buildWithSpringActions()}.
      *
-     * @param actions the ConversationActions holder containing all Action instances
+     * @param actions map of ConversationFact to Action
      * @return the configured conversation state machine
      * @throws IllegalArgumentException if actions is null
      */
     public static StateMachine<ConversationState, ConversationFact, CbolStateContext> buildWithActions(
-            ConversationActions actions) {
+            Map<ConversationFact, Action<ConversationState, ConversationFact, CbolStateContext>> actions) {
         Assert.notNull(actions, "actions must not be null");
-        log.debug("Building conversation state machine with explicit Actions");
+        log.debug("Building conversation state machine with explicit Actions ({} provided)", actions.size());
         return ConversationStateMachineFactory.buildWithActionProvider(toActionProvider(actions));
     }
 
     /**
-     * Converts a ConversationActions holder to an ActionProvider function.
+     * Converts a Map of Actions to an ActionProvider function.
      * <p>
-     * Uses an EnumMap for efficient O(1) lookup instead of a large switch expression.
+     * Uses the map directly for O(1) lookup. Returns null and logs a warning if no
+     * Action is found for a given Fact.
      *
-     * @param actions the ConversationActions holder
+     * @param actions map of ConversationFact to Action
      * @return the ActionProvider function
      * @throws IllegalArgumentException if actions is null
      */
     public static Function<ConversationFact, Action<ConversationState, ConversationFact, CbolStateContext>> toActionProvider(
-            ConversationActions actions) {
+            Map<ConversationFact, Action<ConversationState, ConversationFact, CbolStateContext>> actions) {
         Assert.notNull(actions, "actions must not be null");
-
-        Map<ConversationFact, Action<ConversationState, ConversationFact, CbolStateContext>> actionMap =
-                new EnumMap<>(ConversationFact.class);
-
-        // LIFECYCLE
-        actionMap.put(ConversationFact.SESSION_STARTED, actions.getSessionStartedAction());
-        actionMap.put(ConversationFact.INTERACTION_BECAME_ACTIVE, actions.getInteractionBecameActiveAction());
-        actionMap.put(ConversationFact.INBOUND_MESSAGE_RECEIVED, actions.getInboundMessageReceivedAction());
-        actionMap.put(ConversationFact.ALL_INTERACTIONS_ENDED, actions.getAllInteractionsEndedAction());
-
-        // TRANSFER
-        actionMap.put(ConversationFact.SOURCE_INTERACTION_TRANSFERRED, actions.getSourceInteractionTransferredAction());
-        actionMap.put(ConversationFact.TARGET_INTERACTION_INITIATED, actions.getTargetInteractionInitiatedAction());
-        actionMap.put(ConversationFact.TARGET_INTERACTION_CONNECTED, actions.getTargetInteractionConnectedAction());
-        actionMap.put(ConversationFact.TARGET_INTERACTION_CONNECT_FAILED, actions.getTargetInteractionConnectFailedAction());
-        actionMap.put(ConversationFact.TRANSFER_TIMEOUT, actions.getTransferTimeoutAction());
-
-        // ENDING
-        actionMap.put(ConversationFact.ENDING_STARTED, actions.getEndingStartedAction());
-        actionMap.put(ConversationFact.ENDING_TIMEOUT, actions.getEndingTimeoutAction());
-        actionMap.put(ConversationFact.ENDING_ACTIONS_COMPLETED, actions.getEndingActionsCompletedAction());
-
-        // SURVEY
-        actionMap.put(ConversationFact.SURVEY_SUBMITTED, actions.getSurveySubmittedAction());
-        actionMap.put(ConversationFact.SURVEY_TIMEOUT, actions.getSurveyTimeoutAction());
-        actionMap.put(ConversationFact.SURVEY_SKIPPED, actions.getSurveySkippedAction());
-
-        // GENESYS
-        actionMap.put(ConversationFact.GENESYS_CONSULT_TRANSFER_STARTED, actions.getConsultTransferStartedAction());
-        actionMap.put(ConversationFact.GENESYS_CONSULT_TRANSFER_ENDED, actions.getConsultTransferEndedAction());
-        actionMap.put(ConversationFact.GENESYS_AGENT_TRANSFER_STARTED, actions.getAgentTransferStartedAction());
-        actionMap.put(ConversationFact.GENESYS_AGENT_TRANSFER_COMPLETED, actions.getAgentTransferCompletedAction());
-        actionMap.put(ConversationFact.GENESYS_AGENT_TRANSFER_FAILED, actions.getAgentTransferFailedAction());
-
-        // SYSTEM
-        actionMap.put(ConversationFact.CUSTOMER_IDLE_TIMEOUT, actions.getCustomerIdleTimeoutAction());
-        actionMap.put(ConversationFact.SYSTEM_ERROR, actions.getSystemErrorAction());
-        actionMap.put(ConversationFact.DOWNSTREAM_UNAVAILABLE, actions.getDownstreamUnavailableAction());
-
         return fact -> {
-            Action<ConversationState, ConversationFact, CbolStateContext> action = actionMap.get(fact);
+            Action<ConversationState, ConversationFact, CbolStateContext> action = actions.get(fact);
             if (action == null) {
                 log.warn("No Action found for ConversationFact: {}", fact);
             }
@@ -164,55 +119,58 @@ public class ConversationActionService {
     }
 
     /**
-     * Holder for all Conversation Action instances.
-     * <p>
-     * Used for Spring dependency injection - Spring can inject all Action beans
-     * into this holder, which is then passed to buildWithActions().
-     * <p>
-     * This allows the state machine to use Spring-managed Action beans with
-     * their own dependencies (Repository, Service, etc.) while keeping the
-     * factory logic clean and testable.
-     * <p>
-     * Uses Lombok {@link Getter} and {@link RequiredArgsConstructor} to eliminate
-     * boilerplate code for getters and constructor.
+     * Returns an unmodifiable view of all registered Actions from the registry.
+     *
+     * @return unmodifiable map of fact to Action
      */
-    @Getter
-    @RequiredArgsConstructor
-    public static class ConversationActions {
+    public Map<ConversationFact, Action<ConversationState, ConversationFact, CbolStateContext>> getAllActions() {
+        return actionRegistry.getAllActions();
+    }
 
-        // LIFECYCLE actions
-        private final SessionStartedAction sessionStartedAction;
-        private final InteractionBecameActiveAction interactionBecameActiveAction;
-        private final InboundMessageReceivedAction inboundMessageReceivedAction;
+    /**
+     * Returns the number of registered Actions.
+     *
+     * @return the number of registered Actions
+     */
+    public int getActionCount() {
+        return actionRegistry.size();
+    }
 
-        // TRANSFER actions
-        private final SourceInteractionTransferredAction sourceInteractionTransferredAction;
-        private final TargetInteractionInitiatedAction targetInteractionInitiatedAction;
-        private final TargetInteractionConnectedAction targetInteractionConnectedAction;
-        private final TargetInteractionConnectFailedAction targetInteractionConnectFailedAction;
-        private final TransferTimeoutAction transferTimeoutAction;
+    /**
+     * Returns whether an Action is registered for the given fact.
+     *
+     * @param fact the conversation fact
+     * @return true if an Action is registered, false otherwise
+     */
+    public boolean hasAction(ConversationFact fact) {
+        return actionRegistry.hasAction(fact);
+    }
 
-        // ENDING actions
-        private final EndingStartedAction endingStartedAction;
-        private final EndingTimeoutAction endingTimeoutAction;
-        private final AllInteractionsEndedAction allInteractionsEndedAction;
-        private final EndingActionsCompletedAction endingActionsCompletedAction;
+    /**
+     * Creates an empty EnumMap for Actions.
+     * <p>
+     * Convenience method for creating action maps in tests or non-Spring environments.
+     *
+     * @return a new empty EnumMap
+     */
+    public static Map<ConversationFact, Action<ConversationState, ConversationFact, CbolStateContext>> newActionMap() {
+        return new EnumMap<>(ConversationFact.class);
+    }
 
-        // SURVEY actions
-        private final SurveySubmittedAction surveySubmittedAction;
-        private final SurveyTimeoutAction surveyTimeoutAction;
-        private final SurveySkippedAction surveySkippedAction;
-
-        // GENESYS actions
-        private final ConsultTransferStartedAction consultTransferStartedAction;
-        private final ConsultTransferEndedAction consultTransferEndedAction;
-        private final AgentTransferStartedAction agentTransferStartedAction;
-        private final AgentTransferCompletedAction agentTransferCompletedAction;
-        private final AgentTransferFailedAction agentTransferFailedAction;
-
-        // SYSTEM actions
-        private final CustomerIdleTimeoutAction customerIdleTimeoutAction;
-        private final SystemErrorAction systemErrorAction;
-        private final DownstreamUnavailableAction downstreamUnavailableAction;
+    /**
+     * Creates an unmodifiable singleton map with a single Action.
+     * <p>
+     * Convenience method for tests that only need a single Action.
+     *
+     * @param fact the conversation fact
+     * @param action the action to register
+     * @return an unmodifiable map with the single Action
+     */
+    public static Map<ConversationFact, Action<ConversationState, ConversationFact, CbolStateContext>> singletonActionMap(
+            ConversationFact fact,
+            Action<ConversationState, ConversationFact, CbolStateContext> action) {
+        Map<ConversationFact, Action<ConversationState, ConversationFact, CbolStateContext>> map = newActionMap();
+        map.put(fact, action);
+        return Collections.unmodifiableMap(map);
     }
 }
