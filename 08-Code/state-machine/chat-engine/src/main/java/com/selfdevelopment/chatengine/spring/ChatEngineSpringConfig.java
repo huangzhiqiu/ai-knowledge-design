@@ -124,17 +124,23 @@ public class ChatEngineSpringConfig {
     }
 
     /**
-     * Creates the conversation state machine bean.
+     * Creates the conversation state machine bean using injected Action instances.
      * <p>
-     * Initializes the state machine on startup using the static factory method.
-     * For Spring-managed Actions, use the conversationActions bean to build
-     * a state machine with injected dependencies.
+     * Uses buildWithActions() to build the state machine with Spring-managed
+     * Action beans, allowing Actions to have their own dependencies.
+     * The state machine is then registered with StateMachineFactory.
      *
+     * @param actions the ConversationActions holder with injected Action beans
      * @return the conversation state machine
      */
     @Bean
-    public StateMachine<ConversationState, ConversationFact, CbolStateContext> conversationStateMachine() {
-        return ConversationStateMachineFactory.create();
+    public StateMachine<ConversationState, ConversationFact, CbolStateContext> conversationStateMachine(
+            ConversationStateMachineFactory.ConversationActions actions) {
+        StateMachine<ConversationState, ConversationFact, CbolStateContext> sm =
+                ConversationStateMachineFactory.buildWithActions(actions);
+        // Register the state machine so it can be retrieved by ID
+        com.alibaba.cola.statemachine.StateMachineFactory.register(sm);
+        return sm;
     }
 
     /**
