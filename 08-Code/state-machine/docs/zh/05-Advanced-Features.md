@@ -775,6 +775,142 @@ public class ActionWorker {
 }
 ```
 
+### 8.4 ConditionalAction 模式
+
+`ConditionalAction` 接口继承自 COLA 的 `Action`，内置了 `getCondition()` 方法，在 Action 与其执行守卫条件之间建立了自然的绑定关系。
+
+#### 8.4.1 设计原理
+
+**问题：** 在传统的状态机使用中，条件和动作在工厂中分别定义，导致：
+- 条件-动作不匹配风险（错误的条件与错误的动作配对）
+- 逻辑分散（条件在工厂中，动作在单独的类中）
+- 难以理解（需要查看两个地方才能理解一个转换）
+
+**解决方案：** 通过接口继承将条件直接绑定到 Action 类。
+
+```
+传统方式：                         ConditionalAction 方式：
+┌─────────────┐                   ┌──────────────────────┐
+│ Factory     │                   │ SessionStartedAction │
+│  .when(cond)│  ◄── 分离         │  ├─ getCondition()   │
+│  .perform(action)               │  └─ execute()        │
+└─────────────┘                   └──────────────────────┘
+                                        ▲ 条件和动作
+                                        │ 在同一个类中
+```
+
+#### 8.4.2 接口定义
+
+```java
+public interface ConditionalAction<S, E, C> extends Action<S, E, C> {
+
+    /** 始终满足的条件。 */
+    Condition<?> ALWAYS_TRUE = ctx -> true;
+
+    /**
+     * 返回此 Action 的条件。
+     * 默认值：始终满足（ALWAYS_TRUE）。
+     * 覆盖此方法以提供自定义守卫条件。
+     */
+    @SuppressWarnings("unchecked")
+    default Condition<C> getCondition() {
+        return (Condition<C>) ALWAYS_TRUE;
+    }
+}
+```
+
+#### 8.4.3 使用模式
+
+**模式 1：带自定义条件的 Action**
+```java
+@Component
+@HandlesFact(SESSION_STARTED)
+public class SessionStartedAction implements ConditionalAction<...> {
+    @Override
+    public Condition<CbolStateContext> getCondition() {
+        return ctx -> ctx.conversation() != null
+            && ctx.conversation().conversationId() != null;
+    }
+}
+```
+
+**模式 2：无条件的 Action（默认）**
+```java
+@Component
+@HandlesFact(INBOUND_MESSAGE_RECEIVED)
+public class InboundMessageAction implements ConditionalAction<...> {
+    // 不覆盖 getCondition() → 默认使用 ALWAYS_TRUE
+}
+```
+
+**模式 3：可复用的独立条件**
+```java
+public class MarketEnabledCondition implements Condition<CbolStateContext> {
+    private final String feature;
+    public boolean isSatisfied(CbolStateContext ctx) {
+        return ctx.marketConfig() != null
+            && ctx.marketConfig().transferEnabled();
+    }
+}
+
+// 在 Action 中使用
+@Override
+public Condition<CbolStateContext> getCondition() {
+    return new MarketEnabledCondition();
+}
+```
+
+#### 8.4.4 Factory 自动提取
+
+工厂自动提取条件，无需显式配置：
+
+```java
+Function<ConversationFact, Condition<CbolStateContext>> conditionProvider = fact -> {
+    Action<...> action = actionProvider.apply(fact);
+    if (action instanceof ConditionalAction) {
+        return ((ConditionalAction<...>) action).getCondition();
+    }
+    return ctx -> true; // 回退
+};
+
+// 每个转换自动获取其条件
+builder.externalTransition()
+    .from(NEW).to(INITIATED).on(SESSION_STARTED)
+    .when(conditionProvider.apply(SESSION_STARTED))  // 自动提取
+    .perform(actionProvider.apply(SESSION_STARTED));
+```
+
+#### 8.4.5 优势
+
+| 优势 | 说明 |
+|------|------|
+| **内聚性** | 条件和动作在同一个类中 |
+| **类型安全** | 编译器确保条件上下文类型与动作匹配 |
+| **零配置** | 工厂通过 `instanceof` 自动发现条件 |
+| **可选** | 默认 ALWAYS_TRUE 意味着简单动作没有开销 |
+| **可测试** | 条件可以独立进行单元测试 |
+| **可调试** | 在 Action 类内部记录条件失败日志 |
+
+#### 8.4.6 异常处理集成
+
+`ExceptionHandlingAction` 包装器也实现了 `ConditionalAction`，并将条件评估委托给被包装的 Action：
+
+```java
+public class ExceptionHandlingAction<S, E, C> implements ConditionalAction<S, E, C> {
+    private final Action<S, E, C> delegate;
+
+    @Override
+    public Condition<C> getCondition() {
+        if (delegate instanceof ConditionalAction) {
+            return ((ConditionalAction<S, E, C>) delegate).getCondition();
+        }
+        return ctx -> true;
+    }
+}
+```
+
+这确保了异常处理包装保留了原始 Action 的条件行为。
+
 ---
 
 ## 9. 总结表

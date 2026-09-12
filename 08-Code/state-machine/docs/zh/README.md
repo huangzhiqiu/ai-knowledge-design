@@ -183,6 +183,7 @@ state-machine/
 5. **多市场支持**：配置驱动的每市场行为（HK、SG、UK 等）。
 6. **独立状态机**：会话和交互是独立的状态机，具有独立的上下文。
 7. **可扩展的异常处理**：自定义异常处理器可通过实现 `ActionExceptionHandler` 并用 `@Component` 注解来添加。默认处理器包括 DownstreamConnection（优先级=100）、Business（80）、System（50）和 Fallback（-100）。
+8. **ConditionalAction 模式**：所有 Action 都实现 `ConditionalAction`，该接口继承自 COLA 的 `Action`，内置 `getCondition()` 方法。条件与 Action 自然绑定，具有默认的 `ALWAYS_TRUE` 实现。工厂通过 `instanceof` 自动提取条件，简单动作无需任何配置。
 
 ## 快速开始
 

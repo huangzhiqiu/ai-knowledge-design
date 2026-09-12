@@ -194,31 +194,128 @@ try {
 }
 ```
 
-## 4. Condition (Guard) Interface
+## 4. Condition (Guard) with ConditionalAction
 
-### 4.1 Implement a Condition
+### 4.1 Overview
+
+All Actions in this project implement the `ConditionalAction` interface, which extends COLA's `Action` with a `getCondition()` method. This creates a natural binding between an Action and its execution condition.
+
+**Key features:**
+- **Default ALWAYS_TRUE**: `getCondition()` has a default implementation that returns a condition always satisfied
+- **Opt-in custom conditions**: Override `getCondition()` only when you need a guard
+- **Auto-extracted by Factory**: The state machine factory automatically extracts conditions from Actions
+- **COLA native `when()`**: Conditions are evaluated via COLA's native `when()` method
+
+### 4.2 Action with Custom Condition
 
 ```java
-import com.alibaba.cola.statemachine.Condition;
-
-public class SurveyEnabledCondition implements Condition<CbolStateContext> {
+@Component
+@HandlesFact(ConversationFact.SESSION_STARTED)
+public class SessionStartedAction implements ConditionalAction<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override
-    public boolean isSatisfied(CbolStateContext ctx) {
-        return ctx.getMarketConfig().isSurveyEnabled();
+    public Condition<CbolStateContext> getCondition() {
+        return ctx -> {
+            if (ctx == null || ctx.conversation() == null) {
+                log.warn("SessionStartedAction condition failed: context or conversation is null");
+                return false;
+            }
+            if (ctx.conversation().conversationId() == null || ctx.conversation().conversationId().isBlank()) {
+                log.warn("SessionStartedAction condition failed: conversationId is null or blank");
+                return false;
+            }
+            return true;
+        };
+    }
+
+    @Override
+    public void execute(ConversationState from, ConversationState to, ConversationFact event, CbolStateContext ctx) {
+        // Action business logic
+        log.info("Session started: conversationId={}", ctx.conversation().conversationId());
     }
 }
 ```
 
-### 4.2 Use Condition in Transition
+### 4.3 Action without Custom Condition (Default)
 
 ```java
+@Component
+@HandlesFact(ConversationFact.INBOUND_MESSAGE_RECEIVED)
+public class InboundMessageReceivedAction implements ConditionalAction<ConversationState, ConversationFact, CbolStateContext> {
+
+    // getCondition() is NOT overridden - uses default ALWAYS_TRUE
+    // This action will always execute when the transition is triggered
+
+    @Override
+    public void execute(ConversationState from, ConversationState to, ConversationFact event, CbolStateContext ctx) {
+        // Action business logic
+        log.info("Inbound message received: conversationId={}", ctx.conversation().conversationId());
+    }
+}
+```
+
+### 4.4 How It Works in the Factory
+
+The `ConversationStateMachineFactory` automatically extracts conditions from Actions:
+
+```java
+// Helper: extract condition from action
+Function<ConversationFact, Condition<CbolStateContext>> conditionProvider = fact -> {
+    Action<ConversationState, ConversationFact, CbolStateContext> action = actionProvider.apply(fact);
+    if (action instanceof ConditionalAction) {
+        return ((ConditionalAction<ConversationState, ConversationFact, CbolStateContext>) action).getCondition();
+    }
+    return ctx -> true; // Fallback for plain Action implementations
+};
+
+// Usage in transition definition
 builder.externalTransition()
-        .from(ConversationState.IN_PROGRESS)
-        .to(ConversationState.ENDING)
-        .on(ConversationFact.SURVEY_COMPLETE)
-        .when(ctx -> ctx.getMarketConfig().isSurveyEnabled())
-        .perform(new SurveyCompleteAction());
+        .from(ConversationState.NEW)
+        .to(ConversationState.INITIATED)
+        .on(ConversationFact.SESSION_STARTED)
+        .when(conditionProvider.apply(ConversationFact.SESSION_STARTED))
+        .perform(actionProvider.apply(ConversationFact.SESSION_STARTED));
+```
+
+### 4.5 Condition Evaluation Flow
+
+```
+fireEvent(from, fact, ctx)
+    ↓
+Find matching transition
+    ↓
+Evaluate when(condition)
+    ├─ Condition returns TRUE → Execute perform(action) → State changes
+    └─ Condition returns FALSE → Skip transition → State stays (returns null)
+```
+
+### 4.6 Best Practices
+
+| Do | Don't |
+|----|-------|
+| Keep conditions simple and fast (no IO) | Put side effects in conditions |
+| Log when conditions fail (for debugging) | Use conditions for business logic that should be in actions |
+| Use conditions for guard checks (market config, state validation) | Define multiple unconditional transitions for the same (source, event) |
+| Override `getCondition()` only when needed | Return `null` from `getCondition()` (use default instead) |
+
+### 4.7 Standalone Condition (Advanced)
+
+For complex conditions that need to be reused across multiple Actions, you can still create standalone Condition classes:
+
+```java
+public class SurveyEnabledCondition implements Condition<CbolStateContext> {
+
+    @Override
+    public boolean isSatisfied(CbolStateContext ctx) {
+        return ctx.marketConfig() != null && ctx.marketConfig().surveyEnabled();
+    }
+}
+
+// Usage in an Action
+@Override
+public Condition<CbolStateContext> getCondition() {
+    return new SurveyEnabledCondition();
+}
 ```
 
 ## 5. Chat Engine Usage

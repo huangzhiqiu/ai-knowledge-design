@@ -194,31 +194,128 @@ try {
 }
 ```
 
-## 4. Condition（守卫）接口
+## 4. Condition（守卫）与 ConditionalAction
 
-### 4.1 实现 Condition
+### 4.1 概述
+
+本项目中所有 Action 都实现了 `ConditionalAction` 接口，该接口继承自 COLA 的 `Action`，并增加了 `getCondition()` 方法。这使得 Action 与其执行条件之间形成了自然的绑定关系。
+
+**核心特性：**
+- **默认 ALWAYS_TRUE**：`getCondition()` 有默认实现，返回始终满足的条件
+- **可选自定义条件**：仅在需要守卫时覆盖 `getCondition()`
+- **Factory 自动提取**：状态机工厂自动从 Action 中提取条件
+- **COLA 原生 `when()`**：条件通过 COLA 原生的 `when()` 方法进行评估
+
+### 4.2 带自定义条件的 Action
 
 ```java
-import com.alibaba.cola.statemachine.Condition;
-
-public class SurveyEnabledCondition implements Condition<CbolStateContext> {
+@Component
+@HandlesFact(ConversationFact.SESSION_STARTED)
+public class SessionStartedAction implements ConditionalAction<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override
-    public boolean isSatisfied(CbolStateContext ctx) {
-        return ctx.getMarketConfig().isSurveyEnabled();
+    public Condition<CbolStateContext> getCondition() {
+        return ctx -> {
+            if (ctx == null || ctx.conversation() == null) {
+                log.warn("SessionStartedAction 条件检查失败：context 或 conversation 为 null");
+                return false;
+            }
+            if (ctx.conversation().conversationId() == null || ctx.conversation().conversationId().isBlank()) {
+                log.warn("SessionStartedAction 条件检查失败：conversationId 为 null 或空");
+                return false;
+            }
+            return true;
+        };
+    }
+
+    @Override
+    public void execute(ConversationState from, ConversationState to, ConversationFact event, CbolStateContext ctx) {
+        // Action 业务逻辑
+        log.info("会话已启动：conversationId={}", ctx.conversation().conversationId());
     }
 }
 ```
 
-### 4.2 在转换中使用 Condition
+### 4.3 无条件的 Action（默认）
 
 ```java
+@Component
+@HandlesFact(ConversationFact.INBOUND_MESSAGE_RECEIVED)
+public class InboundMessageReceivedAction implements ConditionalAction<ConversationState, ConversationFact, CbolStateContext> {
+
+    // 不覆盖 getCondition() - 使用默认的 ALWAYS_TRUE
+    // 当转换被触发时，此 Action 总是会执行
+
+    @Override
+    public void execute(ConversationState from, ConversationState to, ConversationFact event, CbolStateContext ctx) {
+        // Action 业务逻辑
+        log.info("收到入站消息：conversationId={}", ctx.conversation().conversationId());
+    }
+}
+```
+
+### 4.4 Factory 中的工作原理
+
+`ConversationStateMachineFactory` 自动从 Action 中提取条件：
+
+```java
+// 辅助方法：从 action 中提取 condition
+Function<ConversationFact, Condition<CbolStateContext>> conditionProvider = fact -> {
+    Action<ConversationState, ConversationFact, CbolStateContext> action = actionProvider.apply(fact);
+    if (action instanceof ConditionalAction) {
+        return ((ConditionalAction<ConversationState, ConversationFact, CbolStateContext>) action).getCondition();
+    }
+    return ctx -> true; // 普通 Action 实现的回退
+};
+
+// 在转换定义中使用
 builder.externalTransition()
-        .from(ConversationState.IN_PROGRESS)
-        .to(ConversationState.ENDING)
-        .on(ConversationFact.SURVEY_COMPLETE)
-        .when(ctx -> ctx.getMarketConfig().isSurveyEnabled())
-        .perform(new SurveyCompleteAction());
+        .from(ConversationState.NEW)
+        .to(ConversationState.INITIATED)
+        .on(ConversationFact.SESSION_STARTED)
+        .when(conditionProvider.apply(ConversationFact.SESSION_STARTED))
+        .perform(actionProvider.apply(ConversationFact.SESSION_STARTED));
+```
+
+### 4.5 条件评估流程
+
+```
+fireEvent(from, fact, ctx)
+    ↓
+查找匹配的转换
+    ↓
+评估 when(condition)
+    ├─ 条件返回 TRUE → 执行 perform(action) → 状态变更
+    └─ 条件返回 FALSE → 跳过转换 → 状态保持不变（返回 null）
+```
+
+### 4.6 最佳实践
+
+| 应该做 | 不应该做 |
+|--------|----------|
+| 保持条件简单快速（无 IO） | 在条件中放置副作用 |
+| 条件失败时记录日志（便于调试） | 将应在 action 中的业务逻辑放在条件中 |
+| 使用条件进行守卫检查（市场配置、状态验证） | 为同一个（source, event）定义多个无条件转换 |
+| 仅在需要时覆盖 `getCondition()` | 从 `getCondition()` 返回 `null`（改用默认值） |
+
+### 4.7 独立 Condition（高级）
+
+对于需要在多个 Action 间复用的复杂条件，仍可创建独立的 Condition 类：
+
+```java
+public class SurveyEnabledCondition implements Condition<CbolStateContext> {
+
+    @Override
+    public boolean isSatisfied(CbolStateContext ctx) {
+        return ctx.marketConfig() != null && ctx.marketConfig().surveyEnabled();
+    }
+}
+
+// 在 Action 中使用
+@Override
+public Condition<CbolStateContext> getCondition() {
+    return new SurveyEnabledCondition();
+}
 ```
 
 ## 5. Chat Engine 使用

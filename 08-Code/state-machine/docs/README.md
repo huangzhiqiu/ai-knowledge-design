@@ -183,6 +183,7 @@ state-machine/
 5. **Multi-Market Support**: Configuration-driven per-market behavior (HK, SG, UK, etc.).
 6. **Independent State Machines**: Conversation and Interaction are independent state machines with separate contexts.
 7. **Extensible Exception Handling**: Custom exception handlers can be added by implementing `ActionExceptionHandler` and annotating with `@Component`. Default handlers include DownstreamConnection (priority=100), Business (80), System (50), and Fallback (-100).
+8. **ConditionalAction Pattern**: All Actions implement `ConditionalAction`, which extends COLA's `Action` with a built-in `getCondition()` method. Conditions are naturally bound to Actions, with a default `ALWAYS_TRUE` implementation. The factory auto-extracts conditions via `instanceof`, requiring zero configuration for simple actions.
 
 ## Quick Start
 

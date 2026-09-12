@@ -775,6 +775,142 @@ public class ActionWorker {
 }
 ```
 
+### 8.4 ConditionalAction Pattern
+
+The `ConditionalAction` interface extends COLA's `Action` with a built-in `getCondition()` method, creating a natural binding between an Action and its execution guard condition.
+
+#### 8.4.1 Design Rationale
+
+**Problem:** In traditional state machine usage, conditions and actions are defined separately in the factory, leading to:
+- Condition-action mismatch risk (wrong condition paired with wrong action)
+- Scattered logic (condition in factory, action in separate class)
+- Harder to understand (need to look in two places to understand a transition)
+
+**Solution:** Bind the condition directly to the Action class via interface inheritance.
+
+```
+Traditional:                    ConditionalAction:
+┌─────────────┐                 ┌──────────────────────┐
+│ Factory     │                 │ SessionStartedAction │
+│  .when(cond)│  ◄── separate  │  ├─ getCondition()   │
+│  .perform(action)             │  └─ execute()        │
+└─────────────┘                 └──────────────────────┘
+                                      ▲ condition and
+                                      │ action together
+```
+
+#### 8.4.2 Interface Definition
+
+```java
+public interface ConditionalAction<S, E, C> extends Action<S, E, C> {
+
+    /** A condition that is always satisfied. */
+    Condition<?> ALWAYS_TRUE = ctx -> true;
+
+    /**
+     * Returns the condition for this Action.
+     * Default: always satisfied (ALWAYS_TRUE).
+     * Override to provide custom guard conditions.
+     */
+    @SuppressWarnings("unchecked")
+    default Condition<C> getCondition() {
+        return (Condition<C>) ALWAYS_TRUE;
+    }
+}
+```
+
+#### 8.4.3 Usage Patterns
+
+**Pattern 1: Action with custom condition**
+```java
+@Component
+@HandlesFact(SESSION_STARTED)
+public class SessionStartedAction implements ConditionalAction<...> {
+    @Override
+    public Condition<CbolStateContext> getCondition() {
+        return ctx -> ctx.conversation() != null
+            && ctx.conversation().conversationId() != null;
+    }
+}
+```
+
+**Pattern 2: Action without condition (default)**
+```java
+@Component
+@HandlesFact(INBOUND_MESSAGE_RECEIVED)
+public class InboundMessageAction implements ConditionalAction<...> {
+    // getCondition() not overridden → defaults to ALWAYS_TRUE
+}
+```
+
+**Pattern 3: Reusable standalone condition**
+```java
+public class MarketEnabledCondition implements Condition<CbolStateContext> {
+    private final String feature;
+    public boolean isSatisfied(CbolStateContext ctx) {
+        return ctx.marketConfig() != null
+            && ctx.marketConfig().transferEnabled();
+    }
+}
+
+// In Action
+@Override
+public Condition<CbolStateContext> getCondition() {
+    return new MarketEnabledCondition();
+}
+```
+
+#### 8.4.4 Factory Auto-Extraction
+
+The factory automatically extracts conditions without explicit configuration:
+
+```java
+Function<ConversationFact, Condition<CbolStateContext>> conditionProvider = fact -> {
+    Action<...> action = actionProvider.apply(fact);
+    if (action instanceof ConditionalAction) {
+        return ((ConditionalAction<...>) action).getCondition();
+    }
+    return ctx -> true; // Fallback
+};
+
+// Every transition automatically gets its condition
+builder.externalTransition()
+    .from(NEW).to(INITIATED).on(SESSION_STARTED)
+    .when(conditionProvider.apply(SESSION_STARTED))  // Auto-extracted
+    .perform(actionProvider.apply(SESSION_STARTED));
+```
+
+#### 8.4.5 Benefits
+
+| Benefit | Description |
+|---------|-------------|
+| **Cohesion** | Condition and action live in the same class |
+| **Type safety** | Compiler ensures condition context type matches action |
+| **Zero config** | Factory auto-discovers conditions via `instanceof` |
+| **Opt-in** | Default ALWAYS_TRUE means no overhead for simple actions |
+| **Testable** | Conditions can be unit-tested independently |
+| **Debuggable** | Log condition failures inside the Action class |
+
+#### 8.4.6 Exception Handling Integration
+
+The `ExceptionHandlingAction` wrapper also implements `ConditionalAction` and delegates condition evaluation to the wrapped Action:
+
+```java
+public class ExceptionHandlingAction<S, E, C> implements ConditionalAction<S, E, C> {
+    private final Action<S, E, C> delegate;
+
+    @Override
+    public Condition<C> getCondition() {
+        if (delegate instanceof ConditionalAction) {
+            return ((ConditionalAction<S, E, C>) delegate).getCondition();
+        }
+        return ctx -> true;
+    }
+}
+```
+
+This ensures that exception handling wrapping preserves the original Action's condition behavior.
+
 ---
 
 ## 9. Summary Table
