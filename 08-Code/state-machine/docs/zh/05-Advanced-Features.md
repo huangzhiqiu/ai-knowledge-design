@@ -846,7 +846,7 @@ public class InboundMessageAction implements ConditionalAction<...> {
 **模式 3：可复用的独立条件**
 ```java
 public class MarketEnabledCondition implements Condition<CbolStateContext> {
-    private final String feature;
+    @Override
     public boolean isSatisfied(CbolStateContext ctx) {
         return ctx.marketConfig() != null
             && ctx.marketConfig().transferEnabled();
@@ -932,6 +932,7 @@ public class ExceptionHandlingAction<S, E, C> implements ConditionalAction<S, E,
 | COLA action-first 错误处理 | COLA 内置（被我们的包装器覆盖） | statemachine-core |
 | 故障转移 | 业务层模式 | 应用代码 |
 | 异步 Action Worker | 预留工具类 | chat-engine/action |
+| ConditionalAction 模式 | Action 绑定条件，默认 ALWAYS_TRUE | chat-engine/action |
 
 ---
 
@@ -943,4 +944,4 @@ public class ExceptionHandlingAction<S, E, C> implements ConditionalAction<S, E,
 
 ---
 
-*最后更新：2026-09-11（v3.1 — 新增完整的 Action 异常处理机制及包重构）*
+*最后更新：2026-09-12（v3.2 — 新增 ConditionalAction 模式，默认 ALWAYS_TRUE）*

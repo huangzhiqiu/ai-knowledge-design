@@ -846,7 +846,7 @@ public class InboundMessageAction implements ConditionalAction<...> {
 **Pattern 3: Reusable standalone condition**
 ```java
 public class MarketEnabledCondition implements Condition<CbolStateContext> {
-    private final String feature;
+    @Override
     public boolean isSatisfied(CbolStateContext ctx) {
         return ctx.marketConfig() != null
             && ctx.marketConfig().transferEnabled();
@@ -932,6 +932,7 @@ This ensures that exception handling wrapping preserves the original Action's co
 | COLA action-first error handling | COLA built-in (overridden by our wrapper) | statemachine-core |
 | Failover | Business layer pattern | Application code |
 | Async action worker | Reserved utility class | chat-engine/action |
+| ConditionalAction pattern | Action-bound conditions with default ALWAYS_TRUE | chat-engine/action |
 
 ---
 
@@ -943,4 +944,4 @@ This ensures that exception handling wrapping preserves the original Action's co
 
 ---
 
-*Last updated: 2026-09-11 (v3.1 — added comprehensive Action exception handling mechanism with package refactoring)*
+*Last updated: 2026-09-12 (v3.2 — added ConditionalAction pattern with default ALWAYS_TRUE)*
