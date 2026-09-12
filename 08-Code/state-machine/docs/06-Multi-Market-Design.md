@@ -1,8 +1,8 @@
 # Multi-Market State Machine Design
 
-> Version: 4.0 | Last Updated: 2026-09-05
-> Status: Design Proposal (for review)
-> Aligned with Event-Driven Orchestration Design (v4.0)
+> Version: 4.1 | Last Updated: 2026-09-12
+> Status: Active Design (aligned with current implementation)
+> Aligned with Event-Driven Orchestration Design (v4.0) and ConditionalAction Pattern
 
 ## 1. Background & Requirements
 
@@ -94,8 +94,8 @@ The CBOL messaging hub will be deployed to **multiple markets** (HK, UK, SG, etc
 flowchart TB
     subgraph Core["Core State Machine (shared by all markets)"]
         SM[ConversationStateMachineFactory]
-        STATES[States: NEW → INITIATED → IN_PROGRESS (survey as sub-phase) → TRANSFERRED → ENDING → ERROR → CLOSED]
-        EVENTS[Events: CUSTOMER_CONNECT, TRANSFER_REQUEST, SURVEY_START, SYS_ACTION_FAILED, ...]
+        STATES[States: NEW -&gt; INITIATED -&gt; ACTIVE -&gt; IN_PROGRESS -&gt; TRANSFERRED -&gt; ENDING -&gt; CLOSED]
+        EVENTS[Events: SESSION_STARTED, INTERACTION_BECAME_ACTIVE, INBOUND_MESSAGE_RECEIVED, SOURCE_INTERACTION_TRANSFERRED, ...]
     end
 
     subgraph Config["Market Configuration Layer"]
@@ -136,7 +136,7 @@ flowchart TB
 
 ### 3.2 Configuration Model
 
-#### 3.2.1 Extended StateMachineMarketConfig
+#### 3.2.1 StateMachineMarketConfig (Current Implementation)
 
 ```java
 @Builder
@@ -151,31 +151,40 @@ public record StateMachineMarketConfig(
     boolean surveyEnabled,
     boolean transferEnabled,
     boolean genesysEnabled,
-    boolean aibotEnabled,
-    boolean regulatoryAuditEnabled,
 
     // === Business Rules ===
     String fallbackRoutingStrategy,      // DROP / REQUEUE / FALLBACK_QUEUE
-    String surveyType,                    // CSAT / NPS / CES
-    String transferTarget,                // GENESYS / INTERNAL_QUEUE / AIBOT
-    int maxTransferRetries,
 
-    // === Connector Settings ===
-    String aibotEndpoint,
-    String genesysOrgId,
-    String websocketEndpoint,
-
-    // === Extensions ===
-    List<String> enabledExtensions        // e.g., ["HKRegulatoryAudit", "UKGdprRetention"]
+    // === Retry Configuration ===
+    int maxRetries,
+    long retryBaseDelayMs,
+    long retryMaxDelayMs
 ) {
-    public static StateMachineMarketConfig defaultConfig() { ... }
+    public static StateMachineMarketConfig defaultConfig() {
+        return StateMachineMarketConfig.builder()
+                .customerIdleSeconds(300)
+                .transferTimeoutSeconds(180)
+                .endingGraceSeconds(120)
+                .surveyTimeoutSeconds(120)
+                .surveyEnabled(false)
+                .transferEnabled(true)
+                .genesysEnabled(false)
+                .fallbackRoutingStrategy("DROP")
+                .maxRetries(3)
+                .retryBaseDelayMs(1000)
+                .retryMaxDelayMs(30000)
+                .build();
+    }
 }
 ```
 
-#### 3.2.2 Market Profiles (YAML)
+#### 3.2.2 Market Profiles (YAML - Future Enhancement)
+
+> **Note**: YAML config loading is a planned enhancement. Current implementation uses
+> `StateMachineMarketConfig.defaultConfig()` with programmatic overrides per market.
 
 ```yaml
-# config/markets/hk.yaml
+# config/markets/hk.yaml (planned)
 market: HK
 profile: hk-standard
 timeouts:
@@ -187,22 +196,16 @@ features:
   surveyEnabled: true
   transferEnabled: true
   genesysEnabled: true
-  aibotEnabled: true
-  regulatoryAuditEnabled: true
 businessRules:
   fallbackRoutingStrategy: REQUEUE
-  surveyType: CSAT
-  transferTarget: GENESYS
-  maxTransferRetries: 3
-connectors:
-  aibotEndpoint: https://aibot.hk.example.com
-  genesysOrgId: hk-org-001
-extensions:
-  - HKRegulatoryAudit
+retry:
+  maxRetries: 3
+  retryBaseDelayMs: 1000
+  retryMaxDelayMs: 30000
 ```
 
 ```yaml
-# config/markets/uk.yaml
+# config/markets/uk.yaml (planned)
 market: UK
 profile: uk-standard
 timeouts:
@@ -214,21 +217,16 @@ features:
   surveyEnabled: true
   transferEnabled: true
   genesysEnabled: false          # UK: no Genesys
-  aibotEnabled: true
-  regulatoryAuditEnabled: false
 businessRules:
   fallbackRoutingStrategy: FALLBACK_QUEUE
-  surveyType: NPS                # UK: NPS instead of CSAT
-  transferTarget: INTERNAL_QUEUE
-  maxTransferRetries: 2
-connectors:
-  aibotEndpoint: https://aibot.uk.example.com
-extensions:
-  - UKGdprRetention
+retry:
+  maxRetries: 2
+  retryBaseDelayMs: 2000
+  retryMaxDelayMs: 60000
 ```
 
 ```yaml
-# config/markets/sg.yaml
+# config/markets/sg.yaml (planned)
 market: SG
 profile: sg-lite
 timeouts:
@@ -239,131 +237,151 @@ features:
   surveyEnabled: false           # SG: no survey
   transferEnabled: true
   genesysEnabled: false
-  aibotEnabled: true
 businessRules:
   fallbackRoutingStrategy: DROP
-  transferTarget: AIBOT
-  maxTransferRetries: 1
-connectors:
-  aibotEndpoint: https://aibot.sg.example.com
+retry:
+  maxRetries: 1
+  retryBaseDelayMs: 500
+  retryMaxDelayMs: 10000
 ```
 
 ### 3.3 Market-Aware State Machine Building
 
-#### 3.3.1 Guard Conditions
+#### 3.3.1 Guard Conditions (via ConditionalAction)
 
-Transitions are gated by market config via guard conditions:
+Transitions are gated by market config via the `ConditionalAction` pattern.
+Each Action implements `ConditionalAction` and provides a `getCondition()` method.
+The factory auto-extracts the condition and passes it to COLA's `.when()`:
 
 ```java
-// Example: SURVEY_START only allowed if surveyEnabled
-builder.transition()
-    .from(ConversationState.IN_PROGRESS)
-    .on(ConversationFact.SURVEY_START)
-    .to(ConversationState.IN_PROGRESS)
-    .guard(ctx -> ctx.marketConfig().surveyEnabled())
-    .and();
+// Example: Survey-related transitions only allowed if surveyEnabled
+// Implemented via ConditionalAction in SurveySubmittedAction
+@Override
+public Condition<CbolStateContext> getCondition() {
+    return ctx -> ctx != null
+        && ctx.conversation() != null
+        && ctx.marketConfig() != null
+        && ctx.marketConfig().surveyEnabled();
+}
 
-// Example: TRANSFER_REQUEST only allowed if transferEnabled
-builder.transition()
-    .from(ConversationState.IN_PROGRESS)
-    .on(ConversationFact.TRANSFER_REQUEST)
-    .to(ConversationState.TRANSFERRED)
-    .guard(ctx -> ctx.marketConfig().transferEnabled())
-    .and();
+// In ConversationStateMachineFactory, condition is auto-extracted:
+Function<ConversationFact, Condition<CbolStateContext>> conditionProvider = fact -> {
+    Action<CbolStateContext> action = actionProvider.apply(fact);
+    return ((ConditionalAction<CbolStateContext>) action).getCondition();
+};
+
+builder.externalTransition()
+    .from(ConversationState.ENDING)
+    .to(ConversationState.ENDING)
+    .on(ConversationFact.SURVEY_SUBMITTED)
+    .when(conditionProvider.apply(ConversationFact.SURVEY_SUBMITTED))
+    .perform(actionProvider.apply(ConversationFact.SURVEY_SUBMITTED));
 ```
 
-#### 3.3.2 Action Mapping (Strategy Pattern)
+> **Reference**: See `04-Usage-Guide.md` section 4 "Condition with ConditionalAction"
+> and `05-Advanced-Features.md` section 8.4 "ConditionalAction Pattern" for details.
 
-Same event triggers different actions per market:
+#### 3.3.2 Action Mapping (Strategy Pattern - Future Enhancement)
+
+> **Current Implementation**: Actions are managed via `@HandlesFact` annotation +
+> `ConversationActionRegistry` auto-discovery. Each Action is a Spring `@Component`
+> bound to a specific `ConversationFact`. Market-specific action variants can be
+> implemented by adding multiple Action beans for the same fact with market-aware
+> conditions via `ConditionalAction`.
 
 ```java
-// Transfer action strategy
-public interface TransferAction {
+// Transfer action strategy (future enhancement for market-specific transfer logic)
+public interface TransferStrategy {
     void execute(CbolStateContext ctx);
 }
 
-public class GenesysTransferAction implements TransferAction { ... }
-public class InternalQueueTransferAction implements TransferAction { ... }
-public class AibotTransferAction implements TransferAction { ... }
+public class GenesysTransferStrategy implements TransferStrategy { ... }
+public class InternalQueueTransferStrategy implements TransferStrategy { ... }
+public class AibotTransferStrategy implements TransferStrategy { ... }
 
-// Factory: resolve action by market config
-public class TransferActionFactory {
-    public TransferAction getAction(StateMachineMarketConfig config) {
-        return switch (config.transferTarget()) {
-            case "GENESYS" -> new GenesysTransferAction();
-            case "INTERNAL_QUEUE" -> new InternalQueueTransferAction();
-            case "AIBOT" -> new AibotTransferAction();
-            default -> throw new IllegalArgumentException("Unknown transferTarget: " + config.transferTarget());
-        };
+// In Action implementation, resolve strategy by market config
+@Component
+@HandlesFact(ConversationFact.SOURCE_INTERACTION_TRANSFERRED)
+public class SourceInteractionTransferredAction implements ConditionalAction<CbolStateContext> {
+    private final TransferStrategyRegistry strategyRegistry;
+
+    @Override
+    public void execute(CbolStateContext ctx) {
+        TransferStrategy strategy = strategyRegistry.resolve(ctx.marketConfig());
+        strategy.execute(ctx);
+    }
+
+    @Override
+    public Condition<CbolStateContext> getCondition() {
+        return ctx -> ctx != null
+            && ctx.marketConfig() != null
+            && ctx.marketConfig().transferEnabled();
     }
 }
-
-// In state machine definition
-builder.transition()
-    .from(ConversationState.IN_PROGRESS)
-    .on(ConversationFact.TRANSFER_REQUEST)
-    .to(ConversationState.TRANSFERRED)
-    .guard(ctx -> ctx.marketConfig().transferEnabled())
-    .perform(ctx -> transferActionFactory.getAction(ctx.marketConfig()).execute(ctx))
-    .and();
 ```
 
-#### 3.3.3 Market Extensions (Optional)
+#### 3.3.3 Market Extensions (Optional - Future Enhancement)
 
-For market-specific states/events that don't fit the core model:
+For market-specific states/events that don't fit the core model.
+Current implementation does not have a formal extension mechanism;
+market differences are handled via config + ConditionalAction.
 
 ```java
+// Future enhancement: MarketExtension interface
 public interface MarketExtension {
     String getName();
     void registerTransitions(StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> builder);
-    void registerActions(CbolStateContext ctx);
 }
 
-// HK: Regulatory audit on every state change
+// HK: Regulatory audit on every state change (future)
 public class HKRegulatoryAuditExtension implements MarketExtension {
     public String getName() { return "HKRegulatoryAudit"; }
 
     public void registerTransitions(StateMachineBuilder<...> builder) {
         // Add HK-specific transitions if needed
     }
-
-    public void registerActions(CbolStateContext ctx) {
-        // Add audit logging listener
-    }
 }
 
-// UK: GDPR data retention on conversation close
+// UK: GDPR data retention on conversation close (future)
 public class UKGdprRetentionExtension implements MarketExtension { ... }
-
-// In state machine factory
-List<MarketExtension> extensions = config.enabledExtensions().stream()
-    .map(name -> extensionRegistry.get(name))
-    .filter(Objects::nonNull)
-    .toList();
-
-extensions.forEach(ext -> ext.registerTransitions(builder));
 ```
 
 ### 3.4 Market-Aware Service Layer
 
 ```java
+@Service
 public class ChatEngineStateMachineService {
-    private final StateMachine<ConversationState, ConversationFact, CbolStateContext> machine;
+    private final ConversationStateMachineFactory stateMachineFactory;
     private final MarketConfigProvider configProvider;
 
+    /**
+     * Fire an event. A new state machine instance is created per fire event
+     * to avoid COLA "already built" exception and ensure thread safety.
+     */
     public ConversationState fire(String conversationId, String market, ConversationFact fact) {
         StateMachineMarketConfig config = configProvider.getConfig(market);
         CbolStateContext ctx = buildContext(conversationId, config);
+
+        // Create a new state machine instance per fire (with unique machineId)
+        StateMachine<ConversationState, ConversationFact, CbolStateContext> machine =
+            stateMachineFactory.createStateMachine();
+
         return machine.fireEvent(ctx.conversation().state(), fact, ctx);
     }
 
-    // closeConversation: survey path only if surveyEnabled
+    /**
+     * Close conversation: survey path only if surveyEnabled.
+     * Survey is field-based (surveyStatus) in ENDING state, not a separate state.
+     */
     public ConversationState closeConversation(String conversationId, String market) {
         StateMachineMarketConfig config = configProvider.getConfig(market);
-        ConversationFact fact = config.surveyEnabled()
-            ? ConversationFact.SURVEY_START
-            : ConversationFact.CUSTOMER_CLOSE;
-        return fire(conversationId, market, fact);
+        if (config.surveyEnabled()) {
+            // Enter ENDING first, then survey will be handled within ENDING
+            return fire(conversationId, market, ConversationFact.ENDING_STARTED);
+        } else {
+            // Skip survey, go directly to ending actions completion
+            return fire(conversationId, market, ConversationFact.ENDING_STARTED);
+        }
     }
 }
 ```
@@ -372,27 +390,26 @@ public class ChatEngineStateMachineService {
 
 ## 4. Implementation Roadmap
 
-### Phase 1: Config-Only Differences (Low Hanging Fruit)
+### Phase 1: Config-Only Differences (✅ Completed)
 
-- [ ] Extend `StateMachineMarketConfig` with all threshold/toggle fields
-- [ ] Add guard conditions for `surveyEnabled`, `transferEnabled`, `genesysEnabled`
-- [ ] Implement `YamlMarketConfigLoader` to load configs from YAML files
-- [ ] Add `MarketConfigProvider` caching with refresh support
-- [ ] Write tests for each market profile
+- [x] Implement `StateMachineMarketConfig` with all threshold/toggle fields
+- [x] Add guard conditions via `ConditionalAction` pattern for `surveyEnabled`, `transferEnabled`, `genesysEnabled`
+- [x] Implement `MarketConfigProvider` with caching
+- [x] Write tests for market config
 
-**Estimated effort**: 2-3 days
+**Status**: Core config model implemented. YAML config loading is planned for future.
 
-### Phase 2: Action Mapping
+### Phase 2: Action Mapping (🔄 In Progress)
 
-- [ ] Define `TransferAction`, `SurveyAction`, `EndAction` strategy interfaces
-- [ ] Implement market-specific action classes
-- [ ] Create action factories resolvable by config
-- [ ] Wire actions into state machine transitions
+- [x] Define `@HandlesFact` annotation for Action-Fact binding
+- [x] Implement `ConversationActionRegistry` for auto-discovery
+- [x] Implement `ConversationActionService` for action management
+- [ ] Implement market-specific action strategy variants
 - [ ] Write tests for each action variant
 
-**Estimated effort**: 3-4 days
+**Status**: Action management framework implemented. Market-specific strategy variants are planned.
 
-### Phase 3: Market Extensions
+### Phase 3: Market Extensions (📋 Planned)
 
 - [ ] Define `MarketExtension` interface
 - [ ] Implement `ExtensionRegistry`
@@ -403,15 +420,16 @@ public class ChatEngineStateMachineService {
 
 **Estimated effort**: 3-5 days
 
-### Phase 4: Tooling & Operations
+### Phase 4: Tooling & Operations (📋 Planned)
 
 - [ ] Config validation tool (validate all market configs on startup)
 - [ ] Config diff tool (compare two market configs)
-- [ ] State machine diagram generator per market (show which transitions are IN_PROGRESS)
+- [ ] State machine diagram generator per market
 - [ ] Config hot-reload support (refresh config without restart)
 - [ ] Monitoring dashboard (per-market state distribution, error rates)
+- [ ] YAML config loader with three-layer inheritance
 
-**Estimated effort**: 2-3 days
+**Estimated effort**: 2-3 weeks
 
 ---
 
@@ -475,21 +493,29 @@ Creating separate state machines would duplicate this shared logic, leading to:
 
 ## 7. Appendix
 
-### 7.1 Market Comparison Matrix (Example)
+### 7.1 Market Comparison Matrix (Example - Planned)
 
 | Feature | HK | UK | SG |
 |---------|----|----|----|
-| Survey | CSAT, enabled | NPS, enabled | Disabled |
-| Transfer | Genesys | Internal queue | AIBot |
+| Survey | Enabled | Enabled | Disabled |
+| Transfer | Enabled (Genesys) | Enabled (Internal) | Enabled (AIBot) |
+| Genesys | Enabled | Disabled | Disabled |
 | Idle timeout | 300s | 600s | 300s |
 | Transfer timeout | 180s | 240s | 180s |
-| Regulatory audit | Required | Not required | Not required |
-| Data retention | 90 days | 30 days (GDPR) | 90 days |
+| Ending grace | 120s | 180s | 120s |
 | Fallback strategy | REQUEUE | FALLBACK_QUEUE | DROP |
+| Max retries | 3 | 2 | 1 |
+
+> **Note**: Survey type (CSAT/NPS), regulatory audit, data retention, and connector
+> endpoints are not currently in `StateMachineMarketConfig`. These can be added as
+> needed or handled via the extension mechanism.
 
 ### 7.2 References
 
-- Existing `StateMachineMarketConfig` — current config model (needs extension)
-- Existing `MarketConfigProvider` — config provider interface (needs YAML loader)
-- `05-Advanced-Features.md` — decorator pattern (Failover, Resilient) that works seamlessly with multi-market
+- `StateMachineMarketConfig` — current config model (11 fields: timeouts, feature toggles, fallback strategy, retry config)
+- `MarketConfigProvider` — config provider interface with in-memory caching
+- `ConditionalAction` — action-bound condition pattern (see `04-Usage-Guide.md` section 4)
+- `ConversationActionRegistry` — auto-discovery of Actions via `@HandlesFact` annotation
+- `05-Advanced-Features.md` — exception handling mechanism, ConditionalAction pattern
 - `02-CBOL-Business-Layer-Design.md` — current CBOL business layer design
+- `07-Multi-Market-Best-Practices/` — detailed design docs for 8 multi-market best practices

@@ -1,8 +1,8 @@
 # 多市场状态机设计
 
-> 版本：4.0 | 最后更新：2026-09-05
-> 状态：设计提案（待评审）
-> 对齐事件驱动编排设计（v4.0）
+> 版本：4.1 | 最后更新：2026-09-12
+> 状态：活跃设计（与当前实现对齐）
+> 对齐事件驱动编排设计（v4.0）和 ConditionalAction 模式
 
 ## 1. 背景与需求
 
@@ -94,8 +94,8 @@ CBOL 消息中心将部署到**多个市场**（HK、UK、SG 等）。每个市�
 flowchart TB
     subgraph Core["核心状态机（所有市场共享）"]
         SM[ConversationStateMachineFactory]
-        STATES[状态: NEW → INITIATED → IN_PROGRESS（调查作为子阶段）→ TRANSFERRED → ENDING → ERROR → CLOSED]
-        EVENTS[事件: CUSTOMER_CONNECT, TRANSFER_REQUEST, SURVEY_START, SYS_ACTION_FAILED, ...]
+        STATES[状态: NEW -&gt; INITIATED -&gt; ACTIVE -&gt; IN_PROGRESS -&gt; TRANSFERRED -&gt; ENDING -&gt; CLOSED]
+        EVENTS[事件: SESSION_STARTED, INTERACTION_BECAME_ACTIVE, INBOUND_MESSAGE_RECEIVED, SOURCE_INTERACTION_TRANSFERRED, ...]
     end
 
     subgraph Config["市场配置层"]
@@ -136,7 +136,7 @@ flowchart TB
 
 ### 3.2 配置模型
 
-#### 3.2.1 扩展的 StateMachineMarketConfig
+#### 3.2.1 StateMachineMarketConfig（当前实现）
 
 ```java
 @Builder
@@ -151,31 +151,40 @@ public record StateMachineMarketConfig(
     boolean surveyEnabled,
     boolean transferEnabled,
     boolean genesysEnabled,
-    boolean aibotEnabled,
-    boolean regulatoryAuditEnabled,
 
     // === 业务规则 ===
     String fallbackRoutingStrategy,      // DROP / REQUEUE / FALLBACK_QUEUE
-    String surveyType,                    // CSAT / NPS / CES
-    String transferTarget,                // GENESYS / INTERNAL_QUEUE / AIBOT
-    int maxTransferRetries,
 
-    // === 连接器设置 ===
-    String aibotEndpoint,
-    String genesysOrgId,
-    String websocketEndpoint,
-
-    // === 扩展 ===
-    List<String> enabledExtensions        // 例如 ["HKRegulatoryAudit", "UKGdprRetention"]
+    // === 重试配置 ===
+    int maxRetries,
+    long retryBaseDelayMs,
+    long retryMaxDelayMs
 ) {
-    public static StateMachineMarketConfig defaultConfig() { ... }
+    public static StateMachineMarketConfig defaultConfig() {
+        return StateMachineMarketConfig.builder()
+                .customerIdleSeconds(300)
+                .transferTimeoutSeconds(180)
+                .endingGraceSeconds(120)
+                .surveyTimeoutSeconds(120)
+                .surveyEnabled(false)
+                .transferEnabled(true)
+                .genesysEnabled(false)
+                .fallbackRoutingStrategy("DROP")
+                .maxRetries(3)
+                .retryBaseDelayMs(1000)
+                .retryMaxDelayMs(30000)
+                .build();
+    }
 }
 ```
 
-#### 3.2.2 市场配置文件（YAML）
+#### 3.2.2 市场配置文件（YAML - 未来增强）
+
+> **注意**：YAML 配置加载是计划中的增强功能。当前实现使用
+> `StateMachineMarketConfig.defaultConfig()` 并按市场进行程序化覆盖。
 
 ```yaml
-# config/markets/hk.yaml
+# config/markets/hk.yaml (计划中)
 market: HK
 profile: hk-standard
 timeouts:
@@ -187,22 +196,16 @@ features:
   surveyEnabled: true
   transferEnabled: true
   genesysEnabled: true
-  aibotEnabled: true
-  regulatoryAuditEnabled: true
 businessRules:
   fallbackRoutingStrategy: REQUEUE
-  surveyType: CSAT
-  transferTarget: GENESYS
-  maxTransferRetries: 3
-connectors:
-  aibotEndpoint: https://aibot.hk.example.com
-  genesysOrgId: hk-org-001
-extensions:
-  - HKRegulatoryAudit
+retry:
+  maxRetries: 3
+  retryBaseDelayMs: 1000
+  retryMaxDelayMs: 30000
 ```
 
 ```yaml
-# config/markets/uk.yaml
+# config/markets/uk.yaml (计划中)
 market: UK
 profile: uk-standard
 timeouts:
@@ -214,21 +217,16 @@ features:
   surveyEnabled: true
   transferEnabled: true
   genesysEnabled: false          # UK: 无 Genesys
-  aibotEnabled: true
-  regulatoryAuditEnabled: false
 businessRules:
   fallbackRoutingStrategy: FALLBACK_QUEUE
-  surveyType: NPS                # UK: NPS 而非 CSAT
-  transferTarget: INTERNAL_QUEUE
-  maxTransferRetries: 2
-connectors:
-  aibotEndpoint: https://aibot.uk.example.com
-extensions:
-  - UKGdprRetention
+retry:
+  maxRetries: 2
+  retryBaseDelayMs: 2000
+  retryMaxDelayMs: 60000
 ```
 
 ```yaml
-# config/markets/sg.yaml
+# config/markets/sg.yaml (计划中)
 market: SG
 profile: sg-lite
 timeouts:
@@ -239,131 +237,145 @@ features:
   surveyEnabled: false           # SG: 无满意度调查
   transferEnabled: true
   genesysEnabled: false
-  aibotEnabled: true
 businessRules:
   fallbackRoutingStrategy: DROP
-  transferTarget: AIBOT
-  maxTransferRetries: 1
-connectors:
-  aibotEndpoint: https://aibot.sg.example.com
+retry:
+  maxRetries: 1
+  retryBaseDelayMs: 500
+  retryMaxDelayMs: 10000
 ```
 
 ### 3.3 市场感知状态机构建
 
-#### 3.3.1 Guard 条件
+#### 3.3.1 Guard 条件（通过 ConditionalAction）
 
-迁移通过 guard 条件由市场配置门控：
+迁移通过 `ConditionalAction` 模式由市场配置门控。
+每个 Action 实现 `ConditionalAction` 并提供 `getCondition()` 方法。
+工厂自动提取条件并传递给 COLA 的 `.when()`：
 
 ```java
-// 示例：SURVEY_START 仅在 surveyEnabled 时允许
-builder.transition()
-    .from(ConversationState.IN_PROGRESS)
-    .on(ConversationFact.SURVEY_START)
-    .to(ConversationState.IN_PROGRESS)
-    .guard(ctx -> ctx.marketConfig().surveyEnabled())
-    .and();
+// 示例：满意度调查相关迁移仅在 surveyEnabled 时允许
+// 在 SurveySubmittedAction 中通过 ConditionalAction 实现
+@Override
+public Condition<CbolStateContext> getCondition() {
+    return ctx -> ctx != null
+        && ctx.conversation() != null
+        && ctx.marketConfig() != null
+        && ctx.marketConfig().surveyEnabled();
+}
 
-// 示例：TRANSFER_REQUEST 仅在 transferEnabled 时允许
-builder.transition()
-    .from(ConversationState.IN_PROGRESS)
-    .on(ConversationFact.TRANSFER_REQUEST)
-    .to(ConversationState.TRANSFERRED)
-    .guard(ctx -> ctx.marketConfig().transferEnabled())
-    .and();
+// 在 ConversationStateMachineFactory 中，条件自动提取：
+Function<ConversationFact, Condition<CbolStateContext>> conditionProvider = fact -> {
+    Action<CbolStateContext> action = actionProvider.apply(fact);
+    return ((ConditionalAction<CbolStateContext>) action).getCondition();
+};
+
+builder.externalTransition()
+    .from(ConversationState.ENDING)
+    .to(ConversationState.ENDING)
+    .on(ConversationFact.SURVEY_SUBMITTED)
+    .when(conditionProvider.apply(ConversationFact.SURVEY_SUBMITTED))
+    .perform(actionProvider.apply(ConversationFact.SURVEY_SUBMITTED));
 ```
 
-#### 3.3.2 动作映射（策略模式）
+> **参考**：详见 `04-Usage-Guide.md` 第 4 节 "Condition with ConditionalAction"
+> 和 `05-Advanced-Features.md` 第 8.4 节 "ConditionalAction Pattern"。
 
-同一事件按市场触发不同动作：
+#### 3.3.2 动作映射（策略模式 - 未来增强）
+
+> **当前实现**：Action 通过 `@HandlesFact` 注解 + `ConversationActionRegistry`
+> 自动发现进行管理。每个 Action 都是绑定到特定 `ConversationFact` 的 Spring `@Component`。
+> 市场特定的 Action 变体可以通过为同一 fact 添加多个 Action bean，并通过
+> `ConditionalAction` 实现市场感知条件来实现。
 
 ```java
-// 转接动作策略
-public interface TransferAction {
+// 转接动作策略（市场特定转接逻辑的未来增强）
+public interface TransferStrategy {
     void execute(CbolStateContext ctx);
 }
 
-public class GenesysTransferAction implements TransferAction { ... }
-public class InternalQueueTransferAction implements TransferAction { ... }
-public class AibotTransferAction implements TransferAction { ... }
+public class GenesysTransferStrategy implements TransferStrategy { ... }
+public class InternalQueueTransferStrategy implements TransferStrategy { ... }
+public class AibotTransferStrategy implements TransferStrategy { ... }
 
-// 工厂：按市场配置解析动作
-public class TransferActionFactory {
-    public TransferAction getAction(StateMachineMarketConfig config) {
-        return switch (config.transferTarget()) {
-            case "GENESYS" -> new GenesysTransferAction();
-            case "INTERNAL_QUEUE" -> new InternalQueueTransferAction();
-            case "AIBOT" -> new AibotTransferAction();
-            default -> throw new IllegalArgumentException("Unknown transferTarget: " + config.transferTarget());
-        };
+// 在 Action 实现中，按市场配置解析策略
+@Component
+@HandlesFact(ConversationFact.SOURCE_INTERACTION_TRANSFERRED)
+public class SourceInteractionTransferredAction implements ConditionalAction<CbolStateContext> {
+    private final TransferStrategyRegistry strategyRegistry;
+
+    @Override
+    public void execute(CbolStateContext ctx) {
+        TransferStrategy strategy = strategyRegistry.resolve(ctx.marketConfig());
+        strategy.execute(ctx);
+    }
+
+    @Override
+    public Condition<CbolStateContext> getCondition() {
+        return ctx -> ctx != null
+            && ctx.marketConfig() != null
+            && ctx.marketConfig().transferEnabled();
     }
 }
-
-// 在状态机定义中
-builder.transition()
-    .from(ConversationState.IN_PROGRESS)
-    .on(ConversationFact.TRANSFER_REQUEST)
-    .to(ConversationState.TRANSFERRED)
-    .guard(ctx -> ctx.marketConfig().transferEnabled())
-    .perform(ctx -> transferActionFactory.getAction(ctx.marketConfig()).execute(ctx))
-    .and();
 ```
 
-#### 3.3.3 市场扩展（可选）
+#### 3.3.3 市场扩展（可选 - 未来增强）
 
-对于不适合核心模型的市场特定状态/事件：
+对于不适合核心模型的市场特定状态/事件。
+当前实现没有正式的扩展机制；
+市场差异通过配置 + ConditionalAction 处理。
 
 ```java
+// 未来增强：MarketExtension 接口
 public interface MarketExtension {
     String getName();
     void registerTransitions(StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> builder);
-    void registerActions(CbolStateContext ctx);
 }
 
-// HK: 每次状态变更的监管审计
+// HK: 每次状态变更的监管审计（未来）
 public class HKRegulatoryAuditExtension implements MarketExtension {
     public String getName() { return "HKRegulatoryAudit"; }
 
     public void registerTransitions(StateMachineBuilder<...> builder) {
         // 如有需要添加 HK 特定迁移
     }
-
-    public void registerActions(CbolStateContext ctx) {
-        // 添加审计日志监听器
-    }
 }
 
-// UK: 会话关闭时的 GDPR 数据保留
+// UK: 会话关闭时的 GDPR 数据保留（未来）
 public class UKGdprRetentionExtension implements MarketExtension { ... }
-
-// 在状态机工厂中
-List<MarketExtension> extensions = config.enabledExtensions().stream()
-    .map(name -> extensionRegistry.get(name))
-    .filter(Objects::nonNull)
-    .toList();
-
-extensions.forEach(ext -> ext.registerTransitions(builder));
 ```
 
 ### 3.4 市场感知服务层
 
 ```java
+@Service
 public class ChatEngineStateMachineService {
-    private final StateMachine<ConversationState, ConversationFact, CbolStateContext> machine;
+    private final ConversationStateMachineFactory stateMachineFactory;
     private final MarketConfigProvider configProvider;
 
+    /**
+     * 触发事件。每次 fire 创建新的状态机实例，
+     * 以避免 COLA "already built" 异常并确保线程安全。
+     */
     public ConversationState fire(String conversationId, String market, ConversationFact fact) {
         StateMachineMarketConfig config = configProvider.getConfig(market);
         CbolStateContext ctx = buildContext(conversationId, config);
+
+        // 每次 fire 创建新的状态机实例（带唯一 machineId）
+        StateMachine<ConversationState, ConversationFact, CbolStateContext> machine =
+            stateMachineFactory.createStateMachine();
+
         return machine.fireEvent(ctx.conversation().state(), fact, ctx);
     }
 
-    // closeConversation: 仅在 surveyEnabled 时走满意度调查路径
+    /**
+     * 关闭会话：仅在 surveyEnabled 时走满意度调查路径。
+     * 满意度调查是 ENDING 状态中的字段（surveyStatus），不是独立状态。
+     */
     public ConversationState closeConversation(String conversationId, String market) {
         StateMachineMarketConfig config = configProvider.getConfig(market);
-        ConversationFact fact = config.surveyEnabled()
-            ? ConversationFact.SURVEY_START
-            : ConversationFact.CUSTOMER_CLOSE;
-        return fire(conversationId, market, fact);
+        // 进入 ENDING，调查将在 ENDING 内处理
+        return fire(conversationId, market, ConversationFact.ENDING_STARTED);
     }
 }
 ```
@@ -372,27 +384,26 @@ public class ChatEngineStateMachineService {
 
 ## 4. 实施路线图
 
-### 阶段 1：仅配置差异（低成本）
+### 阶段 1：仅配置差异（✅ 已完成）
 
-- [ ] 用所有阈值/开关字段扩展 `StateMachineMarketConfig`
-- [ ] 为 `surveyEnabled`、`transferEnabled`、`genesysEnabled` 添加 guard 条件
-- [ ] 实现 `YamlMarketConfigLoader` 从 YAML 文件加载配置
-- [ ] 添加带刷新支持的 `MarketConfigProvider` 缓存
-- [ ] 为每个市场配置文件编写测试
+- [x] 实现包含所有阈值/开关字段的 `StateMachineMarketConfig`
+- [x] 通过 `ConditionalAction` 模式为 `surveyEnabled`、`transferEnabled`、`genesysEnabled` 添加 guard 条件
+- [x] 实现带缓存的 `MarketConfigProvider`
+- [x] 编写市场配置测试
 
-**预估工作量**：2-3 天
+**状态**：核心配置模型已实现。YAML 配置加载计划在未来实现。
 
-### 阶段 2：动作映射
+### 阶段 2：动作映射（🔄 进行中）
 
-- [ ] 定义 `TransferAction`、`SurveyAction`、`EndAction` 策略接口
-- [ ] 实现市场特定动作类
-- [ ] 创建可按配置解析的动作工厂
-- [ ] 将动作接入状态机迁移
+- [x] 定义用于 Action-Fact 绑定的 `@HandlesFact` 注解
+- [x] 实现用于自动发现的 `ConversationActionRegistry`
+- [x] 实现用于动作管理的 `ConversationActionService`
+- [ ] 实现市场特定动作策略变体
 - [ ] 为每个动作变体编写测试
 
-**预估工作量**：3-4 天
+**状态**：动作管理框架已实现。市场特定策略变体计划中。
 
-### 阶段 3：市场扩展
+### 阶段 3：市场扩展（📋 计划中）
 
 - [ ] 定义 `MarketExtension` 接口
 - [ ] 实现 `ExtensionRegistry`
@@ -403,15 +414,16 @@ public class ChatEngineStateMachineService {
 
 **预估工作量**：3-5 天
 
-### 阶段 4：工具与运维
+### 阶段 4：工具与运维（📋 计划中）
 
 - [ ] 配置校验工具（启动时校验所有市场配置）
 - [ ] 配置差异工具（比较两个市场配置）
-- [ ] 每市场状态机图表生成器（显示哪些迁移处于活动状态）
+- [ ] 每市场状态机图表生成器
 - [ ] 配置热重载支持（无需重启刷新配置）
 - [ ] 监控仪表板（每市场状态分布、错误率）
+- [ ] 带三层继承的 YAML 配置加载器
 
-**预估工作量**：2-3 天
+**预估工作量**：2-3 周
 
 ---
 
@@ -475,21 +487,28 @@ public class ChatEngineStateMachineService {
 
 ## 7. 附录
 
-### 7.1 市场比较矩阵（示例）
+### 7.1 市场比较矩阵（示例 - 计划中）
 
 | 功能 | HK | UK | SG |
 |---------|----|----|----|
-| 满意度调查 | CSAT，启用 | NPS，启用 | 禁用 |
-| 转接 | Genesys | 内部队列 | AIBot |
+| 满意度调查 | 启用 | 启用 | 禁用 |
+| 转接 | 启用（Genesys） | 启用（内部） | 启用（AIBot） |
+| Genesys | 启用 | 禁用 | 禁用 |
 | 空闲超时 | 300秒 | 600秒 | 300秒 |
 | 转接超时 | 180秒 | 240秒 | 180秒 |
-| 监管审计 | 必需 | 不需要 | 不需要 |
-| 数据保留 | 90 天 | 30 天（GDPR） | 90 天 |
+| 结束宽限 | 120秒 | 180秒 | 120秒 |
 | 回退策略 | REQUEUE | FALLBACK_QUEUE | DROP |
+| 最大重试 | 3 | 2 | 1 |
+
+> **注意**：满意度调查类型（CSAT/NPS）、监管审计、数据保留和连接器端点
+> 当前不在 `StateMachineMarketConfig` 中。这些可以根据需要添加或通过扩展机制处理。
 
 ### 7.2 参考
 
-- 现有 `StateMachineMarketConfig` — 当前配置模型（需要扩展）
-- 现有 `MarketConfigProvider` — 配置提供者接口（需要 YAML 加载器）
-- `05-Advanced-Features.md` — 与多市场无缝协作的装饰器模式（Failover、Resilient）
+- `StateMachineMarketConfig` — 当前配置模型（11 个字段：超时、功能开关、回退策略、重试配置）
+- `MarketConfigProvider` — 带内存缓存的配置提供者接口
+- `ConditionalAction` — 动作绑定条件模式（参见 `04-Usage-Guide.md` 第 4 节）
+- `ConversationActionRegistry` — 通过 `@HandlesFact` 注解自动发现 Action
+- `05-Advanced-Features.md` — 异常处理机制、ConditionalAction 模式
 - `02-CBOL-Business-Layer-Design.md` — 当前 Chat Engine 业务层设计
+- `07-Multi-Market-Best-Practices/` — 8 个多市场最佳实践的详细设计文档

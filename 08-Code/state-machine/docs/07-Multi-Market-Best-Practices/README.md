@@ -1,8 +1,16 @@
 # Multi-Market Best Practices
 
 > Detailed design documents for 8 multi-market state machine best practices.
-> Last Updated: 2026-09-05
+> Last Updated: 2026-09-12
 > Aligned with Event-Driven Orchestration Design (v4.0)
+
+> **Important Note**: These documents are **design proposals** for future enhancements.
+> Code examples may use illustrative event/state names (e.g., `TRANSFER_REQUEST`, `SURVEY_START`)
+> that differ from the current implementation. Refer to `06-Multi-Market-Design.md` and
+> the actual source code for the current state model and event definitions:
+> - States: `NEW, INITIATED, ACTIVE, IN_PROGRESS, TRANSFERRED, ENDING, CLOSED`
+> - Events: `SESSION_STARTED, INTERACTION_BECAME_ACTIVE, INBOUND_MESSAGE_RECEIVED, ...`
+> - Conditions: Implemented via `ConditionalAction` pattern (not `.guard()`)
 
 ## Overview
 
