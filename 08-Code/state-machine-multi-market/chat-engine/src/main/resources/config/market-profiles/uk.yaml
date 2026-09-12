@@ -1,0 +1,35 @@
+# UK market profile
+# Region: EMEA
+
+market: UK
+profile: uk-standard
+inherits: emea
+
+timeouts:
+  customerIdleSeconds: 600
+  transferTimeoutSeconds: 240
+  endingGraceSeconds: 180
+  surveyTimeoutSeconds: 600
+
+features:
+  surveyEnabled: true
+  transferEnabled: true
+  genesysEnabled: false
+  aibotEnabled: true
+  regulatoryAuditEnabled: false
+
+businessRules:
+  fallbackRoutingStrategy: FALLBACK_QUEUE
+  surveyType: NPS
+  transferTarget: INTERNAL_QUEUE
+
+retry:
+  maxRetries: 2
+  retryBaseDelayMs: 2000
+  retryMaxDelayMs: 60000
+
+connectors:
+  aibotEndpoint: https://aibot.uk.example.com
+
+extensions:
+  - UKGdprRetention

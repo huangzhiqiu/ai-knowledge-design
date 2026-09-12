@@ -1,0 +1,25 @@
+# EMEA regional profile
+# Markets: UK, DE, FR
+
+profile: emea
+inherits: base
+
+timeouts:
+  customerIdleSeconds: 600
+  transferTimeoutSeconds: 240
+  endingGraceSeconds: 180
+  surveyTimeoutSeconds: 600
+
+features:
+  surveyEnabled: true
+  genesysEnabled: false
+
+businessRules:
+  fallbackRoutingStrategy: FALLBACK_QUEUE
+  surveyType: NPS
+  transferTarget: INTERNAL_QUEUE
+
+retry:
+  maxRetries: 2
+  retryBaseDelayMs: 2000
+  retryMaxDelayMs: 60000

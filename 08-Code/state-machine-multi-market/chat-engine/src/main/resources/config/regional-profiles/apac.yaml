@@ -1,0 +1,24 @@
+# APAC regional profile
+# Markets: HK, SG, JP, AU
+
+profile: apac
+inherits: base
+
+timeouts:
+  customerIdleSeconds: 300
+  transferTimeoutSeconds: 180
+  endingGraceSeconds: 120
+
+features:
+  surveyEnabled: true
+  genesysEnabled: true
+
+businessRules:
+  fallbackRoutingStrategy: REQUEUE
+  surveyType: CSAT
+  transferTarget: GENESYS
+
+retry:
+  maxRetries: 3
+  retryBaseDelayMs: 1000
+  retryMaxDelayMs: 30000

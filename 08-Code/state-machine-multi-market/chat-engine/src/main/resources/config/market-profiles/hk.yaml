@@ -1,0 +1,37 @@
+# HK market profile
+# Region: APAC
+
+market: HK
+profile: hk-standard
+inherits: apac
+
+timeouts:
+  customerIdleSeconds: 300
+  transferTimeoutSeconds: 180
+  endingGraceSeconds: 120
+  surveyTimeoutSeconds: 300
+
+features:
+  surveyEnabled: true
+  transferEnabled: true
+  genesysEnabled: true
+  aibotEnabled: true
+  regulatoryAuditEnabled: true
+
+businessRules:
+  fallbackRoutingStrategy: REQUEUE
+  surveyType: CSAT
+  transferTarget: GENESYS
+
+retry:
+  maxRetries: 3
+  retryBaseDelayMs: 1000
+  retryMaxDelayMs: 30000
+
+connectors:
+  aibotEndpoint: https://aibot.hk.example.com
+  genesysOrgId: hk-org-001
+  websocketEndpoint: wss://ws.hk.example.com
+
+extensions:
+  - HKRegulatoryAudit

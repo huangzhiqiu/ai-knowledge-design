@@ -1,0 +1,24 @@
+# AMER regional profile
+# Markets: US, CA, BR
+
+profile: amer
+inherits: base
+
+timeouts:
+  customerIdleSeconds: 450
+  transferTimeoutSeconds: 200
+  endingGraceSeconds: 150
+
+features:
+  surveyEnabled: true
+  genesysEnabled: true
+
+businessRules:
+  fallbackRoutingStrategy: REQUEUE
+  surveyType: CSAT
+  transferTarget: GENESYS
+
+retry:
+  maxRetries: 3
+  retryBaseDelayMs: 1500
+  retryMaxDelayMs: 45000

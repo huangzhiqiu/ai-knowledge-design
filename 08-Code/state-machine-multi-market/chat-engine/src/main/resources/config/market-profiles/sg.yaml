@@ -1,0 +1,29 @@
+# SG market profile
+# Region: APAC
+
+market: SG
+profile: sg-lite
+inherits: apac
+
+timeouts:
+  customerIdleSeconds: 300
+  transferTimeoutSeconds: 180
+  endingGraceSeconds: 120
+
+features:
+  surveyEnabled: false
+  transferEnabled: true
+  genesysEnabled: false
+  aibotEnabled: true
+
+businessRules:
+  fallbackRoutingStrategy: DROP
+  transferTarget: AIBOT
+
+retry:
+  maxRetries: 1
+  retryBaseDelayMs: 500
+  retryMaxDelayMs: 10000
+
+connectors:
+  aibotEndpoint: https://aibot.sg.example.com

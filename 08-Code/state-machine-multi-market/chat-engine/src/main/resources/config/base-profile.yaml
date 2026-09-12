@@ -1,0 +1,35 @@
+# Base profile - global defaults for all markets
+# All markets inherit these values unless overridden at regional or market level
+
+profile: base
+version: "2.0"
+
+timeouts:
+  customerIdleSeconds: 300
+  transferTimeoutSeconds: 180
+  endingGraceSeconds: 120
+  surveyTimeoutSeconds: 120
+
+features:
+  surveyEnabled: false
+  transferEnabled: true
+  genesysEnabled: false
+  aibotEnabled: true
+  regulatoryAuditEnabled: false
+
+businessRules:
+  fallbackRoutingStrategy: DROP
+  surveyType: CSAT
+  transferTarget: INTERNAL_QUEUE
+
+retry:
+  maxRetries: 3
+  retryBaseDelayMs: 1000
+  retryMaxDelayMs: 30000
+
+connectors:
+  aibotEndpoint: null
+  genesysOrgId: null
+  websocketEndpoint: null
+
+extensions: []

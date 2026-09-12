@@ -1,0 +1,30 @@
+package com.selfdevelopment.chatengine.context;
+
+import org.slf4j.MDC;
+
+/**
+ * Helper for managing trace context in SLF4J MDC.
+ * Utility class — cannot be instantiated.
+ */
+public final class TraceMdcHelper {
+
+    public static final String MDC_TRACE_ID = "traceId";
+    public static final String MDC_SPAN_ID = "spanId";
+
+    private TraceMdcHelper() {
+        // Utility class, prevent instantiation
+    }
+
+    public static void set(TraceContext ctx) {
+        if (ctx == null) {
+            return;
+        }
+        MDC.put(MDC_TRACE_ID, ctx.traceId());
+        MDC.put(MDC_SPAN_ID, ctx.spanId());
+    }
+
+    public static void clear() {
+        MDC.remove(MDC_TRACE_ID);
+        MDC.remove(MDC_SPAN_ID);
+    }
+}
