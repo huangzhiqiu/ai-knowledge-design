@@ -79,22 +79,22 @@ conversation.setState(newState);
 
 ```mermaid
 flowchart TD
-    A[Application Startup] --> B[Build State Machine<br/>using Factory]
-    B --> C[Register State Machine<br/>StateMachineFactory.register]
+    A[Application Startup] --> B[Build State Machine using Factory]
+    B --> C[Register State Machine]
     C --> D[Wait for External Event]
 
     D --> E[Receive External Event]
-    E --> F[Normalize Event<br/>Event Normalizer]
-    F --> G[Build State Context<br/>CbolStateContext]
-    G --> H[Load Market Config<br/>MarketConfigProvider]
-    H --> I[Fire Event<br/>stateMachine.fireEvent]
+    E --> F[Normalize Event]
+    F --> G[Build State Context]
+    G --> H[Load Market Config]
+    H --> I[Fire Event]
 
-    I --> J{Guard Check<br/>when()}
-    J -->|False| K[Transition Rejected<br/>State Unchanged]
-    J -->|True| L{Execute Action<br/>perform()}
+    I --> J{Guard Check}
+    J -->|False| K[Transition Rejected]
+    J -->|True| L{Execute Action}
 
-    L -->|Success| M[State Transition Complete<br/>Return Target State]
-    L -->|Failure| N[StateMachineException<br/>State Unchanged]
+    L -->|Success| M[State Transition Complete]
+    L -->|Failure| N[StateMachineException]
 
     M --> O[Update Entity State]
     O --> P[Save to Repository]
@@ -102,7 +102,7 @@ flowchart TD
     Q --> D
 
     K --> D
-    N --> R[Handle Exception<br/>Business Layer]
+    N --> R[Handle Exception]
     R --> D
 
     style I fill:#e3f2fd,stroke:#1565c0,stroke-width:2px

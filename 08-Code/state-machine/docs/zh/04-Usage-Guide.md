@@ -79,22 +79,22 @@ conversation.setState(newState);
 
 ```mermaid
 flowchart TD
-    A[应用启动] --> B[构建状态机<br/>使用 Factory]
-    B --> C[注册状态机<br/>StateMachineFactory.register]
+    A[应用启动] --> B[构建状态机]
+    B --> C[注册状态机]
     C --> D[等待外部事件]
 
     D --> E[接收外部事件]
-    E --> F[归一化事件<br/>事件归一化器]
-    F --> G[构建状态上下文<br/>CbolStateContext]
-    G --> H[加载市场配置<br/>MarketConfigProvider]
-    H --> I[触发事件<br/>stateMachine.fireEvent]
+    E --> F[归一化事件]
+    F --> G[构建状态上下文]
+    G --> H[加载市场配置]
+    H --> I[触发事件]
 
-    I --> J{守卫检查<br/>when()}
-    J -->|False| K[转换被拒绝<br/>状态不变]
-    J -->|True| L{执行动作<br/>perform()}
+    I --> J{守卫检查}
+    J -->|False| K[转换被拒绝]
+    J -->|True| L{执行动作}
 
-    L -->|成功| M[状态转换完成<br/>返回目标状态]
-    L -->|失败| N[StateMachineException<br/>状态不变]
+    L -->|成功| M[状态转换完成]
+    L -->|失败| N[状态机异常]
 
     M --> O[更新实体状态]
     O --> P[保存到仓库]
@@ -102,7 +102,7 @@ flowchart TD
     Q --> D
 
     K --> D
-    N --> R[处理异常<br/>业务层]
+    N --> R[处理异常]
     R --> D
 
     style I fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
