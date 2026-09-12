@@ -1,6 +1,7 @@
 package com.selfdevelopment.chatengine.action.actions.ending;
 
 import com.alibaba.cola.statemachine.Action;
+import com.selfdevelopment.chatengine.action.ConditionalAction;
 import com.selfdevelopment.chatengine.action.annotation.HandlesFact;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
@@ -9,7 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * Action executed when ending starts (Various → ENDING).
+ * Action executed when ending starts (Various 鈫?ENDING).
  * <p>
  * This action handles the business logic of entering ENDING state:
  * <ul>
@@ -23,7 +24,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @HandlesFact(ConversationFact.ENDING_STARTED)
-public class EndingStartedAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
+public class EndingStartedAction implements ConditionalAction<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override
     public void execute(ConversationState from, ConversationState to, ConversationFact event, CbolStateContext ctx) {

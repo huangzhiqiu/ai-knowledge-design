@@ -1,6 +1,7 @@
 package com.selfdevelopment.chatengine.action.actions.transfer;
 
 import com.alibaba.cola.statemachine.Action;
+import com.selfdevelopment.chatengine.action.ConditionalAction;
 import com.selfdevelopment.chatengine.action.annotation.HandlesFact;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
@@ -9,7 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * Action executed when target interaction connect fails (TRANSFERRED → INITIATED).
+ * Action executed when target interaction connect fails (TRANSFERRED 鈫?INITIATED).
  * <p>
  * Latest policy: transfer failure does NOT rollback, Conversation returns directly to INITIATED
  * (re-route/fallback).
@@ -25,7 +26,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @HandlesFact(ConversationFact.TARGET_INTERACTION_CONNECT_FAILED)
-public class TargetInteractionConnectFailedAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
+public class TargetInteractionConnectFailedAction implements ConditionalAction<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override
     public void execute(ConversationState from, ConversationState to, ConversationFact event, CbolStateContext ctx) {

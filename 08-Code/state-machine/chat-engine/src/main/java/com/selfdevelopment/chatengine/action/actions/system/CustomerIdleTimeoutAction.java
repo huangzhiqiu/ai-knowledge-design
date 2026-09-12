@@ -1,6 +1,7 @@
 package com.selfdevelopment.chatengine.action.actions.system;
 
 import com.alibaba.cola.statemachine.Action;
+import com.selfdevelopment.chatengine.action.ConditionalAction;
 import com.selfdevelopment.chatengine.action.annotation.HandlesFact;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
@@ -9,7 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * Action executed when customer idle timeout is detected (Various → ENDING).
+ * Action executed when customer idle timeout is detected (Various 鈫?ENDING).
  * <p>
  * This system-driven action handles the business logic of customer idle timeout:
  * <ul>
@@ -23,7 +24,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @HandlesFact(ConversationFact.CUSTOMER_IDLE_TIMEOUT)
-public class CustomerIdleTimeoutAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
+public class CustomerIdleTimeoutAction implements ConditionalAction<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override
     public void execute(ConversationState from, ConversationState to, ConversationFact event, CbolStateContext ctx) {
@@ -82,7 +83,7 @@ public class CustomerIdleTimeoutAction implements Action<ConversationState, Conv
 
     private String getIdleTimeoutMessage(String market, long idleThreshold) {
         return switch (market) {
-            case "HK" -> String.format("由於 %d 秒內沒有活動，對話即將結束", idleThreshold);
+            case "HK" -> String.format("This conversation is ending due to %d seconds of inactivity", idleThreshold);
             case "SG" -> String.format("This conversation is ending due to %d seconds of inactivity", idleThreshold);
             case "UK" -> String.format("This conversation is ending due to %d seconds of inactivity", idleThreshold);
             default -> String.format("Conversation ending due to %d seconds of inactivity", idleThreshold);

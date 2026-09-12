@@ -1,6 +1,7 @@
 package com.selfdevelopment.chatengine.action.actions.lifecycle;
 
 import com.alibaba.cola.statemachine.Action;
+import com.selfdevelopment.chatengine.action.ConditionalAction;
 import com.selfdevelopment.chatengine.action.annotation.HandlesFact;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
@@ -9,7 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * Action executed when interaction becomes active (INITIATED → ACTIVE).
+ * Action executed when interaction becomes active (INITIATED 鈫?ACTIVE).
  * <p>
  * This action handles the business logic of interaction readiness:
  * <ul>
@@ -22,7 +23,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @HandlesFact(ConversationFact.INTERACTION_BECAME_ACTIVE)
-public class InteractionBecameActiveAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
+public class InteractionBecameActiveAction implements ConditionalAction<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override
     public void execute(ConversationState from, ConversationState to, ConversationFact event, CbolStateContext ctx) {
@@ -67,7 +68,7 @@ public class InteractionBecameActiveAction implements Action<ConversationState, 
 
     private String getWelcomeMessage(String market) {
         return switch (market) {
-            case "HK" -> "歡迎使用我們的服務！";
+            case "HK" -> "Welcome to our service!";
             case "SG" -> "Welcome to our service!";
             case "UK" -> "Welcome to our service!";
             default -> "Welcome!";

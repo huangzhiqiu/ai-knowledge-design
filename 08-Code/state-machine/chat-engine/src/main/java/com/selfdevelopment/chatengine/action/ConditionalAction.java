@@ -11,9 +11,13 @@ import com.alibaba.cola.statemachine.Condition;
  * COLA StateMachine's {@code when()} method, the condition is evaluated before the action
  * executes.
  * <p>
+ * By default, {@link #getCondition()} returns a condition that is always satisfied,
+ * meaning the Action will always execute. Subclasses can override this method to provide
+ * custom conditions.
+ * <p>
  * Usage:
  * <pre>{@code
- * // Action with a condition
+ * // Action with a custom condition - override getCondition()
  * @Component
  * @HandlesFact(ConversationFact.SESSION_STARTED)
  * public class SessionStartedAction implements ConditionalAction<...> {
@@ -21,7 +25,7 @@ import com.alibaba.cola.statemachine.Condition;
  *     @Override
  *     public Condition<CbolStateContext> getCondition() {
  *         return ctx -> ctx.conversation() != null
- *             && ctx.conversation().sessionId() != null;
+ *             && ctx.conversation().conversationId() != null;
  *     }
  *
  *     @Override
@@ -30,10 +34,11 @@ import com.alibaba.cola.statemachine.Condition;
  *     }
  * }
  *
- * // Action without a condition (just implement Action directly)
+ * // Action without a custom condition - uses default (always true)
  * @Component
  * @HandlesFact(ConversationFact.INBOUND_MESSAGE_RECEIVED)
- * public class InboundMessageReceivedAction implements Action<...> {
+ * public class InboundMessageReceivedAction implements ConditionalAction<...> {
+ *     // getCondition() is not overridden, defaults to ALWAYS_TRUE
  *     @Override
  *     public void execute(...) {
  *         // Always executes
@@ -46,13 +51,13 @@ import com.alibaba.cola.statemachine.Condition;
  * Action<...> action = actionProvider.apply(fact);
  * Condition<CbolStateContext> condition = (action instanceof ConditionalAction)
  *         ? ((ConditionalAction<...>) action).getCondition()
- *         : null;
+ *         : ALWAYS_TRUE;  // Plain Action defaults to always true
  *
  * builder.externalTransition()
  *     .from(from)
  *     .to(to)
  *     .on(fact)
- *     .when(condition)   // null means no condition, always executes
+ *     .when(condition)
  *     .perform(action);
  * }</pre>
  *
@@ -65,16 +70,25 @@ import com.alibaba.cola.statemachine.Condition;
 public interface ConditionalAction<S, E, C> extends Action<S, E, C> {
 
     /**
+     * A condition that is always satisfied. Used as the default implementation.
+     */
+    Condition<?> ALWAYS_TRUE = ctx -> true;
+
+    /**
      * Returns the condition associated with this Action.
      * <p>
      * The condition is evaluated by the state machine before executing the Action.
      * If the condition returns {@code false}, the entire transition (including state
      * change and Action execution) is skipped.
      * <p>
-     * Returning {@code null} means no condition is required, and the Action will
-     * always execute when the transition is triggered.
+     * By default, this method returns a condition that is always satisfied, meaning
+     * the Action will always execute when the transition is triggered. Subclasses can
+     * override this method to provide custom conditions.
      *
-     * @return the condition to evaluate before execution, or {@code null} if no condition
+     * @return the condition to evaluate before execution
      */
-    Condition<C> getCondition();
+    @SuppressWarnings("unchecked")
+    default Condition<C> getCondition() {
+        return (Condition<C>) ALWAYS_TRUE;
+    }
 }

@@ -1,6 +1,7 @@
 package com.selfdevelopment.chatengine.action.actions.system;
 
 import com.alibaba.cola.statemachine.Action;
+import com.selfdevelopment.chatengine.action.ConditionalAction;
 import com.selfdevelopment.chatengine.action.annotation.HandlesFact;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
@@ -9,7 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * Action executed when downstream is unavailable (INITIATED → INITIATED, internal).
+ * Action executed when downstream is unavailable (INITIATED 鈫?INITIATED, internal).
  * <p>
  * This action handles the business logic of downstream unavailability:
  * <ul>
@@ -22,7 +23,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @HandlesFact(ConversationFact.DOWNSTREAM_UNAVAILABLE)
-public class DownstreamUnavailableAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
+public class DownstreamUnavailableAction implements ConditionalAction<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override
     public void execute(ConversationState from, ConversationState to, ConversationFact event, CbolStateContext ctx) {
@@ -68,7 +69,7 @@ public class DownstreamUnavailableAction implements Action<ConversationState, Co
 
     private String getTemporaryUnavailableMessage(String market) {
         return switch (market) {
-            case "HK" -> "系統暫時繁忙，請稍候...";
+            case "HK" -> "绯荤当鏆檪绻佸繖锛岃珛绋嶅€?..";
             case "SG" -> "System is temporarily busy, please wait...";
             case "UK" -> "System is temporarily busy, please wait...";
             default -> "System temporarily busy, please wait...";

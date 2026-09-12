@@ -1,6 +1,7 @@
 package com.selfdevelopment.chatengine.action.actions.genesys;
 
 import com.alibaba.cola.statemachine.Action;
+import com.selfdevelopment.chatengine.action.ConditionalAction;
 import com.selfdevelopment.chatengine.action.annotation.HandlesFact;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
@@ -9,7 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * Action executed when Genesys agent transfer fails (IN_PROGRESS → IN_PROGRESS internal).
+ * Action executed when Genesys agent transfer fails (IN_PROGRESS 鈫?IN_PROGRESS internal).
  * <p>
  * This is a no-op at the Conversation state machine level - agent transfers
  * are handled at the Interaction state machine level. However, this action:
@@ -31,7 +32,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @HandlesFact(ConversationFact.GENESYS_AGENT_TRANSFER_FAILED)
-public class AgentTransferFailedAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
+public class AgentTransferFailedAction implements ConditionalAction<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override
     public void execute(ConversationState from, ConversationState to, ConversationFact event, CbolStateContext ctx) {

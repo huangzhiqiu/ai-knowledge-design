@@ -1,6 +1,8 @@
 package com.selfdevelopment.chatengine.action.exception.wrapper;
 
 import com.alibaba.cola.statemachine.Action;
+import com.alibaba.cola.statemachine.Condition;
+import com.selfdevelopment.chatengine.action.ConditionalAction;
 import com.selfdevelopment.chatengine.action.exception.registry.ActionExceptionHandlerRegistry;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
@@ -15,6 +17,10 @@ import org.springframework.util.Assert;
  * to the {@link ActionExceptionHandlerRegistry} for handling. Importantly, exceptions
  * do NOT propagate to the state machine engine, ensuring that state transitions
  * continue regardless of Action execution failures.
+ * <p>
+ * Implements {@link ConditionalAction} and delegates condition evaluation to the
+ * wrapped Action if it also implements ConditionalAction; otherwise defaults to
+ * always satisfied.
  * <p>
  * Usage:
  * <pre>{@code
@@ -31,7 +37,7 @@ import org.springframework.util.Assert;
  * @see ActionExceptionHandlerRegistry
  */
 @Slf4j
-public class ExceptionHandlingAction<S, E, C> implements Action<S, E, C> {
+public class ExceptionHandlingAction<S, E, C> implements ConditionalAction<S, E, C> {
 
     private final Action<S, E, C> delegate;
     private final ActionExceptionHandlerRegistry exceptionHandlerRegistry;
@@ -49,6 +55,22 @@ public class ExceptionHandlingAction<S, E, C> implements Action<S, E, C> {
         Assert.notNull(exceptionHandlerRegistry, "exceptionHandlerRegistry must not be null");
         this.delegate = delegate;
         this.exceptionHandlerRegistry = exceptionHandlerRegistry;
+    }
+
+    /**
+     * Returns the condition from the wrapped Action if it implements {@link ConditionalAction},
+     * otherwise returns a condition that is always satisfied.
+     *
+     * @return the condition to evaluate before execution
+     */
+    @Override
+    @SuppressWarnings("unchecked")
+    public Condition<C> getCondition() {
+        if (delegate instanceof ConditionalAction) {
+            Condition<C> condition = ((ConditionalAction<S, E, C>) delegate).getCondition();
+            return condition != null ? condition : ctx -> true;
+        }
+        return ctx -> true;
     }
 
     /**

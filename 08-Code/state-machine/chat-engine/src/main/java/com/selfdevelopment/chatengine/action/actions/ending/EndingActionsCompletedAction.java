@@ -1,6 +1,7 @@
 package com.selfdevelopment.chatengine.action.actions.ending;
 
 import com.alibaba.cola.statemachine.Action;
+import com.selfdevelopment.chatengine.action.ConditionalAction;
 import com.selfdevelopment.chatengine.action.annotation.HandlesFact;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
@@ -9,7 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * Action executed when ending actions are completed (ENDING → ENDING internal, or ENDING → CLOSED if interactionsClosed).
+ * Action executed when ending actions are completed (ENDING 鈫?ENDING internal, or ENDING 鈫?CLOSED if interactionsClosed).
  * <p>
  * This action handles the business logic of ending actions completion:
  * <ul>
@@ -22,13 +23,13 @@ import org.springframework.stereotype.Component;
  * Part of the ENDING convergence rules:
  * - ENDING_ACTIONS_COMPLETED sets endingActionsDone=true
  * - ALL_INTERACTIONS_ENDED sets interactionsClosed=true
- * - Both true → CLOSED
- * - Or ENDING_TIMEOUT → forced CLOSED
+ * - Both true 鈫?CLOSED
+ * - Or ENDING_TIMEOUT 鈫?forced CLOSED
  */
 @Slf4j
 @Component
 @HandlesFact(ConversationFact.ENDING_ACTIONS_COMPLETED)
-public class EndingActionsCompletedAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
+public class EndingActionsCompletedAction implements ConditionalAction<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override
     public void execute(ConversationState from, ConversationState to, ConversationFact event, CbolStateContext ctx) {

@@ -1,6 +1,7 @@
 package com.selfdevelopment.chatengine.action.actions.system;
 
 import com.alibaba.cola.statemachine.Action;
+import com.selfdevelopment.chatengine.action.ConditionalAction;
 import com.selfdevelopment.chatengine.action.annotation.HandlesFact;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
@@ -9,7 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * Action executed when system error occurs (Various → ENDING).
+ * Action executed when system error occurs (Various 鈫?ENDING).
  * <p>
  * This action handles the business logic of system error:
  * <ul>
@@ -23,7 +24,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @HandlesFact(ConversationFact.SYSTEM_ERROR)
-public class SystemErrorAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
+public class SystemErrorAction implements ConditionalAction<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override
     public void execute(ConversationState from, ConversationState to, ConversationFact event, CbolStateContext ctx) {
@@ -77,7 +78,7 @@ public class SystemErrorAction implements Action<ConversationState, Conversation
 
     private String getSystemErrorMessage(String market) {
         return switch (market) {
-            case "HK" -> "由於技術問題，本次對話即將結束，敬請諒解";
+            case "HK" -> "This conversation is ending due to technical issues. We apologize for the inconvenience.";
             case "SG" -> "This conversation is ending due to technical issues. We apologize for the inconvenience.";
             case "UK" -> "This conversation is ending due to technical issues. We apologize for the inconvenience.";
             default -> "Conversation ending due to technical issues. We apologize.";

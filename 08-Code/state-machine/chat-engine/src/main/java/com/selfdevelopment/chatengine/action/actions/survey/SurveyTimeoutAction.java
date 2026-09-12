@@ -1,6 +1,7 @@
 package com.selfdevelopment.chatengine.action.actions.survey;
 
 import com.alibaba.cola.statemachine.Action;
+import com.selfdevelopment.chatengine.action.ConditionalAction;
 import com.selfdevelopment.chatengine.action.annotation.HandlesFact;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
@@ -9,7 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * Action executed when survey times out (ENDING → ENDING internal transition).
+ * Action executed when survey times out (ENDING 鈫?ENDING internal transition).
  * <p>
  * This action handles the business logic of survey timeout:
  * <ul>
@@ -21,13 +22,13 @@ import org.springframework.stereotype.Component;
  * </ul>
  * <p>
  * Survey is field-based (surveyStatus) in ENDING state, not a separate state.
- * This is an internal transition (ENDING → ENDING) that only updates the survey field.
+ * This is an internal transition (ENDING 鈫?ENDING) that only updates the survey field.
  * Survey timeout typically indicates customer idle during the survey phase.
  */
 @Slf4j
 @Component
 @HandlesFact(ConversationFact.SURVEY_TIMEOUT)
-public class SurveyTimeoutAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
+public class SurveyTimeoutAction implements ConditionalAction<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override
     public void execute(ConversationState from, ConversationState to, ConversationFact event, CbolStateContext ctx) {

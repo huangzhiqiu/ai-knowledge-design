@@ -161,18 +161,15 @@ public class ConversationStateMachineFactory {
         StateMachineBuilder<ConversationState, ConversationFact, CbolStateContext> builder =
                 StateMachineBuilderFactory.create();
 
-        // Default condition that always returns true (for Actions without conditions)
-        Condition<CbolStateContext> alwaysTrue = ctx -> true;
-
-        // Helper: extract condition from action if it implements ConditionalAction
+        // Helper: extract condition from action.
+        // All Actions implement ConditionalAction with a default ALWAYS_TRUE condition.
+        // instanceof check kept for safety with external Action implementations.
         Function<ConversationFact, Condition<CbolStateContext>> conditionProvider = fact -> {
             Action<ConversationState, ConversationFact, CbolStateContext> action = actionProvider.apply(fact);
             if (action instanceof ConditionalAction) {
-                Condition<CbolStateContext> condition =
-                        ((ConditionalAction<ConversationState, ConversationFact, CbolStateContext>) action).getCondition();
-                return condition != null ? condition : alwaysTrue;
+                return ((ConditionalAction<ConversationState, ConversationFact, CbolStateContext>) action).getCondition();
             }
-            return alwaysTrue; // No condition, action always executes
+            return ctx -> true; // Fallback for plain Action implementations
         };
 
         // ===== 5.1 BASIC LIFECYCLE =====

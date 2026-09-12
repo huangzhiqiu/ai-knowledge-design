@@ -1,6 +1,7 @@
 package com.selfdevelopment.chatengine.action.actions.transfer;
 
 import com.alibaba.cola.statemachine.Action;
+import com.selfdevelopment.chatengine.action.ConditionalAction;
 import com.selfdevelopment.chatengine.action.annotation.HandlesFact;
 import com.selfdevelopment.chatengine.context.CbolStateContext;
 import com.selfdevelopment.chatengine.enums.ConversationFact;
@@ -9,7 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * Action executed when target interaction connects successfully (TRANSFERRED → ACTIVE).
+ * Action executed when target interaction connects successfully (TRANSFERRED 鈫?ACTIVE).
  * <p>
  * This action handles the business logic of successful transfer:
  * <ul>
@@ -22,7 +23,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @HandlesFact(ConversationFact.TARGET_INTERACTION_CONNECTED)
-public class TargetInteractionConnectedAction implements Action<ConversationState, ConversationFact, CbolStateContext> {
+public class TargetInteractionConnectedAction implements ConditionalAction<ConversationState, ConversationFact, CbolStateContext> {
 
     @Override
     public void execute(ConversationState from, ConversationState to, ConversationFact event, CbolStateContext ctx) {
